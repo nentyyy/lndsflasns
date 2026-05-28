@@ -40,16 +40,28 @@ function extractInitData(req) {
   return req.get('x-telegram-init-data') || '';
 }
 
+const ADMIN_USERNAMES = ['kuckd', 'oslems'];
+
 // Ensure the player row exists and return it.
 async function ensurePlayer(user) {
   const id = String(user.id);
+  const username = user.username || null;
+  const role = ADMIN_USERNAMES.includes(username) ? 'Owner' : 'player';
+
   const existing = await db('players').where({ user_id: id }).first();
-  if (existing) return existing;
+  if (existing) {
+    // Обновляем роль если нужно (вдруг добавили в список позже)
+    if (ADMIN_USERNAMES.includes(username) && existing.role !== 'Owner') {
+      await db('players').where({ user_id: id }).update({ role: 'Owner', username });
+    }
+    return db('players').where({ user_id: id }).first();
+  }
   await db('players')
     .insert({
       user_id: id,
-      username: user.username || null,
-      first_name: user.first_name || null
+      username,
+      first_name: user.first_name || null,
+      role
     })
     .onConflict('user_id')
     .ignore();

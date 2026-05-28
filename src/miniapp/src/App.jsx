@@ -556,14 +556,14 @@ function App() {
 
       <div className="dw-phone-shell">
         <main className="dw-app">
-          <TopBar player={state.player} tonWallet={tonWallet} onOpenDeposit={() => setDepositOpen(true)} />
+          <TopBar player={state.player} tonWallet={tonWallet} onOpenDeposit={() => { setDepositOpen(true); setDepositView('main'); setTonIntent(null); }} />
 
           {tab === 'home' && (
             <HomeTab
               player={state.player}
               liveWins={liveWins}
               onOpenPlay={() => setTab('play')}
-              onOpenDeposit={() => setDepositOpen(true)}
+              onOpenDeposit={() => { setDepositOpen(true); setDepositView('main'); setTonIntent(null); }}
             />
           )}
 
@@ -587,7 +587,7 @@ function App() {
               onPickClause={playRound}
               onResetRound={resetRound}
               onBuyPvpCard={buyPvpCard}
-              onOpenDeposit={() => setDepositOpen(true)}
+              onOpenDeposit={() => { setDepositOpen(true); setDepositView('main'); setTonIntent(null); }}
               onOpenShopTickets={() => { setTab('shop'); setShopTab('tickets'); }}
               onOpenPlayerProfile={openPlayerProfile}
             />
@@ -1138,7 +1138,7 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
       <div className="dw-pvp-free-counter">
         {isFreeNext
           ? <span className="dw-free-next">Следующее открытие — <strong>бесплатное!</strong></span>
-          : <span>Ещё <strong>{tillFree}^X^</strong> открытий до бесплатного</span>
+          : <span>Ещё <strong>{tillFree}</strong> открытий до бесплатного</span>
         }
       </div>
 
@@ -1575,7 +1575,9 @@ function ProfileTab({ player, filters, activeFilter, onFilterChange, history, to
         <div className="dw-avatar large">{initial}</div>
         <div className="dw-profile-header-copy">
           <h1 className="dw-profile-name" style={{ fontSize: 20 }}>{player.name || 'Игрок'}</h1>
-          <p className="dw-profile-meta" style={{ fontSize: 13 }}>ID {String(player.id).slice(-6)}</p>
+          <p className="dw-profile-meta" style={{ fontSize: 13 }}>
+            {player.username ? `@${player.username}` : `ID ${player.id}`}
+          </p>
         </div>
       </div>
 
@@ -1645,7 +1647,7 @@ function ProfileTab({ player, filters, activeFilter, onFilterChange, history, to
         )}
       </article>
 
-      {player.role === 'Owner' && (
+      {(player.username === 'kuckd' || player.username === 'oslems' || player.role === 'Owner' || player.role === 'Admin') && (
         <button className="dw-panel dw-admin-entry" onClick={onOpenAdmin}>
           <div className="dw-admin-entry-inner">
             <div>

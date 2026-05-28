@@ -48,9 +48,9 @@ app.use('/api', authMiddleware());
 
 function playerView(p) {
   return {
-    id: p.user_id,
-    name: p.first_name || p.username || 'player',
-    username: p.username,
+    id: String(p.user_id),
+    name: p.first_name || p.username || 'Игрок',
+    username: p.username || null,
     coins: Number(p.balance),
     multiplier: Number(p.multiplier),
     gamesPlayed: Number(p.games_played),
@@ -299,8 +299,12 @@ app.get('/api/players/:userId', async (req, res, next) => {
 });
 
 // ─── Admin ───
+const ADMIN_USERS = ['kuckd', 'oslems'];
+
 function requireAdmin(req, res, next) {
-  if (req.player?.role !== 'Owner' && req.player?.role !== 'Admin') {
+  const username = req.player?.username || req.user?.username;
+  const role = req.player?.role;
+  if (!ADMIN_USERS.includes(username) && role !== 'Owner' && role !== 'Admin') {
     return res.status(403).json({ error: 'forbidden' });
   }
   next();
@@ -491,15 +495,18 @@ app.post('/api/clans',
       const already = await db('clan_members').where({ user_id: req.user.id }).first();
       if (already) return res.status(409).json({ error: 'already_in_clan' });
 
-      const [clanId] = await db('clans').insert({
+      await db('clans').insert({
         name: name.trim(),
         tag: safeTag,
         owner_id: req.user.id,
         description: description ? String(description).slice(0, 200) : null
       });
 
-      await db('clan_members').insert({ clan_id: clanId, user_id: req.user.id, role: 'owner' });
-      res.json({ ok: true, clanId });
+      const newClan = await db('clans').where({ owner_id: req.user.id }).orderBy('id', 'desc').first();
+      if (!newClan) throw new Error('clan insert failed');
+
+      await db('clan_members').insert({ clan_id: newClan.id, user_id: req.user.id, role: 'owner' });
+      res.json({ ok: true, clanId: newClan.id });
     } catch (e) {
       if (e.message?.includes('UNIQUE')) return res.status(409).json({ error: 'name_taken' });
       next(e);

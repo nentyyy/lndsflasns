@@ -45,7 +45,7 @@ function tonToCoins(tonAmount) {
 async function fetchPortalsGifts() {
   try {
     // Отправляем /start боту @PortalsBot чтобы получить список
-    const portalsBot = 'PortalsBot';
+    const portalsBot = 'portals';
 
     // Получаем inline кнопки или список через bot API
     await client.sendMessage(portalsBot, { message: '/start' });
@@ -91,7 +91,7 @@ async function syncGiftsToDb(gifts) {
 // Купить подарок через Portals (для команды из API)
 async function buyGiftViaPortals(giftId, recipientUserId) {
   try {
-    const portalsBot = 'PortalsBot';
+    const portalsBot = 'portals';
     // Команда покупки — зависит от API бота
     await client.sendMessage(portalsBot, { message: `/buy ${giftId} ${recipientUserId}` });
     console.log(`[portals] sent buy request for ${giftId} to user ${recipientUserId}`);
