@@ -50,9 +50,13 @@ async function ensurePlayer(user) {
 
   const existing = await db('players').where({ user_id: id }).first();
   if (existing) {
-    // Обновляем роль если нужно (вдруг добавили в список позже)
-    if (ADMIN_USERNAMES.includes(username) && existing.role !== 'Owner') {
-      await db('players').where({ user_id: id }).update({ role: 'Owner', username });
+    // Обновляем имя/username/роль при каждом входе
+    const updates = {};
+    if (username && existing.username !== username) updates.username = username;
+    if (user.first_name && existing.first_name !== user.first_name) updates.first_name = user.first_name;
+    if (ADMIN_USERNAMES.includes(username) && existing.role !== 'Owner') updates.role = 'Owner';
+    if (Object.keys(updates).length > 0) {
+      await db('players').where({ user_id: id }).update(updates);
     }
     return db('players').where({ user_id: id }).first();
   }

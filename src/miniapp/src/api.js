@@ -2,8 +2,22 @@
 const BASE = import.meta.env.VITE_API_BASE || '';
 
 function authHeaders() {
-  const initData = window.Telegram?.WebApp?.initData;
-  if (initData) return { Authorization: `tma ${initData}` };
+  const webApp = window.Telegram?.WebApp;
+  const initData = webApp?.initData;
+
+  // Если есть полноценный initData (открыто через кнопку бота) — используем его
+  if (initData) {
+    return { Authorization: `tma ${initData}` };
+  }
+
+  // initData пустой — пробуем взять реальный user ID из initDataUnsafe
+  // (работает когда мини-апп открыт через прямую ссылку внутри Telegram)
+  const userId = webApp?.initDataUnsafe?.user?.id;
+  if (userId) {
+    return { 'X-Dev-User': String(userId) };
+  }
+
+  // Последний fallback — dev-режим (браузер вне Telegram)
   return { 'X-Dev-User': '1' };
 }
 
@@ -48,9 +62,7 @@ export const api = {
   referral: () => request('/api/referral'),
   bindReferral: (code) => request('/api/referral/bind', { method: 'POST', body: { code } }),
   claimReferral: () => request('/api/referral/claim', { method: 'POST', body: {} }),
-  tournament: () => request('/api/tournament'),
   pvpState: (mode = 'cheap') => request(`/api/pvp/state?mode=${encodeURIComponent(mode)}`),
-  // SECURITY: only send mode, cardIndex, idempotencyKey — never prize/reward/amount
   pvpBuy: (mode, cardIndex) => request('/api/pvp/buy', { method: 'POST', body: { mode, cardIndex, idempotencyKey: uuid() } }),
   buyTickets: (type, packId) => request('/api/tickets/buy', { method: 'POST', body: { type, packId } }),
   arm: (modeId) => request('/api/rounds/arm', { method: 'POST', body: { modeId, clientSeed: uuid(), idempotencyKey: uuid() } }),
@@ -61,7 +73,6 @@ export const api = {
   playerProfile: (userId) => request(`/api/players/${userId}`),
   liveFeed: () => request('/api/feed'),
   portalsBuy: (giftId, giftName, priceCoins) => request('/api/portals/buy', { method: 'POST', body: { giftId, giftName, priceCoins } }),
-  // Admin
   adminUsers: (limit = 50, offset = 0) => request(`/api/admin/users?limit=${limit}&offset=${offset}`),
   adminDeposits: (limit = 50, offset = 0) => request(`/api/admin/deposits?limit=${limit}&offset=${offset}`),
   adminRounds: (limit = 50, offset = 0) => request(`/api/admin/rounds?limit=${limit}&offset=${offset}`),
