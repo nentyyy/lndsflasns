@@ -73,12 +73,17 @@ export function authMiddleware() {
   return async (req, res, next) => {
     try {
       let user;
-      if (env.BOT_TOKEN) {
-        user = verifyInitData(extractInitData(req), env.BOT_TOKEN);
+      const rawInitData = extractInitData(req);
+
+      if (env.BOT_TOKEN && rawInitData) {
+        // Telegram Mini App — проверяем подпись
+        user = verifyInitData(rawInitData, env.BOT_TOKEN);
       } else if (env.ALLOW_DEV_AUTH) {
-        // Dev box only: no bot token configured. Identify via X-Dev-User.
+        // Fallback: браузер без initData или dev-режим
         const devId = req.get('x-dev-user') || '1';
         user = { id: devId, username: 'dev', first_name: 'Dev' };
+      } else if (env.BOT_TOKEN && !rawInitData) {
+        throw new AuthError('missing initData — open via Telegram');
       } else {
         throw new AuthError('auth not configured');
       }
