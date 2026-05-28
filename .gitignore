@@ -1,0 +1,10 @@
+node_modules/
+src/miniapp/node_modules/
+src/api/data/*.sqlite
+src/api/data/*.sqlite-shm
+src/api/data/*.sqlite-wal
+src/miniapp/dist/
+.env
+*.log
+.DS_Store
+Thumbs.db

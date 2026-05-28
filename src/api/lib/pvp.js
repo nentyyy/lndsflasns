@@ -1,0 +1,366 @@
+import { randomUUID, createHmac } from 'node:crypto';
+import { db } from './db.js';
+import { getPvpMode, MAX_ZERO_STREAK, FREE_SPIN_EVERY, WELCOME_CHEAP_DISCOUNT } from './config.js';
+import { createServerSeed } from './rng.js';
+import { debit, credit } from './wallet.js';
+import { addTournamentScore } from './tournaments.js';
+import { consumeTicket } from './tickets.js';
+
+export class PvpError extends Error {
+  constructor(message, status = 400) { super(message); this.status = status; }
+}
+
+function makeRng(seed) {
+  let counter = 0;
+  return () => {
+    const h = createHmac('sha256', seed).update(`shuffle:${counter++}`).digest();
+    return h.readUInt32BE(0) / 0x100000000;
+  };
+}
+
+function shuffle(arr, rng) {
+  const out = arr.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+async function createLobby(mode) {
+  const def = getPvpMode(mode);
+  if (!def) throw new PvpError('unknown pvp mode', 404);
+
+  const { serverSeed, serverSeedHash } = createServerSeed();
+  const rng = makeRng(serverSeed);
+  const shuffled = shuffle(def.outcomesPool, rng);
+  const lobbyId = randomUUID();
+  // Рандомный таймер 30–40 секунд
+  const ttlMs = 30_000 + Math.floor(rng() * 10_001);
+
+  await db.transaction(async (trx) => {
+    await trx('pvp_lobbies').insert({
+      id: lobbyId,
+      mode,
+      card_count: def.cardCount,
+      entry_coins: def.entryCoins,
+      status: 'open',
+      server_seed: serverSeed,
+      server_seed_hash: serverSeedHash,
+      ttl_ms: ttlMs
+    });
+    const rows = shuffled.map((o, i) => ({
+      lobby_id: lobbyId,
+      card_index: i,
+      user_id: null,
+      status: 'free',
+      outcome_key: o.key,
+      outcome_type: o.type,
+      credit: o.credit,
+      stamp: o.stamp
+    }));
+    await trx('pvp_cards').insert(rows);
+  });
+
+  return lobbyId;
+}
+
+async function getActiveLobbyRow(mode) {
+  return db('pvp_lobbies')
+    .where({ mode, status: 'open' })
+    .orderBy('created_at', 'desc')
+    .first();
+}
+
+async function settleIfExpired(lobby) {
+  if (!lobby || lobby.status !== 'open' || !lobby.ends_at) return lobby;
+  const endsTs = new Date(lobby.ends_at).getTime();
+  if (Date.now() < endsTs) return lobby;
+
+  const updated = await db('pvp_lobbies')
+    .where({ id: lobby.id, status: 'open' })
+    .update({ status: 'sealing' });
+  if (!updated) {
+    return db('pvp_lobbies').where({ id: lobby.id }).first();
+  }
+
+  const cards = await db('pvp_cards').where({ lobby_id: lobby.id, status: 'taken' });
+
+  // Публикуем server_seed для честной игры
+  for (const c of cards) {
+    if (Number(c.credit) > 0) {
+      await db.transaction(async (trx) => {
+        await credit(trx, c.user_id, Number(c.credit), 'pvp_payout', `pvp:${lobby.id}:${c.card_index}`);
+        await trx('players').where({ user_id: c.user_id }).update({
+          coins_won: trx.raw('coins_won + ?', [c.credit]),
+          best_win: trx.raw('CASE WHEN best_win < ? THEN ? ELSE best_win END', [c.credit, c.credit]),
+          pvp_zero_streak: 0,
+          pvp_session_returned: trx.raw('pvp_session_returned + ?', [c.credit])
+        });
+      }).catch((e) => console.error('pvp credit err', e.message));
+    } else {
+      // Нулевой исход — инкрементируем streak
+      await db('players')
+        .where({ user_id: c.user_id })
+        .update({ pvp_zero_streak: db.raw('pvp_zero_streak + 1') })
+        .catch(() => {});
+    }
+
+    await db('pvp_cards').where({ lobby_id: lobby.id, card_index: c.card_index }).update({
+      status: 'revealed',
+      revealed_at: db.fn.now()
+    });
+
+    try {
+      await db.transaction(async (trx) => {
+        await addTournamentScore(trx, c.user_id, Number(lobby.entry_coins) + Number(c.credit));
+      });
+    } catch {}
+  }
+
+  await db('pvp_lobbies').where({ id: lobby.id }).update({
+    status: 'settled',
+    settled_at: db.fn.now()
+  });
+  return db('pvp_lobbies').where({ id: lobby.id }).first();
+}
+
+// ─── Loss protection: если у игрока ≥ MAX_ZERO_STREAK нулей подряд,
+// свапаем его карту с первой non-zero свободной картой.
+async function applyLossProtection(trx, lobbyId, cardIndex, player) {
+  const streak = Number(player.pvp_zero_streak || 0);
+  if (streak < MAX_ZERO_STREAK) return false;
+
+  // Смотрим какой outcome у выбранной карты
+  const chosen = await trx('pvp_cards').where({ lobby_id: lobbyId, card_index: cardIndex }).first();
+  if (!chosen || Number(chosen.credit) > 0) return false; // уже winning — ок
+
+  // Ищем свободную winning карту для свапа
+  const winner = await trx('pvp_cards')
+    .where({ lobby_id: lobbyId, status: 'free' })
+    .whereNot({ card_index: cardIndex })
+    .where('credit', '>', 0)
+    .first();
+  if (!winner) return false;
+
+  // Атомарный свап outcomes
+  await trx('pvp_cards')
+    .where({ lobby_id: lobbyId, card_index: cardIndex })
+    .update({ outcome_key: winner.outcome_key, outcome_type: winner.outcome_type, credit: winner.credit, stamp: winner.stamp });
+  await trx('pvp_cards')
+    .where({ lobby_id: lobbyId, card_index: winner.card_index })
+    .update({ outcome_key: chosen.outcome_key, outcome_type: chosen.outcome_type, credit: chosen.credit, stamp: chosen.stamp });
+
+  return true;
+}
+
+// ─── Free spin check: каждые FREE_SPIN_EVERY открытий — бесплатное.
+function isFreeReveal(player) {
+  const total = Number(player.pvp_total_reveals || 0);
+  return total > 0 && (total + 1) % FREE_SPIN_EVERY === 0;
+}
+
+function freeTillNext(player) {
+  const total = Number(player.pvp_total_reveals || 0);
+  const next = FREE_SPIN_EVERY - (total % FREE_SPIN_EVERY);
+  return next === FREE_SPIN_EVERY ? 0 : next;
+}
+
+export async function buyCard(userId, mode, cardIndex, idempotencyKey) {
+  const idx = Number(cardIndex);
+  if (!Number.isInteger(idx) || idx < 0) throw new PvpError('bad cardIndex');
+
+  // Anti-replay: проверяем idempotencyKey
+  if (idempotencyKey) {
+    const existing = await db('pvp_cards').where({ idempotency_key: idempotencyKey }).first();
+    if (existing) {
+      const player = await db('players').where({ user_id: userId }).first();
+      return {
+        lobbyId: existing.lobby_id,
+        cardIndex: existing.card_index,
+        balance: Number(player.balance),
+        welcomeApplied: false,
+        usedTicket: false,
+        cost: 0,
+        replayed: true,
+        freeTillNext: freeTillNext(player)
+      };
+    }
+  }
+
+  // Закрываем истёкшие лобби
+  const existing = await getActiveLobbyRow(mode);
+  if (existing) await settleIfExpired(existing);
+
+  let lobby = await getActiveLobbyRow(mode);
+  if (!lobby) {
+    await createLobby(mode);
+    lobby = await getActiveLobbyRow(mode);
+  }
+  if (!lobby) throw new PvpError('lobby unavailable', 500);
+  if (idx >= lobby.card_count) throw new PvpError('cardIndex out of range');
+
+  return db.transaction(async (trx) => {
+    // Row-level lock на лобби
+    const lock = await trx('pvp_lobbies').where({ id: lobby.id, status: 'open' }).first();
+    if (!lock) throw new PvpError('lobby closed', 409);
+
+    const player = await trx('players').where({ user_id: userId }).first();
+    if (!player) throw new PvpError('player not found', 404);
+
+    // Приоритет оплаты: welcome → free spin → cheap-билет → монеты
+    let cost = Number(lobby.entry_coins);
+    let welcomeApplied = false;
+    let usedTicket = false;
+    let wasFree = false;
+    const freeReveal = isFreeReveal(player);
+
+    if (!player.welcome_used && WELCOME_CHEAP_DISCOUNT >= 1) {
+      cost = 0;
+      welcomeApplied = true;
+      wasFree = true;
+    } else if (freeReveal) {
+      cost = 0;
+      wasFree = true;
+    } else if (await consumeTicket(trx, userId, 'cheap')) {
+      cost = 0;
+      usedTicket = true;
+    }
+
+    // Применяем loss protection перед атомарным занятием
+    await applyLossProtection(trx, lobby.id, idx, player);
+
+    // Атомарно занять карту (race condition защита через FK/PK constraint)
+    const occupied = await trx('pvp_cards')
+      .where({ lobby_id: lobby.id, card_index: idx, status: 'free' })
+      .update({
+        user_id: userId,
+        status: 'taken',
+        taken_at: trx.fn.now(),
+        idempotency_key: idempotencyKey || null,
+        was_free: wasFree
+      });
+    if (!occupied) throw new PvpError('card already taken', 409);
+
+    // Anti double-bet: один игрок не может иметь 2 занятых карты одновременно — снимаем это ограничение
+    // (разрешаем несколько карт на игрока в одном раунде, это законная игра)
+
+    let balance;
+    if (cost > 0) {
+      balance = await debit(trx, userId, cost, 'pvp_bet', `pvp:${lobby.id}:${idx}`);
+      await trx('players').where({ user_id: userId }).update({
+        coins_spent: trx.raw('coins_spent + ?', [cost]),
+        pvp_session_wagered: trx.raw('pvp_session_wagered + ?', [cost])
+      });
+    } else {
+      const row = await trx('players').where({ user_id: userId }).first('balance');
+      balance = row.balance;
+    }
+
+    if (welcomeApplied) {
+      await trx('players').where({ user_id: userId }).update({ welcome_used: true });
+    }
+
+    // Инкрементируем pvp_total_reveals (для free spin счётчика)
+    await trx('players').where({ user_id: userId }).update({
+      pvp_total_reveals: trx.raw('pvp_total_reveals + 1')
+    });
+
+    // Запустить таймер при первой покупке
+    if (!lobby.opened_at) {
+      const opened = new Date();
+      const ttlMs = Number(lobby.ttl_ms || 35_000);
+      const ends = new Date(opened.getTime() + ttlMs);
+      await trx('pvp_lobbies').where({ id: lobby.id }).update({
+        opened_at: opened.toISOString(),
+        ends_at: ends.toISOString()
+      });
+    }
+
+    const updatedPlayer = await trx('players').where({ user_id: userId }).first();
+    const till = freeTillNext(updatedPlayer);
+
+    return { lobbyId: lobby.id, cardIndex: idx, balance, welcomeApplied, usedTicket, cost, wasFree, freeTillNext: till, replayed: false };
+  });
+}
+
+export async function getPvpState(userId, mode) {
+  let active = await getActiveLobbyRow(mode);
+  if (active) active = await settleIfExpired(active);
+
+  if (!active || active.status !== 'open') {
+    const recent = await db('pvp_lobbies')
+      .where({ mode, status: 'settled' })
+      .orderBy('settled_at', 'desc')
+      .first();
+    if (recent && Date.now() - new Date(recent.settled_at).getTime() < 12_000) {
+      return viewLobby(recent, userId, true);
+    }
+    return { lobby: null, mode };
+  }
+
+  return viewLobby(active, userId, false);
+}
+
+async function viewLobby(lobby, userId, allRevealed) {
+  const cards = await db('pvp_cards').where({ lobby_id: lobby.id }).orderBy('card_index', 'asc');
+
+  // Подтягиваем данные игроков для аватаров
+  const takenUserIds = [...new Set(cards.filter((c) => c.user_id).map((c) => String(c.user_id)))];
+  let playerMap = {};
+  if (takenUserIds.length > 0) {
+    const players = await db('players').whereIn('user_id', takenUserIds).select('user_id', 'first_name', 'username');
+    for (const p of players) {
+      playerMap[String(p.user_id)] = { name: p.first_name || p.username || `P${String(p.user_id).slice(-3)}`, username: p.username };
+    }
+  }
+
+  const view = cards.map((c) => {
+    const mine = c.user_id && String(c.user_id) === String(userId);
+    const isRevealed = allRevealed || c.status === 'revealed';
+    const owner = c.user_id ? playerMap[String(c.user_id)] : null;
+    return {
+      index: c.card_index,
+      status: c.status,
+      mine: Boolean(mine),
+      taken: c.status !== 'free',
+      owner: owner ? { name: owner.name, userId: String(c.user_id) } : null,
+      outcome: isRevealed ? { key: c.outcome_key, type: c.outcome_type, credit: Number(c.credit), stamp: c.stamp } : null
+    };
+  });
+
+  // Порядковый номер лобби (последние 4 символа uuid в hex → число)
+  const gameNum = parseInt(lobby.id.replace(/-/g, '').slice(-6), 16) % 100000;
+
+  return {
+    lobby: {
+      id: lobby.id,
+      gameNum,
+      mode: lobby.mode,
+      status: lobby.status,
+      cardCount: lobby.card_count,
+      entryCoins: Number(lobby.entry_coins),
+      openedAt: lobby.opened_at ? new Date(lobby.opened_at).toISOString() : null,
+      endsAt: lobby.ends_at ? new Date(lobby.ends_at).toISOString() : null,
+      settledAt: lobby.settled_at ? new Date(lobby.settled_at).toISOString() : null,
+      serverSeedHash: lobby.server_seed_hash,
+      serverSeed: allRevealed ? lobby.server_seed : null
+    },
+    cards: view
+  };
+}
+
+export async function getLiveFeed(limit = 20) {
+  const rows = await db('ledger as l')
+    .join('players as p', 'l.user_id', 'p.user_id')
+    .where('l.ref_type', 'pvp_payout')
+    .where('l.amount', '>', 0)
+    .orderBy('l.id', 'desc')
+    .limit(limit)
+    .select('l.amount', 'l.created_at', 'p.first_name', 'p.username');
+  return rows.map((r) => ({
+    name: r.first_name || r.username || 'Игрок',
+    amount: Number(r.amount),
+    date: r.created_at
+  }));
+}

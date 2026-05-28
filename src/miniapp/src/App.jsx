@@ -1,0 +1,2581 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { useTonConnectUI, useTonWallet } from '@tonconnect/ui-react';
+import BottomBar from './components/BottomBar';
+import AdminPanel from './components/AdminPanel';
+import Splash from './components/Splash';
+import { api } from './api.js';
+import {
+  createInitialState,
+  formatCoins,
+  formatCompact,
+  historyFilters,
+  parseRewardCredit,
+  transferTone,
+  XP_PER_LEVEL,
+  XP_PER_ROUND
+} from './data/mock.js';
+import { GIFTS_CATALOG, NFT_RARITIES, RARITY_COLOR } from './data/gifts-catalog.js';
+
+const toneByType = { coins: 'gold', bonus: 'gold', multiplier: 'violet', empty: 'muted', debt: 'danger' };
+const titleByType = {
+  coins: 'Выигрыш', bonus: 'Golden bonus', multiplier: 'Множитель x2',
+  empty: 'Пустой контракт', debt: 'Проклятый долг'
+};
+function mapResult(r) {
+  return {
+    type: r.type,
+    stamp: r.stamp,
+    creditCoins: r.credit,
+    tone: toneByType[r.type] || 'gold',
+    title: titleByType[r.type] || 'Результат',
+    note: r.usedMultiplier ? 'Множитель применён. Монеты зачислены.' : '',
+    nextMultiplier: r.nextMultiplier
+  };
+}
+
+const tabs = ['home', 'play', 'shop', 'profile'];
+const shopTabs = ['coins', 'tickets', 'premium', 'nft', 'transfer'];
+const clanTabs = ['my', 'chat', 'top'];
+const PREMIUM_CARDS = 10;
+
+// Кодируем text-комментарий для TON-перевода как base64 BoC.
+// Формат ячейки: 4 байта (op = 0) + UTF-8 строка, упаковано в Bag of Cells.
+function encodeTonComment(text) {
+  const encoder = new TextEncoder();
+  const textBytes = encoder.encode(text);
+  // 4 байта op (0) + текст
+  const payload = new Uint8Array(4 + textBytes.length);
+  payload.set([0, 0, 0, 0], 0);
+  payload.set(textBytes, 4);
+  const bits = payload.length * 8;
+  // Cell descriptors: refs=0, hasBits, fullBytes
+  const d1 = 0; // 0 refs, ordinary
+  const d2 = ((bits / 8) | 0) * 2; // augmented = even
+  // BoC serialization (упрощённая, для 1 cell без рефов)
+  // header: magic b5ee9c72, flags=00 (has_idx=0, has_crc32=0, hasCacheBits=0, flags=0, sizeBytes=1)
+  // offsetBytes=1, cellCount=1, rootCount=1, absent=0, totalCellSize=2+payload.length
+  const cellSize = 2 + payload.length;
+  const boc = new Uint8Array(4 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + cellSize);
+  let off = 0;
+  boc.set([0xb5, 0xee, 0x9c, 0x72], off); off += 4;
+  boc[off++] = 0x01; // size_bytes & flags: has_idx=0, hash_crc=0, has_cache_bits=0, flags=0, size_bytes=1
+  boc[off++] = 0x01; // off_bytes=1
+  boc[off++] = 0x01; // cells=1
+  boc[off++] = 0x01; // roots=1
+  boc[off++] = 0x00; // absent=0
+  boc[off++] = cellSize; // tot_cells_size=cellSize
+  boc[off++] = 0x00; // root_list: index 0
+  boc[off++] = d1;
+  boc[off++] = d2;
+  boc.set(payload, off);
+  // → base64
+  let bin = '';
+  for (let i = 0; i < boc.length; i++) bin += String.fromCharCode(boc[i]);
+  return btoa(bin);
+}
+
+function App() {
+  const [state, setState] = useState(createInitialState);
+  const [tab, setTab] = useState('home');
+  const [homeView, setHomeView] = useState('hall'); // hall | tournament
+  const modeId = 'premium';
+  const [willView, setWillView] = useState('pvp'); // pvp | solo
+  const [pvpState, setPvpState] = useState(null);
+  const [pvpBuying, setPvpBuying] = useState(false);
+  const [projectTonWallet, setProjectTonWallet] = useState(null);
+  const [ticketPacks, setTicketPacks] = useState({ cheap: [], premium: [] });
+  const [splashActive, setSplashActive] = useState(true);
+  const [bootReady, setBootReady] = useState(false);
+  const [tournament, setTournament] = useState(null);
+  const [refData, setRefData] = useState(null);
+  const [roundArmed, setRoundArmed] = useState(false);
+  const [selectedClause, setSelectedClause] = useState(null);
+  const [revealing, setRevealing] = useState(false);
+  const [result, setResult] = useState(null);
+  const [roundIndex, setRoundIndex] = useState(0);
+  const [shopTab, setShopTab] = useState('coins');
+  const [clanTab, setClanTab] = useState('my');
+  const [historyFilter, setHistoryFilter] = useState('all');
+  const [toast, setToast] = useState(null);
+  const [depositOpen, setDepositOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState('stars');
+  const [payPending, setPayPending] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [passOpen, setPassOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [roundId, setRoundId] = useState(null);
+  const [starsPacks, setStarsPacks] = useState([]);
+  const [tonPacks, setTonPacks] = useState([]);
+  const [tonIntent, setTonIntent] = useState(null);
+  const [playerProfileOpen, setPlayerProfileOpen] = useState(null); // {userId, name}
+  const [playerProfileData, setPlayerProfileData] = useState(null);
+  const [liveWins, setLiveWins] = useState([]);
+  const [sendBotLink, setSendBotLink] = useState(null);
+  const [pvpShuffling, setPvpShuffling] = useState(false);
+
+  // Real TON Connect
+  const [tonConnectUI] = useTonConnectUI();
+  const wallet = useTonWallet();
+  const tonWallet = wallet ? { address: wallet.account.address } : null;
+
+  useEffect(() => {
+    const webApp = window.Telegram?.WebApp;
+    if (!webApp) return;
+    webApp.ready();
+    webApp.expand();
+    try {
+      webApp.setHeaderColor?.('#0b0b10');
+      webApp.setBackgroundColor?.('#070707');
+    } catch (e) {}
+  }, []);
+
+  // Pull real balance / stats / packs / tournament / referral from the backend.
+  useEffect(() => {
+    api.bootstrap()
+      .then((data) => {
+        setState((current) => ({
+          ...current,
+          player: { ...current.player, ...data.player }
+        }));
+        setStarsPacks(data.starsPacks || []);
+        setTonPacks(data.tonPacks || []);
+        if (data.tournament) setTournament(data.tournament);
+        if (data.referral) setRefData(data.referral);
+        if (data.projectTonWallet) setProjectTonWallet(data.projectTonWallet);
+        if (data.ticketPacks) setTicketPacks(data.ticketPacks);
+        if (data.liveWins) setLiveWins(data.liveWins);
+        if (data.sendBotLink) setSendBotLink(data.sendBotLink);
+      })
+      .catch((e) => console.warn('bootstrap failed', e.message))
+      .finally(() => setBootReady(true));
+  }, []);
+
+  // Перепроверка турнира при открытии вкладки.
+  useEffect(() => {
+    if (homeView === 'tournament') {
+      api.tournament().then(setTournament).catch(() => {});
+    }
+  }, [homeView]);
+
+  // Polling PvP лобби пока пользователь на Will/pvp.
+  useEffect(() => {
+    let cancelled = false;
+    let timer;
+    if (tab !== 'play' || willView !== 'pvp') return undefined;
+    const tick = async () => {
+      try {
+        const s = await api.pvpState('cheap');
+        if (!cancelled) setPvpState(s);
+      } catch (e) {
+        console.warn('pvp state failed', e.status, e.message);
+      }
+      if (!cancelled) timer = setTimeout(tick, 2000);
+    };
+    tick();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [tab, willView]);
+
+  const buyTickets = async (type, pack) => {
+    try {
+      const res = await api.buyTickets(type, pack.id);
+      setState((current) => ({
+        ...current,
+        player: { ...current.player, coins: res.balance, tickets: res.player.tickets }
+      }));
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
+      notify(`+${pack.count} карт${pack.count > 1 ? '' : 'а'} · ${type === 'cheap' ? 'дешёвых' : 'премиум'}`, 'success');
+    } catch (e) {
+      if (e.message === 'insufficient_balance') notify('Недостаточно монет', 'danger');
+      else notify('Не удалось купить', 'danger');
+    }
+  };
+
+  const buyPvpCard = async (cardIndex) => {
+    if (pvpBuying) return;
+    setPvpBuying(true);
+    try {
+      const s = await api.pvpBuy('cheap', cardIndex);
+      setPvpState({ lobby: s.lobby, cards: s.cards });
+      setState((current) => {
+        const tickets = { ...current.player.tickets };
+        if (s.usedTicket) tickets.cheap = Math.max(0, (tickets.cheap || 0) - 1);
+        return {
+          ...current,
+          player: {
+            ...current.player,
+            coins: s.balance ?? current.player.coins,
+            welcomeAvailable: s.welcomeApplied ? false : current.player.welcomeAvailable,
+            pvpTotalReveals: (current.player.pvpTotalReveals || 0) + 1,
+            tickets
+          }
+        };
+      });
+      const freeMsg = s.freeTillNext > 0 ? ` · ещё ${s.freeTillNext} до бесплатного` : '';
+      notify(
+        s.wasFree && !s.welcomeApplied ? `Бесплатная карта!${freeMsg}` :
+        s.welcomeApplied ? `Приветственная карта${freeMsg}` :
+        s.usedTicket    ? `Сжёг билет${freeMsg}` :
+        `Карта ${cardIndex + 1} запечатана${freeMsg}`,
+        s.wasFree ? 'success' : 'violet'
+      );
+      window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('medium');
+    } catch (e) {
+      console.error('pvp buy failed', e);
+      if (e.message === 'card already taken') notify('Карту уже забрали', 'danger');
+      else if (e.message === 'insufficient_balance') notify('Недостаточно монет', 'danger');
+      else if (e.status === 401) notify('Авторизация: запусти бэк с ALLOW_DEV_AUTH=1', 'danger');
+      else if (!e.status) notify('Бэкенд не отвечает (порт 3000?)', 'danger');
+      else notify(`Ошибка ${e.status}: ${e.message}`, 'danger');
+    } finally {
+      setPvpBuying(false);
+    }
+  };
+
+  const openPlayerProfile = useCallback(async (userId) => {
+    if (!userId) return;
+    setPlayerProfileOpen({ userId });
+    setPlayerProfileData(null);
+    try {
+      const data = await api.playerProfile(userId);
+      setPlayerProfileData(data);
+    } catch (e) {
+      setPlayerProfileData({ error: true });
+    }
+  }, []);
+
+  const claimRef = async () => {
+    try {
+      const res = await api.claimReferral();
+      if (res.claimed > 0) {
+        setState((c) => ({ ...c, player: { ...c.player, coins: res.balance, refPending: 0 } }));
+        setRefData((r) => r ? { ...r, pending: 0 } : r);
+        notify(`+${formatCoins(res.claimed)} монет реферальных`, 'success');
+      } else {
+        notify('Нет начислений для вывода', 'default');
+      }
+    } catch {
+      notify('Ошибка сети', 'danger');
+    }
+  };
+
+  const mode = state.wills.find((item) => item.id === modeId) || state.wills[0];
+
+  const history = useMemo(() => {
+    if (historyFilter === 'all') return state.history;
+    return state.history.filter((item) => item.type === historyFilter);
+  }, [historyFilter, state.history]);
+
+  const notify = (text, tone = 'default') => {
+    setToast({ text, tone, id: Date.now() });
+    clearTimeout(notify.timer);
+    notify.timer = setTimeout(() => setToast(null), 2200);
+  };
+
+  // mode фиксирован — премиум. Дешёвое теперь PvP.
+  // eslint-disable-next-line no-unused-vars
+  const switchMode = () => {};
+
+  const earnXP = (amount) => {
+    setState((current) => {
+      const rawXp = current.player.passXp + amount;
+      const levelsGained = Math.floor(rawXp / XP_PER_LEVEL);
+      const newXp = rawXp % XP_PER_LEVEL;
+      const newLevel = current.player.passLevel + levelsGained;
+      const progress = Math.round((newXp / XP_PER_LEVEL) * 100);
+      return {
+        ...current,
+        player: { ...current.player, passXp: newXp, passLevel: newLevel, passProgress: progress },
+        pass: {
+          ...current.pass,
+          level: newLevel,
+          xpLabel: `${new Intl.NumberFormat('ru-RU').format(newXp)} / ${new Intl.NumberFormat('ru-RU').format(XP_PER_LEVEL)} XP`
+        }
+      };
+    });
+  };
+
+  const claimDaily = () => {
+    if (!state.dailyBonus.claimable) return;
+    setState((current) => ({
+      ...current,
+      dailyBonus: { ...current.dailyBonus, claimable: false },
+      player: { ...current.player, coins: current.player.coins + current.dailyBonus.coins }
+    }));
+    earnXP(150);
+    notify(`+${formatCoins(state.dailyBonus.coins)} монет`, 'success');
+  };
+
+  const claimPassReward = (level, tier) => {
+    const reward = state.pass.rewards.find((r) => r.level === level);
+    if (!reward || reward[tier].state !== 'claimable') return;
+    const credit = parseRewardCredit(reward[tier].title);
+    setState((current) => ({
+      ...current,
+      player: { ...current.player, coins: current.player.coins + credit },
+      pass: {
+        ...current.pass,
+        rewards: current.pass.rewards.map((r) =>
+          r.level === level ? { ...r, [tier]: { ...r[tier], state: 'claimed' } } : r
+        )
+      },
+      history: credit > 0 ? [
+        { id: `pass-${Date.now()}`, type: 'shop', title: `Pass reward Lvl ${level}`, date: 'Только что', amount: credit, status: 'completed' },
+        ...current.history
+      ] : current.history
+    }));
+    notify(credit > 0 ? `+${formatCoins(credit)} монет • Lvl ${level}` : `Награда Lvl ${level} получена`, 'success');
+  };
+
+  const claimQuest = (questId, questType) => {
+    const key = questType === 'daily' ? 'daily' : 'weekly';
+    const quest = state.pass[key].find((q) => q.id === questId);
+    if (!quest || quest.state !== 'claimable') return;
+    setState((current) => ({
+      ...current,
+      pass: {
+        ...current.pass,
+        [key]: current.pass[key].map((q) => q.id === questId ? { ...q, state: 'claimed' } : q)
+      }
+    }));
+    earnXP(quest.xp);
+    notify(`+${quest.xp} XP • задание выполнено`, 'violet');
+  };
+
+  const handleStarsPay = async (pack) => {
+    const webApp = window.Telegram?.WebApp;
+    setPayPending(true);
+    try {
+      const res = await api.createDeposit('stars', pack.id);
+      setPayPending(false);
+      if (!res.invoiceLink) {
+        notify('Stars не настроены на сервере', 'danger');
+        return;
+      }
+      if (webApp && webApp.openInvoice) {
+        webApp.openInvoice(res.invoiceLink, async (status) => {
+          if (status === 'paid') {
+            webApp.HapticFeedback?.notificationOccurred?.('success');
+            try {
+              const data = await api.bootstrap();
+              setState((c) => ({ ...c, player: { ...c.player, ...data.player } }));
+              setDepositOpen(false);
+              notify(`+${formatCoins(pack.coins + pack.bonus)} монет зачислено`, 'success');
+            } catch { notify('Баланс обновится через секунду', 'default'); }
+          } else if (status === 'cancelled') {
+            notify('Оплата отменена', 'default');
+          } else if (status === 'failed') {
+            webApp.HapticFeedback?.notificationOccurred?.('error');
+            notify('Платёж не прошёл', 'danger');
+          } else {
+            notify('Платёж в обработке', 'default');
+          }
+        });
+      } else {
+        // Браузерный fallback: открыть инвойс отдельной вкладкой.
+        window.open(res.invoiceLink, '_blank', 'noopener,noreferrer');
+        notify('Открыли счёт в новой вкладке', 'default');
+      }
+    } catch (e) {
+      setPayPending(false);
+      notify(e.status === 401 ? 'Открой в Telegram' : 'Ошибка соединения', 'danger');
+    }
+  };
+
+  const handleTonPay = async (pack) => {
+    setPayPending(true);
+    try {
+      const res = await api.createDeposit('ton', pack.id);
+      setPayPending(false);
+      if (!res.depositId) {
+        notify('TON-кошелёк проекта не настроен', 'danger');
+        return;
+      }
+      setTonIntent(res);
+
+      // Если подключен TON Connect — открываем подпись транзакции в кошельке.
+      if (tonConnectUI && wallet) {
+        try {
+          // text comment как base64 cell (минимальный BoC c строкой)
+          const payload = encodeTonComment(res.comment);
+          await tonConnectUI.sendTransaction({
+            validUntil: Math.floor(Date.now() / 1000) + 600,
+            messages: [{
+              address: res.wallet,
+              amount: String(res.amountNanoton),
+              payload
+            }]
+          });
+          notify('Транзакция отправлена · ждём подтверждения', 'violet');
+          // Опрашиваем статус депозита в фоне
+          pollDepositUntilPaid(res.depositId, pack);
+        } catch (e) {
+          notify('Подпись отменена. Используй реквизиты ниже', 'default');
+        }
+      } else {
+        notify('Скопируй комментарий и сумму, либо нажми «Открыть кошелёк»', 'default');
+      }
+    } catch (e) {
+      setPayPending(false);
+      notify('Ошибка соединения', 'danger');
+    }
+  };
+
+  const pollDepositUntilPaid = async (depositId, pack) => {
+    const deadline = Date.now() + 5 * 60 * 1000;
+    while (Date.now() < deadline) {
+      try {
+        const s = await api.depositStatus(depositId);
+        if (s.status === 'paid') {
+          const data = await api.bootstrap();
+          setState((c) => ({ ...c, player: { ...c.player, ...data.player } }));
+          setDepositOpen(false);
+          setTonIntent(null);
+          notify(`+${formatCoins(pack.coins + pack.bonus)} монет зачислено`, 'success');
+          window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
+          return;
+        }
+      } catch {}
+      await new Promise((r) => setTimeout(r, 4000));
+    }
+  };
+
+  const handleCryptobotPay = async (pack) => {
+    setPayPending(true);
+    try {
+      const res = await api.createDeposit('cryptobot', pack.id);
+      setPayPending(false);
+      setTonIntent({ ...res, isCryptobot: true });
+      // Открываем @send deeplink
+      const link = res.deepLink || `https://t.me/send?start=IVA6oMXOKQEF`;
+      if (window.Telegram?.WebApp?.openTelegramLink) {
+        window.Telegram.WebApp.openTelegramLink(link);
+      } else {
+        window.open(link, '_blank');
+      }
+      notify('Укажи сумму и комментарий в @send', 'violet');
+      pollDepositUntilPaid(res.depositId, pack);
+    } catch (e) {
+      setPayPending(false);
+      notify('Ошибка соединения', 'danger');
+    }
+  };
+
+  const connectTonWallet = () => tonConnectUI.openModal();
+  const disconnectTonWallet = () => tonConnectUI.disconnect();
+
+  const buyNft = (item) => {
+    if (state.player.coins < item.priceCoins) {
+      notify('Недостаточно монет', 'danger');
+      return;
+    }
+    setState((current) => ({
+      ...current,
+      player: { ...current.player, coins: current.player.coins - item.priceCoins },
+      transfers: [
+        { id: `TR-${Math.floor(Date.now() / 1000)}`, asset: item.title, priceCoins: item.priceCoins, date: 'Только что', status: 'pending', comment: 'NFT будет передан через Portals App после проверки.', delay: '8h' },
+        ...current.transfers
+      ],
+      history: [
+        { id: `nft-${Date.now()}`, type: 'transfer', title: item.title, date: 'Только что', amount: -item.priceCoins, status: 'pending' },
+        ...current.history
+      ]
+    }));
+    notify('Transfer заявка создана', 'violet');
+  };
+
+  const buyPremium = (offer) => {
+    if (offer.active) return;
+    const webApp = window.Telegram?.WebApp;
+    if (webApp) {
+      notify(`Запуск оплаты: ${offer.title}`, 'violet');
+    } else {
+      setState((current) => ({
+        ...current,
+        shop: {
+          ...current.shop,
+          premiumOffers: current.shop.premiumOffers.map((o) =>
+            o.id === offer.id ? { ...o, active: true } : o
+          )
+        },
+        history: [
+          { id: `prem-${Date.now()}`, type: 'shop', title: offer.title, date: 'Только что', amount: 0, status: 'active' },
+          ...current.history
+        ]
+      }));
+      notify(`${offer.title} активирован`, 'success');
+    }
+  };
+
+  // Buy entry on the server: it debits atomically and commits a server seed.
+  const armRound = async () => {
+    if (roundArmed || result || revealing) return;
+    try {
+      const out = await api.arm(modeId);
+      setState((current) => {
+        const tickets = { ...current.player.tickets };
+        if (out.usedTicket) tickets.premium = Math.max(0, (tickets.premium || 0) - 1);
+        return { ...current, player: { ...current.player, coins: out.balance, tickets } };
+      });
+      setRoundId(out.roundId);
+      setRoundArmed(true);
+      notify(out.usedTicket ? 'Сжёг премиум-карту' : 'Завещание запечатано', 'violet');
+    } catch (e) {
+      if (e.message === 'insufficient_balance') notify('Недостаточно монет для входа', 'danger');
+      else notify('Ошибка сети', 'danger');
+    }
+  };
+
+  // Reveal on the server: it decides the outcome from the committed seed.
+  const playRound = async (index) => {
+    if (!roundArmed || result || revealing || !roundId) {
+      if (!roundArmed && !result) notify('Сначала купи завещание', 'default');
+      return;
+    }
+    setSelectedClause(index);
+    setRevealing(true);
+    try {
+      const out = await api.reveal(roundId, index);
+      const resolved = mapResult(out.result);
+      window.setTimeout(() => {
+        setResult(resolved);
+        setRevealing(false);
+        setRoundArmed(false);
+        setRoundId(null);
+        setRoundIndex((current) => current + 1);
+        setState((current) => ({
+          ...current,
+          player: {
+            ...current.player,
+            coins: out.balance,
+            multiplier: resolved.nextMultiplier ?? current.player.multiplier,
+            gamesPlayed: current.player.gamesPlayed + 1,
+            coinsWon: current.player.coinsWon + resolved.creditCoins,
+            bestWin: Math.max(current.player.bestWin, resolved.creditCoins)
+          }
+        }));
+        earnXP(XP_PER_ROUND[mode.id] || 45);
+        notify(
+          resolved.type === 'debt' ? 'Ставка сгорела' :
+          resolved.type === 'empty' ? 'Контракт пуст' : 'Результат зачислен',
+          resolved.type === 'debt' ? 'danger' : 'success'
+        );
+      }, 1180);
+    } catch (e) {
+      setRevealing(false);
+      setSelectedClause(null);
+      notify('Ошибка сети', 'danger');
+    }
+  };
+
+  const resetRound = () => {
+    setSelectedClause(null);
+    setResult(null);
+    setRevealing(false);
+    setRoundArmed(false);
+    setRoundId(null);
+  };
+
+  const joinClan = (clanName) => {
+    if (state.clans.myClan.name === clanName) {
+      notify('Ты уже в этом клане', 'default');
+      return;
+    }
+    notify(`Заявка в ${clanName} отправлена`, 'violet');
+  };
+
+  const botUsername = 'deadwill_bot';
+  const refCode = refData?.code || state.player?.refCode || state.referral?.code;
+  const refLink = `https://t.me/${botUsername}?start=${refCode}`;
+
+  const copyRefLink = () => {
+    navigator.clipboard?.writeText(refLink).catch(() => {});
+    window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+    notify('Ссылка скопирована', 'success');
+  };
+
+  const shareRef = () => {
+    const text = `DEADWILL — выбери запечатанное завещание. Мой код: ${refCode}`;
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${encodeURIComponent(text)}`;
+    if (window.Telegram?.WebApp?.openTelegramLink) {
+      window.Telegram.WebApp.openTelegramLink(shareUrl);
+    } else {
+      window.open(shareUrl, '_blank');
+    }
+    notify('Открываем Telegram', 'violet');
+  };
+
+  const claimRefReward = (level) => {
+    const reward = state.referral.rewards.find((r) => r.level === level);
+    if (!reward || reward.state !== 'claimable') return;
+    const creditMatch = reward.reward.match(/[\d\s]+/);
+    const credit = creditMatch ? parseInt(creditMatch[0].replace(/\s/g, ''), 10) : 0;
+    setState((current) => ({
+      ...current,
+      referral: {
+        ...current.referral,
+        earned: current.referral.earned + credit,
+        rewards: current.referral.rewards.map((r) =>
+          r.level === level ? { ...r, state: 'claimed' } : r
+        )
+      },
+      player: { ...current.player, coins: current.player.coins + credit }
+    }));
+    notify(credit > 0 ? `+${formatCoins(credit)} монет — реферальная награда` : `Награда за реферала #${level} получена`, 'success');
+  };
+
+  const adminApproveTransfer = (id) => {
+    setState((current) => ({
+      ...current,
+      transfers: current.transfers.map((t) => t.id === id ? { ...t, status: 'approved' } : t)
+    }));
+    notify(`Transfer ${id} одобрен`, 'success');
+  };
+
+  const adminRejectTransfer = (id) => {
+    setState((current) => ({
+      ...current,
+      transfers: current.transfers.map((t) => t.id === id ? { ...t, status: 'rejected' } : t)
+    }));
+    notify(`Transfer ${id} отклонен`, 'danger');
+  };
+
+  return (
+    <div className={`dw-shell screen-${tab}`}>
+      <AnimatePresence>
+        {splashActive && (
+          <Splash
+            duration={bootReady ? 1800 : 2400}
+            onDone={() => setSplashActive(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <div className="dw-global-backdrop" />
+      <div className={`dw-scene scene-${tab}`} />
+
+      <div className="dw-phone-shell">
+        <main className="dw-app">
+          <TopBar player={state.player} tonWallet={tonWallet} onOpenDeposit={() => setDepositOpen(true)} />
+
+          {tab === 'home' && (
+            <HomeTab
+              player={state.player}
+              dailyBonus={state.dailyBonus}
+              tournament={tournament}
+              view={homeView}
+              onViewChange={setHomeView}
+              onClaimDaily={claimDaily}
+              onOpenPlay={() => setTab('play')}
+              onOpenDeposit={() => setDepositOpen(true)}
+              onOpenInfo={() => setInfoOpen(true)}
+            />
+          )}
+
+          {tab === 'play' && (
+            <WillTab
+              view={willView}
+              onViewChange={setWillView}
+              mode={state.wills.find((w) => w.id === 'premium') || state.wills[0]}
+              balance={state.player.coins}
+              multiplier={state.player.multiplier}
+              roundArmed={roundArmed}
+              revealing={revealing}
+              selectedClause={selectedClause}
+              result={result}
+              welcomeAvailable={state.player.welcomeAvailable}
+              tickets={state.player.tickets || { cheap: 0, premium: 0 }}
+              pvpTotalReveals={state.player.pvpTotalReveals || 0}
+              pvpState={pvpState}
+              pvpBuying={pvpBuying}
+              onArmRound={armRound}
+              onPickClause={playRound}
+              onResetRound={resetRound}
+              onBuyPvpCard={buyPvpCard}
+              onOpenDeposit={() => setDepositOpen(true)}
+              onOpenShopTickets={() => { setTab('shop'); setShopTab('tickets'); }}
+              onOpenPlayerProfile={openPlayerProfile}
+            />
+          )}
+
+          {tab === 'clans' && (
+            <ClansTab
+              clans={state.clans}
+              clanTab={clanTab}
+              onTabChange={setClanTab}
+              player={state.player}
+              onJoinClan={joinClan}
+              onBack={() => setTab('profile')}
+            />
+          )}
+
+          {tab === 'referral' && (
+            <ReferralTab
+              referral={refData || state.referral}
+              player={state.player}
+              onCopy={copyRefLink}
+              onShare={shareRef}
+              onClaimReward={claimRefReward}
+              onClaimRef={claimRef}
+              onBack={() => setTab('profile')}
+            />
+          )}
+
+          {tab === 'shop' && (
+            <ShopTab
+              currentTab={shopTab}
+              onTabChange={setShopTab}
+              shop={state.shop}
+              starsPacks={starsPacks}
+              tonPacks={tonPacks}
+              ticketPacks={ticketPacks}
+              player={state.player}
+              transfers={state.transfers}
+              onBuyNft={buyNft}
+              onBuyPremium={buyPremium}
+              onBuyTickets={buyTickets}
+              onStarsPay={handleStarsPay}
+              onTonPay={handleTonPay}
+              payPending={payPending}
+            />
+          )}
+
+          {tab === 'profile' && (
+            <ProfileTab
+              player={state.player}
+              sections={state.profileSections}
+              filters={historyFilters}
+              activeFilter={historyFilter}
+              onFilterChange={setHistoryFilter}
+              history={history}
+              notifications={state.notifications}
+              transfers={state.transfers}
+              tonWallet={tonWallet}
+              onConnectTon={connectTonWallet}
+              onDisconnectTon={disconnectTonWallet}
+              onOpenAdmin={() => setAdminOpen(true)}
+              onOpenPass={() => setPassOpen(true)}
+              onOpenClans={() => setTab('clans')}
+              onOpenRef={() => setTab('referral')}
+            />
+          )}
+        </main>
+
+        <BottomBar items={tabs} tab={tab} onTabChange={setTab} />
+      </div>
+
+      {depositOpen && (
+        <DepositSheet
+          method={paymentMethod}
+          onClose={() => { setDepositOpen(false); setTonIntent(null); }}
+          onMethodChange={setPaymentMethod}
+          starsPacks={starsPacks}
+          tonPacks={tonPacks}
+          onStarsPay={handleStarsPay}
+          onTonPay={handleTonPay}
+          onCryptobotPay={handleCryptobotPay}
+          payPending={payPending}
+          tonWallet={tonWallet}
+          tonIntent={tonIntent}
+          onConnectTon={connectTonWallet}
+          sendBotLink={sendBotLink}
+        />
+      )}
+
+      {playerProfileOpen && (
+        <PlayerProfileModal
+          userId={playerProfileOpen.userId}
+          data={playerProfileData}
+          onClose={() => { setPlayerProfileOpen(null); setPlayerProfileData(null); }}
+        />
+      )}
+
+      {passOpen && (
+        <PassOverlay
+          passData={state.pass}
+          player={state.player}
+          onClose={() => setPassOpen(false)}
+          onClaimReward={claimPassReward}
+          onClaimQuest={claimQuest}
+        />
+      )}
+
+      {(revealing || result) && (
+        <ContractOverlay
+          mode={mode}
+          result={result}
+          revealing={revealing}
+          selectedClause={selectedClause}
+          onReplay={resetRound}
+          onClose={resetRound}
+        />
+      )}
+
+      {infoOpen && <InfoSheet onClose={() => setInfoOpen(false)} />}
+
+      {adminOpen && (
+        <AdminPanel
+          state={state}
+          onClose={() => setAdminOpen(false)}
+          onApproveTransfer={adminApproveTransfer}
+          onRejectTransfer={adminRejectTransfer}
+        />
+      )}
+
+      {toast && <Toast toast={toast} />}
+    </div>
+  );
+}
+
+/* ─── Top bar ─────────────────────────────────────────────── */
+
+function TopBar({ player, tonWallet, onOpenDeposit }) {
+  return (
+    <motion.header
+      className="dw-topbar"
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: [0.2, 0, 0, 1] }}
+    >
+      <div className="dw-profile-compact">
+        <div className="dw-avatar">{(player.name || '?').slice(0, 1).toUpperCase()}</div>
+        <div className="dw-profile-copy-compact">
+          <strong>{player.name}</strong>
+          {tonWallet && (
+            <motion.span
+              className="dw-ton-status"
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.25 }}
+            >
+              <span className="dw-ton-dot" />
+              <span className="dw-ton-addr">
+                {tonWallet.address.slice(0, 4)}…{tonWallet.address.slice(-4)}
+              </span>
+            </motion.span>
+          )}
+        </div>
+      </div>
+      <button className="dw-balance-pill" onClick={onOpenDeposit}>
+        <span className="dw-coin-dot" />
+        <strong className="dw-balance-num">{formatCoins(player.coins)}</strong>
+        <span className="dw-plus-sign">+</span>
+      </button>
+    </motion.header>
+  );
+}
+
+/* ─── Death Seal · CSS hero ──────────────────────────────── */
+
+function DeathSeal() {
+  return (
+    <div className="dw-death-seal" aria-hidden="true">
+      <div className="dw-seal-glyph">
+        <div className="dw-seal-skull">
+          <svg viewBox="0 0 100 110" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="dw-gold-grad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"  stopColor="#f0d57a" />
+                <stop offset="55%" stopColor="#d4af37" />
+                <stop offset="100%" stopColor="#8a6c1c" />
+              </linearGradient>
+            </defs>
+
+            {/* Череп: купол + скуловые кости */}
+            <path
+              className="skull-fill"
+              d="M50 6
+                 C 28 6, 14 22, 14 44
+                 C 14 56, 18 64, 24 70
+                 L 24 80
+                 C 24 84, 27 87, 31 87
+                 L 33 87
+                 L 33 92
+                 C 33 95, 35 97, 38 97
+                 L 42 97
+                 L 42 90
+                 L 46 90
+                 L 46 97
+                 L 54 97
+                 L 54 90
+                 L 58 90
+                 L 58 97
+                 L 62 97
+                 C 65 97, 67 95, 67 92
+                 L 67 87
+                 L 69 87
+                 C 73 87, 76 84, 76 80
+                 L 76 70
+                 C 82 64, 86 56, 86 44
+                 C 86 22, 72 6, 50 6 Z"
+            />
+
+            {/* Глазницы */}
+            <ellipse className="skull-eye" cx="34" cy="46" rx="9" ry="11" />
+            <ellipse className="skull-eye" cx="66" cy="46" rx="9" ry="11" />
+
+            {/* Тени под глазницами (трещинами) */}
+            <path className="skull-shade" d="M30 56 Q 34 62 38 56 L 36 60 L 32 60 Z" />
+            <path className="skull-shade" d="M62 56 Q 66 62 70 56 L 68 60 L 64 60 Z" />
+
+            {/* Нос (треугольник) */}
+            <path
+              className="skull-nose"
+              d="M50 58 L 45 72 Q 50 76 55 72 Z"
+            />
+
+            {/* Зубы — вертикальные разрезы */}
+            <rect className="skull-tooth-gap" x="36" y="80" width="1.6" height="9" />
+            <rect className="skull-tooth-gap" x="41" y="80" width="1.6" height="9" />
+            <rect className="skull-tooth-gap" x="46" y="80" width="1.6" height="9" />
+            <rect className="skull-tooth-gap" x="51" y="80" width="1.6" height="9" />
+            <rect className="skull-tooth-gap" x="56" y="80" width="1.6" height="9" />
+            <rect className="skull-tooth-gap" x="61" y="80" width="1.6" height="9" />
+
+            {/* Горизонтальная челюстная линия */}
+            <rect className="skull-tooth-gap" x="30" y="78" width="40" height="1.2" />
+
+            {/* Трещина на лбу */}
+            <path
+              className="skull-shade"
+              d="M 50 8 L 48 14 L 51 20 L 49 26 L 52 32"
+              fill="none"
+              stroke="rgba(0,0,0,0.5)"
+              strokeWidth="0.8"
+              strokeLinecap="round"
+            />
+          </svg>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Home tab ────────────────────────────────────────────── */
+
+function timeLeft(endIso) {
+  if (!endIso) return null;
+  const diff = new Date(endIso).getTime() - Date.now();
+  if (diff <= 0) return 'завершён';
+  const d = Math.floor(diff / 86400000);
+  const h = Math.floor((diff % 86400000) / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  if (d > 0) return `${d}д ${h}ч`;
+  if (h > 0) return `${h}ч ${m}м`;
+  return `${m}м`;
+}
+
+function HomeTab({ player, dailyBonus, tournament, view, onViewChange, onClaimDaily, onOpenPlay, onOpenDeposit }) {
+  return (
+    <section className="dw-page dw-home-page">
+      <div className="dw-home-tabs">
+        <button className={`dw-home-tab ${view === 'hall' ? 'active' : ''}`} onClick={() => onViewChange('hall')}>
+          Зал
+        </button>
+        <button className={`dw-home-tab ${view === 'tournament' ? 'active' : ''}`} onClick={() => onViewChange('tournament')}>
+          Турниры
+        </button>
+      </div>
+
+      {view === 'hall' && (
+        <>
+          <section className="dw-home-hero">
+            <motion.div
+              className="dw-hero-inner"
+              initial={{ opacity: 0, y: 22 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: [0.2, 0, 0, 1] }}
+            >
+              <DeathSeal />
+              <h1 className="dw-hero-title">DEADWILL</h1>
+              <p className="dw-hero-subtitle">пять запечатанных<br />завещаний</p>
+              <div className="dw-flourish"><span className="dw-flourish-dot" /></div>
+              <p className="dw-hero-sub">выбери одно из пяти</p>
+            </motion.div>
+
+            <motion.div
+              className="dw-hero-actions"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.22, ease: [0.2, 0, 0, 1] }}
+            >
+              <button className="dw-btn primary full" onClick={onOpenPlay}>
+                {player.welcomeAvailable ? 'начать · бесплатно' : 'играть'}
+              </button>
+              <button className="dw-btn ghost full" onClick={onOpenDeposit}>пополнить</button>
+            </motion.div>
+          </section>
+
+          {dailyBonus.claimable && (
+            <motion.button
+              className="dw-daily-chip"
+              onClick={onClaimDaily}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3, delay: 0.38 }}
+              whileTap={{ scale: 0.97 }}
+            >
+              <span className="dw-daily-chip-copy">
+                <span className="dw-kicker">ежедневный сбор</span>
+                <strong>+{formatCoins(dailyBonus.coins)}</strong>
+              </span>
+              <span className="dw-daily-chip-cta">забрать ›</span>
+            </motion.button>
+          )}
+        </>
+      )}
+
+      {view === 'tournament' && (
+        <TournamentSection tournament={tournament} />
+      )}
+    </section>
+  );
+}
+
+/* ─── Tournament section ──────────────────────────────────── */
+
+function TournamentSection({ tournament }) {
+  if (!tournament) {
+    return (
+      <article className="dw-empty-state">
+        <div className="dw-empty-seal">DW</div>
+        <strong>Турнир собирает участников</strong>
+        <p>Сыграй раунд — и попадешь в текущий цикл.</p>
+      </article>
+    );
+  }
+
+  const left = timeLeft(tournament.endsAt);
+  const prizeClass = (place) => place === 1 ? 'gold' : place === 2 ? 'silver' : place === 3 ? 'bronze' : '';
+
+  return (
+    <article className="dw-tour-card">
+      <div className="dw-tour-head">
+        <div>
+          <span className="dw-kicker">Турнир · цикл 3 дня</span>
+          <h2>{tournament.title}</h2>
+        </div>
+        <span className="dw-tour-timer">До конца · {left}</span>
+      </div>
+
+      <div className="dw-tour-prizes">
+        {tournament.prizes.map((p) => (
+          <div key={p.place} className={`dw-tour-prize ${prizeClass(p.place)}`}>
+            <span className="dw-tour-prize-place">{p.place} место</span>
+            <strong className="dw-tour-prize-amount">{p.label}</strong>
+          </div>
+        ))}
+      </div>
+
+      <div className="dw-tour-meta">
+        <span>Участников: <strong>{tournament.participants}</strong></span>
+        <span>Твой счёт: <strong>{tournament.me ? formatCompact(tournament.me.score) : '0'}</strong></span>
+      </div>
+
+      <div className="dw-tour-leaderboard">
+        {tournament.top.length === 0 ? (
+          <p style={{ textAlign: 'center', color: 'var(--bone-soft)', fontFamily: 'var(--font-serif)', fontStyle: 'italic', padding: '14px 0' }}>
+            Зал пуст. Брось первый контракт.
+          </p>
+        ) : (
+          tournament.top.map((row) => (
+            <div key={row.userId} className={`dw-tour-row ${tournament.me && tournament.me.userId === row.userId ? 'mine' : ''}`}>
+              <span className={`dw-tour-row-place ${prizeClass(row.place)}`}>{row.place}</span>
+              <span className="dw-tour-row-name">{row.name}</span>
+              <span className="dw-tour-row-score">{formatCompact(row.score)}</span>
+            </div>
+          ))
+        )}
+      </div>
+    </article>
+  );
+}
+
+/* ─── Play tab ────────────────────────────────────────────── */
+
+function WillTab(props) {
+  const { view, onViewChange } = props;
+  return (
+    <section className="dw-page dw-play-page">
+      <div className="dw-will-pager">
+        <button
+          className={`dw-will-pager-btn ${view === 'pvp' ? 'active' : ''}`}
+          onClick={() => onViewChange('pvp')}
+        >
+          PvP · Live Round
+          <small>5 монет · 36 карт</small>
+        </button>
+        <button
+          className={`dw-will-pager-btn ${view === 'solo' ? 'active' : ''}`}
+          onClick={() => onViewChange('solo')}
+        >
+          Соло · Премиум
+          <small>150 монет · 10 печатей</small>
+        </button>
+      </div>
+
+      <AnimatePresence mode="wait">
+        {view === 'pvp' ? (
+          <motion.div
+            key="pvp"
+            initial={{ opacity: 0, x: -16 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -16 }}
+            transition={{ duration: 0.25 }}
+          >
+            <PvpPanel {...props} />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="solo"
+            initial={{ opacity: 0, x: 16 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 16 }}
+            transition={{ duration: 0.25 }}
+          >
+            <SoloPanel {...props} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </section>
+  );
+}
+
+function pvpTimer(endsAt) {
+  if (!endsAt) return null;
+  const diff = new Date(endsAt).getTime() - Date.now();
+  if (diff <= 0) return '0';
+  const s = Math.floor(diff / 1000);
+  return `${s}`;
+}
+
+// Строим 36-карточный grid: 3 сверху, 6×5 посередине, 3 снизу.
+// topRow: [0,1,2], middleRows: [3..32] (6 рядов по 5), bottomRow: [33,34,35]
+function buildPvpRows(cardCount) {
+  const rows = [];
+  if (cardCount <= 0) return rows;
+  const top = [0, 1, 2].filter((i) => i < cardCount);
+  if (top.length) rows.push({ type: 'center3', indices: top });
+  const midStart = Math.min(3, cardCount);
+  const midEnd = Math.min(33, cardCount);
+  for (let i = midStart; i < midEnd; i += 5) {
+    rows.push({ type: 'row5', indices: Array.from({ length: Math.min(5, midEnd - i) }, (_, k) => i + k) });
+  }
+  const bot = [33, 34, 35].filter((i) => i < cardCount);
+  if (bot.length) rows.push({ type: 'center3', indices: bot });
+  return rows;
+}
+
+function PvpCard({ card, idx, settled, pvpBuying, lowBalance, onBuyPvpCard, onOpenPlayerProfile, shuffling }) {
+  const isRevealed = (settled || card.status === 'revealed') && card.outcome;
+  const cls = [
+    'dw-pvp-card',
+    card.taken && !card.mine ? 'taken' : '',
+    card.mine ? 'mine' : '',
+    isRevealed ? 'revealed' : '',
+    isRevealed && card.outcome.type === 'coins' ? 'win' : '',
+    isRevealed && card.outcome.type === 'empty' ? 'empty' : '',
+    shuffling ? 'shuffling' : ''
+  ].filter(Boolean).join(' ');
+
+  return (
+    <motion.button
+      className={cls}
+      disabled={pvpBuying || card.taken || settled || lowBalance}
+      onClick={() => onBuyPvpCard(idx)}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.18, delay: 0.008 * idx }}
+      whileTap={{ scale: 0.95 }}
+    >
+      {card.owner && (
+        <button
+          className="dw-pvp-avatar-btn"
+          onClick={(e) => { e.stopPropagation(); onOpenPlayerProfile(card.owner.userId); }}
+          title={card.owner.name}
+        >
+          <span className="dw-pvp-avatar">{card.owner.name.slice(0, 1).toUpperCase()}</span>
+        </button>
+      )}
+      <span className="dw-pvp-card-num">{idx + 1}</span>
+      {!isRevealed && <span className="dw-pvp-card-seal" />}
+      {isRevealed && <span className="dw-pvp-card-stamp">{card.outcome.stamp}</span>}
+    </motion.button>
+  );
+}
+
+function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvpTotalReveals, onBuyPvpCard, onOpenDeposit, onOpenPlayerProfile }) {
+  const [tick, setTick] = useState(0);
+  const [shuffling, setShuffling] = useState(false);
+  const prevStatus = React.useRef(null);
+
+  useEffect(() => {
+    const t = setInterval(() => setTick((v) => v + 1), 500);
+    return () => clearInterval(t);
+  }, []);
+  void tick;
+
+  // Shuffle animation когда лобби переходит в settled
+  useEffect(() => {
+    const status = pvpState?.lobby?.status;
+    if (prevStatus.current === 'open' && status === 'settled') {
+      setShuffling(true);
+      setTimeout(() => setShuffling(false), 1200);
+    }
+    prevStatus.current = status;
+  }, [pvpState?.lobby?.status]);
+
+  const lobby = pvpState?.lobby;
+  const cards = pvpState?.cards || [];
+  const settled = lobby && lobby.status === 'settled';
+  const timer = lobby ? pvpTimer(lobby.endsAt) : null;
+  const urgent = timer !== null && Number(timer) <= 7 && Number(timer) > 0;
+  const idle = !lobby?.openedAt && lobby?.status === 'open';
+
+  const cardCount = lobby?.cardCount ?? 36;
+  const entry = lobby?.entryCoins ?? 5;
+  const hasTicket = (tickets?.cheap || 0) > 0;
+  const welcomeFree = welcomeAvailable && cards.every((c) => !c.mine);
+  const cost = welcomeFree || hasTicket ? 0 : entry;
+  const lowBalance = balance < cost;
+  const myCards = cards.filter((c) => c.mine);
+  const priceLabel = welcomeFree ? 'free' : hasTicket ? '1 карта' : `${entry}`;
+
+  // Free spin counter
+  const FREE_EVERY = 5;
+  const reveals = pvpTotalReveals || 0;
+  const tillFree = reveals === 0 ? FREE_EVERY : FREE_EVERY - (reveals % FREE_EVERY);
+  const isFreeNext = reveals > 0 && reveals % FREE_EVERY === FREE_EVERY - 1;
+
+  const rows = buildPvpRows(cardCount);
+
+  const getCard = (i) => cards.find((c) => c.index === i) || { index: i, status: 'free', mine: false, taken: false, outcome: null, owner: null };
+
+  const gameNum = lobby?.gameNum ? `#${lobby.gameNum}` : '';
+
+  return (
+    <>
+      <div className="dw-pvp-header">
+        <div className="dw-pvp-header-left">
+          <strong>Live Round</strong>
+          <span>{settled ? 'Раунд завершён' : idle ? 'Ждём первого игрока' : 'Раунд идёт'}</span>
+        </div>
+        <div className={`dw-pvp-timer ${urgent ? 'urgent' : idle || settled ? 'idle' : ''}`}>
+          {settled ? '00' : timer ?? '35'}<span style={{ fontSize: 11, marginLeft: 4, opacity: 0.7 }}>с</span>
+        </div>
+      </div>
+
+      <div className="dw-pvp-grid-36">
+        {rows.map((row, ri) => (
+          <div key={ri} className={`dw-pvp-row ${row.type}`}>
+            {row.indices.map((i) => (
+              <PvpCard
+                key={i}
+                card={getCard(i)}
+                idx={i}
+                settled={settled}
+                pvpBuying={pvpBuying}
+                lowBalance={lowBalance}
+                onBuyPvpCard={onBuyPvpCard}
+                onOpenPlayerProfile={onOpenPlayerProfile}
+                shuffling={shuffling}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* Free spin counter */}
+      <div className="dw-pvp-free-counter">
+        {isFreeNext
+          ? <span className="dw-free-next">Следующее открытие — <strong>бесплатное!</strong></span>
+          : <span>Ещё <strong>{tillFree}^X^</strong> открытий до бесплатного</span>
+        }
+      </div>
+
+      <div className="dw-pvp-footer">
+        <span>
+          {formatCoins(balance)} монет · моих: <strong>{myCards.length}</strong>
+          {hasTicket && <span className="dw-ticket-pill" style={{ marginLeft: 8 }}>{tickets.cheap}×карт</span>}
+        </span>
+        <span>Цена: <strong>{priceLabel}</strong></span>
+      </div>
+
+      {/* Номер игры */}
+      {gameNum && (
+        <div className="dw-pvp-game-num">Игра {gameNum}</div>
+      )}
+
+      {settled && (
+        <div className="dw-pvp-empty">
+          Раунд завершён. Новое лобби откроется — нажми свободную карту.
+        </div>
+      )}
+
+      {!settled && lowBalance && (
+        <button className="dw-btn ghost full" onClick={onOpenDeposit}>
+          пополнить · мало монет
+        </button>
+      )}
+    </>
+  );
+}
+
+function SoloPanel({
+  mode, balance, multiplier, roundArmed, revealing, selectedClause, result, tickets,
+  onArmRound, onPickClause, onResetRound, onOpenDeposit
+}) {
+  const hasTicket = (tickets?.premium || 0) > 0;
+  const entry = mode?.entryCoins ?? 150;
+  const cost = hasTicket ? 0 : entry;
+  const lowBalance = balance < cost;
+
+  return (
+    <>
+      {multiplier > 1 && (
+        <div className="dw-play-mult-bar">
+          <span className="dw-badge">×{multiplier}</span>
+        </div>
+      )}
+
+      <div className={`dw-contracts-row ${roundArmed ? 'armed' : ''}`}>
+        {Array.from({ length: PREMIUM_CARDS }).map((_, index) => {
+          const selected = selectedClause === index;
+          const dimmed = selectedClause !== null && !selected;
+          return (
+            <motion.button
+              key={index}
+              className={`dw-contract-card ${selected ? 'selected' : ''} ${dimmed ? 'dimmed' : ''}`}
+              onClick={() => onPickClause(index)}
+              disabled={!roundArmed || revealing || Boolean(result)}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25, delay: 0.03 * index, ease: [0.2, 0, 0, 1] }}
+              whileTap={{ scale: 0.94 }}
+            >
+              <span className="dw-contract-num">{index + 1}</span>
+            </motion.button>
+          );
+        })}
+      </div>
+
+      <div className="dw-play-action">
+        <p className="dw-play-meta-line">
+          {formatCoins(balance)} монет · вход {hasTicket
+            ? <span className="gold">1 карта</span>
+            : <span className="gold">{formatCoins(entry)}</span>}
+          {hasTicket && <span className="dw-ticket-pill" style={{ marginLeft: 8 }}>{tickets.premium} в инвентаре</span>}
+        </p>
+        {roundArmed ? (
+          <p className="dw-play-hint">выбери одну из десяти</p>
+        ) : lowBalance ? (
+          <button className="dw-btn ghost full" onClick={onOpenDeposit}>пополнить · недостаточно монет</button>
+        ) : (
+          <button className="dw-btn primary full" onClick={onArmRound} disabled={revealing || Boolean(result)}>
+            запечатать · {hasTicket ? 'сжечь карту' : formatCoins(entry)}
+          </button>
+        )}
+        {(result || roundArmed) && (
+          <button className="dw-btn ghost small dw-play-reset" onClick={onResetRound}>сбросить</button>
+        )}
+      </div>
+    </>
+  );
+}
+
+/* ─── Clans tab ───────────────────────────────────────────── */
+
+function ClansTab({ clans, clanTab, onTabChange, player, onJoinClan, onBack }) {
+  return (
+    <section className="dw-page dw-clans-page">
+      <button className="dw-back-link" onClick={onBack}>‹ профиль</button>
+      <div className="dw-segment-switch">
+        {clanTabs.map((item) => (
+          <button
+            key={item}
+            className={`dw-segment-chip ${clanTab === item ? 'active' : ''}`}
+            onClick={() => onTabChange(item)}
+          >
+            {item === 'my' ? 'Мой клан' : item === 'chat' ? 'Чат' : 'Топ кланов'}
+          </button>
+        ))}
+      </div>
+
+      {clanTab === 'my' && (
+        <>
+          <article className="dw-guild-card">
+            <div className="dw-guild-emblem">{clans.myClan.level}</div>
+            <div className="dw-guild-main">
+              <span className="dw-kicker">Guild chamber</span>
+              <h2>{clans.myClan.name}</h2>
+              <p>{clans.myClan.description}</p>
+              <div className="dw-guild-progress">
+                <span style={{ width: '62%' }} />
+              </div>
+              <div className="dw-guild-stats">
+                <span><b>{clans.myClan.members}/50</b> участников</span>
+                <span><b>{formatCompact(clans.myClan.contribution)}</b> монет</span>
+                <span><b>#{clans.myClan.seasonRank}</b> сезон</span>
+              </div>
+            </div>
+          </article>
+
+          <article className="dw-panel">
+            <div className="dw-panel-head">
+              <h2>Участники</h2>
+              <span className="dw-panel-sub">Сезонный рейтинг</span>
+            </div>
+            <div className="dw-member-list">
+              {clans.roster.map((member) => (
+                <div className="dw-member-row" key={member.name}>
+                  <div className={`dw-rank-token ${member.accent}`}>#{member.place}</div>
+                  <div className="dw-member-avatar">{member.name.slice(0, 1)}</div>
+                  <div className="dw-member-copy">
+                    <strong>{member.name}</strong>
+                    <p>{member.role}</p>
+                  </div>
+                  <span style={{ color: 'var(--gold-1)', fontWeight: 700 }}>{formatCompact(member.seasonCoins)}</span>
+                </div>
+              ))}
+            </div>
+          </article>
+        </>
+      )}
+
+      {clanTab === 'chat' && (
+        <div className="dw-chat-stack">
+          {clans.chat.map((item) => (
+            <article className={`dw-chat-bubble ${item.type}`} key={item.id}>
+              <strong>{item.author}</strong>
+              <p>{item.body}</p>
+            </article>
+          ))}
+          <div className="dw-chat-input">
+            <span>Сообщение в клановый чат...</span>
+          </div>
+        </div>
+      )}
+
+      {clanTab === 'top' && (
+        <div className="dw-stack">
+          {clans.top.map((item) => (
+            <article className={`dw-panel ${item.place === 1 ? 'dw-top-hero' : ''}`} key={item.name}>
+              <div className="dw-panel-head">
+                <div>
+                  <span className="dw-kicker">#{item.place}</span>
+                  <h2>{item.name}</h2>
+                </div>
+                <span className="dw-badge">{item.members} чел.</span>
+              </div>
+              <div className="dw-clan-top-foot">
+                <strong className="dw-large-value">{item.seasonCoins}</strong>
+                {item.name === clans.myClan.name ? (
+                  <span className="dw-badge accent">Мой клан</span>
+                ) : (
+                  <button className="dw-btn secondary small" onClick={() => onJoinClan(item.name)}>
+                    Вступить
+                  </button>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ─── Referral tab ────────────────────────────────────────── */
+
+function ReferralTab({ referral, player, onCopy, onShare, onClaimReward, onBack, onClaimRef }) {
+  const tiers = referral.tiers || [];
+  const currentTier = tiers.find((t) => t.name === referral.tier) || tiers[0] || null;
+  const code = referral.code;
+
+  return (
+    <section className="dw-page dw-referral-page">
+      <button className="dw-back-link" onClick={onBack}>‹ профиль</button>
+
+      {/* Hero */}
+      <div className="dw-ref-hero">
+        <div className="dw-ref-hero-glow" />
+        <div className="dw-ref-hero-corner tl" />
+        <div className="dw-ref-hero-corner tr" />
+        <div className="dw-ref-hero-corner bl" />
+        <div className="dw-ref-hero-corner br" />
+
+        <span className="dw-kicker">Реферальная программа</span>
+        <h1>Зови друзей,<br />получай монеты</h1>
+        <p>{referral.structure || `${referral.pct || 7}% с каждого пополнения реферала`}</p>
+
+        <div className="dw-ref-link-box">
+          <div className="dw-ref-link-text">
+            <span className="dw-kicker" style={{ marginBottom: 2 }}>Твоя ссылка</span>
+            <strong>t.me/deadwill_bot?start={code}</strong>
+          </div>
+          <button className="dw-btn primary small" onClick={onCopy}>Копировать</button>
+        </div>
+
+        <button className="dw-btn secondary" style={{ width: '100%', marginTop: 10 }} onClick={onShare}>
+          поделиться в Telegram
+        </button>
+      </div>
+
+      {/* Stats + Claim */}
+      <div className="dw-ref-stats-row">
+        <div className="dw-ref-stat">
+          <span>Приглашено</span>
+          <strong>{referral.invites}</strong>
+        </div>
+        <div className="dw-ref-stat accent">
+          <span>Активных</span>
+          <strong>{referral.activeInvites}</strong>
+        </div>
+        <div className="dw-ref-stat gold">
+          <span>Заработано</span>
+          <strong>{formatCompact(referral.earned)}</strong>
+        </div>
+      </div>
+
+      {/* Кнопка «Забрать реферальные» */}
+      <div className="dw-ref-claim-block">
+        <div className="dw-ref-claim-info">
+          <span className="dw-kicker">Доступно к получению</span>
+          <strong className="dw-large-value">{formatCoins(referral.pending || 0)}</strong>
+        </div>
+        <button
+          className={`dw-btn ${(referral.pending || 0) > 0 ? 'primary' : 'ghost'}`}
+          onClick={onClaimRef}
+          disabled={!(referral.pending > 0)}
+        >
+          Забрать реферальные
+        </button>
+      </div>
+
+      {currentTier && (
+        <article className="dw-panel dw-ref-tier-card">
+          <div className="dw-panel-head">
+            <div>
+              <span className="dw-kicker">Текущий уровень</span>
+              <h2>Tier: {referral.tier}</h2>
+            </div>
+            <span className="dw-badge premium">{currentTier.bonus} бонус</span>
+          </div>
+          <div className="dw-ledger-line" style={{ margin: '12px 0 8px' }}>
+            <div className="dw-ledger-fill" style={{ width: `${referral.tierProgress || 0}%` }} />
+          </div>
+          <p style={{ color: 'var(--bone-soft)', fontSize: 12 }}>
+            {referral.invites} из {referral.tierNextAt} рефералов до {referral.tierNext}
+          </p>
+
+          <div className="dw-ref-tiers">
+            {tiers.map((t) => (
+              <div key={t.name} className={`dw-ref-tier-chip ${t.name === referral.tier ? 'active' : ''}`}>
+                <strong>{t.name}</strong>
+                <span>{t.bonus}</span>
+              </div>
+            ))}
+          </div>
+        </article>
+      )}
+
+      {/* Reward milestones */}
+      {referral.rewards && referral.rewards.length > 0 && (
+      <article className="dw-panel">
+        <div className="dw-panel-head">
+          <h2>Награды за рефералов</h2>
+          <span className="dw-panel-sub">Единовременные</span>
+        </div>
+        <div className="dw-ref-rewards-list">
+          {referral.rewards.map((r) => (
+            <div className={`dw-ref-reward-row ${r.state}`} key={r.level}>
+              <div className={`dw-ref-reward-num ${r.state === 'claimed' ? 'done' : r.state === 'claimable' ? 'ready' : ''}`}>
+                {r.state === 'claimed' ? '·' : r.level}
+              </div>
+              <div className="dw-history-copy">
+                <strong>{r.reward}</strong>
+                <p>За {r.level} {r.level === 1 ? 'реферала' : 'рефералов'}</p>
+              </div>
+              {r.state === 'claimable' ? (
+                <button className="dw-btn primary small" onClick={() => onClaimReward(r.level)}>
+                  Забрать
+                </button>
+              ) : (
+                <span className={`dw-badge ${r.state === 'claimed' ? 'accent' : ''}`} style={{ opacity: r.state === 'locked' ? 0.4 : 1 }}>
+                  {r.state === 'claimed' ? 'Получено' : 'Закрыто'}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      </article>
+      )}
+
+      {/* Invite history */}
+      <article className="dw-panel">
+        <div className="dw-panel-head">
+          <h2>Мои рефералы</h2>
+          <span className="dw-panel-sub">{referral.invites} игроков</span>
+        </div>
+        <div className="dw-history-list">
+          {(referral.inviteHistory || []).map((item) => (
+            <div className="dw-history-row" key={item.id}>
+              <div className="dw-feed-avatar" style={{ width: 34, height: 34, fontSize: 12 }}>{item.name[0]}</div>
+              <div className="dw-history-copy">
+                <strong>{item.name}</strong>
+                <p>{item.date} · {item.active ? <span style={{ color: 'var(--success)' }}>активен</span> : <span style={{ color: 'var(--muted)' }}>неактивен</span>}</p>
+              </div>
+              {item.earned > 0 ? (
+                <span className="pos">+{formatCoins(item.earned)}</span>
+              ) : (
+                <span style={{ color: 'var(--bone-soft)', fontSize: 12 }}>—</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </article>
+    </section>
+  );
+}
+
+/* ─── Shop tab ────────────────────────────────────────────── */
+
+function ShopTab({ currentTab, onTabChange, shop, starsPacks, tonPacks, ticketPacks, player, transfers, onBuyNft, onBuyPremium, onBuyTickets, onStarsPay, onTonPay, payPending }) {
+  const [nftRarity, setNftRarity] = useState('all');
+
+  const filteredGifts = nftRarity === 'all'
+    ? GIFTS_CATALOG
+    : GIFTS_CATALOG.filter((g) => g.rarity === nftRarity);
+
+  return (
+    <section className="dw-page dw-shop-page">
+      <h1 className="dw-shop-title">Shop</h1>
+
+      <div className="dw-shop-tabs">
+        {shopTabs.map((item) => (
+          <button
+            key={item}
+            className={`dw-shop-tab ${currentTab === item ? 'active' : ''}`}
+            onClick={() => onTabChange(item)}
+          >
+            {item === 'coins' ? 'Deposit' : item === 'tickets' ? 'Карты' : item === 'premium' ? 'Premium' : item === 'nft' ? 'NFT' : 'Transfer'}
+          </button>
+        ))}
+      </div>
+
+      {currentTab === 'coins' && (
+        payPending ? (
+          <div className="dw-pay-loading">
+            <div className="dw-pay-spinner" />
+            <span>создаём платёж…</span>
+          </div>
+        ) : (
+          <div className="dw-pack-list">
+            {starsPacks.map((pack, i) => (
+              <motion.button
+                className="dw-pack-row"
+                key={pack.id}
+                onClick={() => onStarsPay(pack)}
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.24, delay: 0.05 * i }}
+                whileTap={{ scale: 0.97 }}
+              >
+                <span className="dw-pack-icon" data-icon="stars" aria-hidden="true" />
+                <span className="dw-pack-copy">
+                  <strong>{pack.title}</strong>
+                  <span>{formatCoins(pack.coins)} монет{pack.bonus > 0 ? ` · +${formatCoins(pack.bonus)} бонус` : ''}</span>
+                </span>
+                <span className="dw-pack-price">{pack.stars} Stars</span>
+              </motion.button>
+            ))}
+            {tonPacks.map((pack, i) => (
+              <motion.button
+                className="dw-pack-row"
+                key={pack.id}
+                onClick={() => onTonPay(pack)}
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.24, delay: 0.05 * (starsPacks.length + i) }}
+                whileTap={{ scale: 0.97 }}
+              >
+                <span className="dw-pack-icon" data-icon="ton" aria-hidden="true" />
+                <span className="dw-pack-copy">
+                  <strong>{pack.title}</strong>
+                  <span>{formatCoins(pack.coins)} монет{pack.bonus > 0 ? ` · +${formatCoins(pack.bonus)} бонус` : ''}</span>
+                </span>
+                <span className="dw-pack-price">{pack.nanoton / 1e9} TON</span>
+              </motion.button>
+            ))}
+          </div>
+        )
+      )}
+
+      {currentTab === 'tickets' && (
+        <TicketsShop
+          ticketPacks={ticketPacks}
+          inventory={player?.tickets || { cheap: 0, premium: 0 }}
+          balance={player?.coins || 0}
+          onBuyTickets={onBuyTickets}
+        />
+      )}
+
+      {currentTab === 'premium' && (
+        <div className="dw-stack">
+          {shop.premiumOffers.map((offer) => (
+            <article className="dw-panel dw-premium-card" key={offer.id}>
+              <div className="dw-panel-head">
+                <h2>{offer.title}</h2>
+                {offer.active && <span className="dw-badge premium">Активно</span>}
+              </div>
+              <p>{offer.copy}</p>
+              <button
+                className={`dw-btn ${offer.active ? 'secondary' : 'primary'}`}
+                style={{ marginTop: 12 }}
+                onClick={() => onBuyPremium(offer)}
+                disabled={offer.active}
+              >
+                {offer.active ? 'Уже активно' : offer.price}
+              </button>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {currentTab === 'nft' && (
+        <>
+          <div className="dw-nft-rarity-bar">
+            {NFT_RARITIES.map((r) => (
+              <button
+                key={r}
+                className={`dw-nft-rarity-chip ${nftRarity === r ? 'active' : ''}`}
+                style={nftRarity === r && r !== 'all' ? { borderColor: RARITY_COLOR[r], color: RARITY_COLOR[r] } : {}}
+                onClick={() => setNftRarity(r)}
+              >
+                {r === 'all' ? 'Все' : r}
+              </button>
+            ))}
+          </div>
+          <div className="dw-nft-grid">
+            {filteredGifts.map((item, i) => {
+              const canBuy = (player?.coins || 0) >= item.priceCoins;
+              return (
+                <motion.article
+                  className="dw-nft-tile"
+                  key={item.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.22, delay: Math.min(i * 0.03, 0.4) }}
+                >
+                  <div className={`dw-nft-preview rarity-${item.rarity.toLowerCase()}`}>
+                    <img
+                      src={`/gifts/${item.file}`}
+                      alt={item.name}
+                      className="dw-gift-img"
+                      loading="lazy"
+                    />
+                  </div>
+                  <span className="dw-kicker" style={{ color: RARITY_COLOR[item.rarity] }}>
+                    {item.rarity}
+                  </span>
+                  <h2>{item.name}</h2>
+                  <strong>{formatCoins(item.priceCoins)}</strong>
+                  <p style={{ color: 'var(--muted)', fontSize: 12, margin: '3px 0 8px' }}>
+                    Осталось {item.stock}
+                  </p>
+                  <button
+                    className={`dw-btn ${canBuy ? 'primary' : 'ghost'}`}
+                    style={{ width: '100%' }}
+                    onClick={() => onBuyNft({ ...item, title: item.name })}
+                    disabled={!canBuy}
+                  >
+                    {canBuy ? 'Купить' : 'нет монет'}
+                  </button>
+                </motion.article>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {currentTab === 'transfer' && (
+        <div className="dw-stack">
+          {transfers.length === 0 ? (
+            <EmptyState title="Заявок пока нет" copy="После покупки NFT здесь появится статус передачи." />
+          ) : (
+            transfers.map((item) => (
+              <article className="dw-transfer-card" key={item.id}>
+                <div className="dw-panel-head">
+                  <div>
+                    <h2>{item.asset}</h2>
+                    <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 2 }}>{item.id} · {item.date}</p>
+                  </div>
+                  <span className={`dw-badge ${transferTone[item.status]}`}>{item.status}</span>
+                </div>
+                <strong style={{ display: 'block', marginTop: 8 }}>{formatCoins(item.priceCoins)} монет</strong>
+                <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4 }}>{item.comment}</p>
+              </article>
+            ))
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ─── Profile tab ─────────────────────────────────────────── */
+
+function ProfileTab({ player, sections, filters, activeFilter, onFilterChange, history, notifications, transfers, tonWallet, onConnectTon, onDisconnectTon, onOpenAdmin, onOpenPass, onOpenClans, onOpenRef }) {
+  return (
+    <section className="dw-page dw-profile-page">
+
+      <div className="dw-profile-header">
+        <div className="dw-avatar large">{player.avatar}</div>
+        <div className="dw-profile-header-copy">
+          <h1 className="dw-profile-name">{player.name}</h1>
+          <p className="dw-profile-meta">{player.id} · {player.clanName}</p>
+          <span className="dw-badge premium">{player.badge}</span>
+        </div>
+      </div>
+
+      <div className="dw-stats-row">
+        <div className="dw-stat-cell">
+          <span>игр</span>
+          <strong>{player.gamesPlayed}</strong>
+        </div>
+        <div className="dw-stat-cell">
+          <span>выиграно</span>
+          <strong>{formatCompact(player.coinsWon)}</strong>
+        </div>
+        <div className="dw-stat-cell">
+          <span>потрачено</span>
+          <strong>{formatCompact(player.coinsSpent)}</strong>
+        </div>
+        <div className="dw-stat-cell accent">
+          <span>лучший</span>
+          <strong>{formatCompact(player.bestWin)}</strong>
+        </div>
+      </div>
+
+      <div className="dw-home-strip">
+        <button className="dw-panel dw-nav-card" onClick={onOpenClans}>
+          <span className="dw-kicker">clans</span>
+          <strong>#{player.clanRank}</strong>
+          <p>{player.clanName}</p>
+        </button>
+        <button className="dw-panel dw-nav-card" onClick={onOpenRef}>
+          <span className="dw-kicker">referral</span>
+          <strong>10%</strong>
+          <p>зови друзей</p>
+        </button>
+      </div>
+
+      <button className="dw-panel dw-pass-link-card" onClick={onOpenPass} style={{ textAlign: 'left', width: '100%', cursor: 'pointer' }}>
+        <div className="dw-panel-head">
+          <div>
+            <span className="dw-kicker">battle pass</span>
+            <h2>Сезонные награды</h2>
+          </div>
+          <span className="dw-badge premium">Lvl {player.passLevel}</span>
+        </div>
+        <div className="dw-ledger-line" style={{ margin: '10px 0 6px' }}>
+          <div className="dw-ledger-fill" style={{ width: `${player.passProgress}%` }} />
+        </div>
+        <p style={{ color: 'var(--muted)', fontSize: 12 }}>{player.passProgress}% до следующего уровня</p>
+      </button>
+
+      <article className="dw-panel dw-ton-panel">
+        <div className="dw-panel-head">
+          <h2>TON Wallet</h2>
+          {tonWallet && <span className="dw-badge accent">Connected</span>}
+        </div>
+        {tonWallet ? (
+          <>
+            <p className="dw-wallet-addr" style={{ marginTop: 6 }}>
+              {tonWallet.address.slice(0, 8)}…{tonWallet.address.slice(-6)}
+            </p>
+            <div className="dw-inline-actions" style={{ marginTop: 10 }}>
+              <button className="dw-btn ghost small" onClick={onDisconnectTon}>Disconnect</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 6 }}>Подключите TON кошелёк для оплаты через блокчейн</p>
+            <button className="dw-btn secondary" style={{ marginTop: 10, width: '100%' }} onClick={onConnectTon}>
+              Connect TON Wallet
+            </button>
+          </>
+        )}
+      </article>
+
+      <article className="dw-panel">
+        <div className="dw-panel-head" style={{ marginBottom: 12 }}>
+          <h2>История</h2>
+        </div>
+        <div className="dw-segment-switch compact">
+          {filters.map((item) => (
+            <button
+              key={item.id}
+              className={`dw-segment-chip ${activeFilter === item.id ? 'active' : ''}`}
+              onClick={() => onFilterChange(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        {history.length === 0 ? (
+          <EmptyState title="Операций пока нет" copy="История пополнений, игр и transfer появится здесь." />
+        ) : (
+          <div className="dw-history-list">
+            {history.map((item) => (
+              <div className="dw-history-row" key={item.id}>
+                <div className="dw-history-copy">
+                  <strong>{item.title}</strong>
+                  <p>{item.date}</p>
+                </div>
+                <span className={item.amount >= 0 ? 'pos' : 'neg'}>
+                  {item.amount >= 0 ? '+' : ''}{formatCoins(item.amount)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </article>
+
+      {player.role === 'Owner' && (
+        <button className="dw-panel dw-admin-entry" onClick={onOpenAdmin}>
+          <div className="dw-admin-entry-inner">
+            <div>
+              <span className="dw-kicker dw-kicker-admin">Admin</span>
+              <h2>Панель управления</h2>
+              <p>Transfers, пользователи, экономика.</p>
+            </div>
+            <span className="dw-admin-arrow">›</span>
+          </div>
+        </button>
+      )}
+    </section>
+  );
+}
+
+/* ─── Pass overlay (modal) ────────────────────────────────── */
+
+function PassOverlay({ passData, player, onClose, onClaimReward, onClaimQuest }) {
+  return (
+    <div className="dw-sheet-backdrop" onClick={onClose}>
+      <div className="dw-deposit-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="dw-panel-head" style={{ marginBottom: 14 }}>
+          <div>
+            <span className="dw-kicker">Season pass</span>
+            <h2>Battle Pass</h2>
+          </div>
+          <button className="dw-icon-btn" onClick={onClose}>×</button>
+        </div>
+
+        <article className="dw-ledger-hero" style={{ marginBottom: 12 }}>
+          <div className="dw-ledger-medal">{player.passLevel}</div>
+          <p>{passData.xpLabel}</p>
+          <div className="dw-ledger-line">
+            <div className="dw-ledger-fill" style={{ width: `${player.passProgress}%` }} />
+          </div>
+          <div className="dw-pass-meta">
+            <span className="dw-badge">Ends {passData.endsIn}</span>
+            {passData.owned
+              ? <span className="dw-badge premium">Premium active</span>
+              : <span className="dw-badge">Free track</span>
+            }
+          </div>
+        </article>
+
+        <div className="dw-quest-grid">
+          <QuestPanel title="Daily" items={passData.daily} onClaim={(id) => onClaimQuest(id, 'daily')} />
+          <QuestPanel title="Weekly" items={passData.weekly} onClaim={(id) => onClaimQuest(id, 'weekly')} />
+        </div>
+
+        <div className="dw-reward-track" style={{ marginTop: 12 }}>
+          <div className="dw-pass-lanes">
+            <span>FREE</span>
+            <span>PREMIUM</span>
+          </div>
+          {passData.rewards.map((reward) => (
+            <article className="dw-reward-row" key={reward.level}>
+              <div className="dw-reward-lvl">Lvl {reward.level}</div>
+              <RewardCell
+                title="Free"
+                reward={reward.free}
+                onClaim={() => onClaimReward(reward.level, 'free')}
+              />
+              <RewardCell
+                title="Premium"
+                reward={reward.premium}
+                onClaim={() => onClaimReward(reward.level, 'premium')}
+                locked={!passData.owned && reward.premium.state !== 'claimed'}
+              />
+            </article>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Contract overlay ────────────────────────────────────── */
+
+function ContractOverlay({ mode, revealing, result, selectedClause, onReplay, onClose }) {
+  return (
+    <div className="dw-overlay">
+      <div className="dw-overlay-inner">
+        {revealing ? (
+          <motion.div
+            className="dw-overlay-reveal"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.35, ease: [0.2, 0, 0, 1] }}
+          >
+            <span className="dw-kicker">reveal</span>
+            <p className="dw-overlay-contract-num">контракт {selectedClause !== null ? selectedClause + 1 : ''}</p>
+            <div className="dw-overlay-spinner" />
+          </motion.div>
+        ) : result ? (
+          <>
+            <motion.div
+              className="dw-overlay-result"
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: [0.2, 0, 0, 1] }}
+            >
+              <span className="dw-kicker">
+                {result.type === 'empty' ? 'empty' : result.type === 'debt' ? 'debt' : 'win'}
+              </span>
+              <motion.p
+                className={`dw-overlay-amount ${result.type === 'multiplier' ? 'violet' : result.type === 'empty' || result.type === 'debt' ? 'muted' : 'gold'}`}
+                initial={{ opacity: 0, scale: 0.65 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+              >
+                {(result.type === 'coins' || result.type === 'bonus')
+                  ? `+${formatCoins(result.creditCoins)}`
+                  : result.type === 'multiplier' ? '×2' : '—'}
+              </motion.p>
+              <motion.p
+                className="dw-overlay-desc"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.3, delay: 0.32 }}
+              >
+                {result.type === 'multiplier' ? 'следующий выигрыш усилен'
+                  : result.type === 'empty' ? 'контракт пуст'
+                  : result.type === 'debt' ? 'ставка утрачена'
+                  : result.note || 'монеты зачислены'}
+              </motion.p>
+            </motion.div>
+            <motion.div
+              className="dw-overlay-actions"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: 0.44, ease: [0.2, 0, 0, 1] }}
+            >
+              <button className="dw-btn primary full" onClick={onReplay}>play again</button>
+              <button className="dw-btn ghost full" onClick={onClose}>close</button>
+            </motion.div>
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Player profile modal ────────────────────────────────── */
+
+function PlayerProfileModal({ userId, data, onClose }) {
+  return (
+    <div className="dw-sheet-backdrop" onClick={onClose}>
+      <div className="dw-deposit-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="dw-panel-head" style={{ marginBottom: 14 }}>
+          <div>
+            <span className="dw-kicker">Профиль игрока</span>
+            <h2>{data?.name || '…'}</h2>
+          </div>
+          <button className="dw-icon-btn" onClick={onClose}>×</button>
+        </div>
+
+        {!data && (
+          <div className="dw-pay-loading"><div className="dw-pay-spinner" /><span>загрузка…</span></div>
+        )}
+        {data?.error && (
+          <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '16px 0' }}>Не удалось загрузить</p>
+        )}
+        {data && !data.error && (
+          <>
+            <div className="dw-admin-stats-row">
+              <div className="dw-admin-stat"><span>игр</span><strong>{data.gamesPlayed}</strong></div>
+              <div className="dw-admin-stat"><span>выиграно</span><strong>{formatCompact(data.coinsWon)}</strong></div>
+              <div className="dw-admin-stat"><span>рекорд</span><strong>{formatCompact(data.bestWin)}</strong></div>
+            </div>
+            <article className="dw-panel" style={{ marginTop: 12 }}>
+              <div className="dw-panel-head"><h2>История игр</h2></div>
+              <div className="dw-history-list">
+                {(data.history || []).slice(0, 10).map((item, i) => (
+                  <div className="dw-history-row" key={i}>
+                    <div className="dw-history-copy">
+                      <strong>{item.type === 'pvp_payout' ? 'PvP выигрыш' : item.type === 'payout' ? 'Соло' : item.type}</strong>
+                      <p>{new Date(item.date).toLocaleDateString('ru-RU')}</p>
+                    </div>
+                    <span className={item.amount >= 0 ? 'pos' : 'neg'}>
+                      {item.amount >= 0 ? '+' : ''}{formatCoins(item.amount)}
+                    </span>
+                  </div>
+                ))}
+                {(!data.history || data.history.length === 0) && (
+                  <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '12px 0' }}>Нет записей</p>
+                )}
+              </div>
+            </article>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Deposit sheet ───────────────────────────────────────── */
+
+function DepositSheet({ method, onMethodChange, starsPacks, tonPacks, onStarsPay, onTonPay, onCryptobotPay, payPending, tonWallet, tonIntent, onConnectTon, onClose, sendBotLink }) {
+  return (
+    <motion.div
+      className="dw-sheet-backdrop"
+      onClick={onClose}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+    >
+      <motion.div
+        className="dw-deposit-sheet"
+        onClick={(e) => e.stopPropagation()}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ duration: 0.35, ease: [0.32, 0, 0, 1] }}
+      >
+        <div className="dw-panel-head">
+          <div>
+            <span className="dw-kicker">Top up</span>
+            <h2>Пополнение</h2>
+          </div>
+          <button className="dw-icon-btn" onClick={onClose}>×</button>
+        </div>
+
+        <div className="dw-deposit-tabs">
+          <button className={`dw-deposit-tab ${method === 'stars' ? 'active' : ''}`} onClick={() => onMethodChange('stars')}>
+            ⭐ Stars
+          </button>
+          <button className={`dw-deposit-tab ${method === 'ton' ? 'active' : ''}`} onClick={() => onMethodChange('ton')}>
+            TON
+          </button>
+          <button className={`dw-deposit-tab ${method === 'cryptobot' ? 'active' : ''}`} onClick={() => onMethodChange('cryptobot')}>
+            @send
+          </button>
+        </div>
+
+        <p style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: 13, color: 'var(--bone-soft)', margin: '4px 0 12px', textAlign: 'center' }}>
+          1 монета · 20&nbsp;Stars или 0.1&nbsp;TON
+        </p>
+
+        {/* TON: wallet not connected → connect block */}
+        {method === 'ton' && !tonWallet && !tonIntent && (
+          <motion.div
+            className="dw-ton-connect-block"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.28 }}
+          >
+            <div className="dw-ton-connect-glyph" aria-hidden="true" />
+            <strong>Подключите TON кошелёк</strong>
+            <p>Tonkeeper · MyTonWallet · Ton Space</p>
+            <button className="dw-btn primary full dw-ton-connect-btn" onClick={onConnectTon}>
+              Connect TON Wallet
+            </button>
+          </motion.div>
+        )}
+
+        {/* TON: wallet connected → show address + packs */}
+        {method === 'ton' && tonWallet && !tonIntent && (
+          <motion.div
+            className="dw-wallet-row"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.22 }}
+          >
+            <div className="dw-wallet-info">
+              <span className="dw-kicker">TON Wallet</span>
+              <strong className="dw-wallet-addr">
+                {tonWallet.address.slice(0, 6)}…{tonWallet.address.slice(-4)}
+              </strong>
+            </div>
+            <button className="dw-btn ghost small" onClick={onConnectTon}>Сменить</button>
+          </motion.div>
+        )}
+
+        {/* TON intent — transfer instructions */}
+        {method === 'ton' && tonIntent && (
+          <article className="dw-ton-intent">
+            <span className="dw-kicker">Реквизиты перевода</span>
+            <div className="dw-ton-intent-row">
+              <span>Кошелёк</span>
+              <strong className="dw-wallet-addr">{tonIntent.wallet}</strong>
+            </div>
+            <div className="dw-ton-intent-row">
+              <span>Сумма</span>
+              <strong>{tonIntent.amountTon} TON</strong>
+            </div>
+            <div className="dw-ton-intent-row">
+              <span>Комментарий</span>
+              <strong className="dw-wallet-addr">{tonIntent.comment}</strong>
+            </div>
+            <p className="dw-ton-intent-note">
+              Отправь точно эту сумму с комментарием. Монеты зачислятся через 10–30 секунд после подтверждения сети.
+            </p>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button
+                className="dw-btn primary"
+                style={{ flex: 1 }}
+                onClick={() => {
+                  const link = `ton://transfer/${tonIntent.wallet}?amount=${tonIntent.amountNanoton}&text=${encodeURIComponent(tonIntent.comment)}`;
+                  if (window.Telegram?.WebApp?.openLink) window.Telegram.WebApp.openLink(link);
+                  else window.open(link, '_blank');
+                }}
+              >
+                открыть кошелёк
+              </button>
+              <button
+                className="dw-btn secondary"
+                style={{ flex: 1 }}
+                onClick={() => {
+                  navigator.clipboard?.writeText(tonIntent.comment).catch(() => {});
+                  notify('Комментарий скопирован', 'success');
+                }}
+              >
+                скопировать memo
+              </button>
+            </div>
+          </article>
+        )}
+
+        {/* CryptoBot/@send block */}
+        {method === 'cryptobot' && !tonIntent && !payPending && (
+          <motion.div
+            className="dw-ton-connect-block"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.28 }}
+          >
+            <strong>Оплата через @send</strong>
+            <p style={{ fontSize: 12, color: 'var(--bone-soft)', margin: '6px 0 10px' }}>
+              Выбери пакет — откроется @send с реквизитами. Укажи сумму и комментарий (depositId).
+            </p>
+            <div className="dw-pack-list">
+              {tonPacks.map((pack, i) => (
+                <motion.button
+                  className="dw-pack-row"
+                  key={pack.id}
+                  onClick={() => onCryptobotPay(pack)}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.24, delay: 0.05 * i }}
+                  whileTap={{ scale: 0.97 }}
+                >
+                  <span className="dw-pack-icon" data-icon="ton" aria-hidden="true" />
+                  <span className="dw-pack-copy">
+                    <strong>{pack.title}</strong>
+                    <span>{formatCoins(pack.coins)} монет{pack.bonus > 0 ? ` · +${formatCoins(pack.bonus)} бонус` : ''}</span>
+                  </span>
+                  <span className="dw-pack-price">{pack.nanoton / 1e9} TON</span>
+                </motion.button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {method === 'cryptobot' && tonIntent?.isCryptobot && (
+          <article className="dw-ton-intent">
+            <span className="dw-kicker">Реквизиты @send</span>
+            <div className="dw-ton-intent-row"><span>Сумма</span><strong>{tonIntent.amountTon} TON</strong></div>
+            <div className="dw-ton-intent-row"><span>Комментарий (memo)</span><strong className="dw-wallet-addr">{tonIntent.comment}</strong></div>
+            <p className="dw-ton-intent-note">Открой @send, укажи точную сумму и этот комментарий.</p>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button className="dw-btn primary" style={{ flex: 1 }}
+                onClick={() => {
+                  const l = tonIntent.deepLink || `https://t.me/send?start=IVA6oMXOKQEF`;
+                  if (window.Telegram?.WebApp?.openTelegramLink) window.Telegram.WebApp.openTelegramLink(l);
+                  else window.open(l, '_blank');
+                }}>
+                открыть @send
+              </button>
+              <button className="dw-btn secondary" style={{ flex: 1 }}
+                onClick={() => navigator.clipboard?.writeText(tonIntent.comment).catch(() => {})}>
+                скопировать memo
+              </button>
+            </div>
+          </article>
+        )}
+
+        {/* Pack list — stars always, ton only when wallet connected */}
+        {payPending ? (
+          <div className="dw-pay-loading">
+            <div className="dw-pay-spinner" />
+            <span>создаём платёж…</span>
+            <p style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: 12, color: 'var(--bone-soft)', marginTop: -4 }}>
+              Не закрывай окно. Telegram спросит подтверждение.
+            </p>
+          </div>
+        ) : !tonIntent && method !== 'cryptobot' && (method === 'stars' || (method === 'ton' && tonWallet)) && (
+          <div className="dw-pack-list">
+            {method === 'stars'
+              ? starsPacks.map((pack, i) => (
+                  <motion.button
+                    className="dw-pack-row"
+                    key={pack.id}
+                    onClick={() => onStarsPay(pack)}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.24, delay: 0.05 * i }}
+                    whileTap={{ scale: 0.97 }}
+                  >
+                    <span className="dw-pack-icon" data-icon="stars" aria-hidden="true" />
+                    <span className="dw-pack-copy">
+                      <strong>{pack.title}</strong>
+                      <span>{formatCoins(pack.coins)} монет{pack.bonus > 0 ? ` · +${formatCoins(pack.bonus)} бонус` : ''}</span>
+                    </span>
+                    <span className="dw-pack-price">{pack.stars} Stars</span>
+                  </motion.button>
+                ))
+              : tonPacks.map((pack, i) => (
+                  <motion.button
+                    className="dw-pack-row"
+                    key={pack.id}
+                    onClick={() => onTonPay(pack)}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.24, delay: 0.05 * i }}
+                    whileTap={{ scale: 0.97 }}
+                  >
+                    <span className="dw-pack-icon" data-icon="ton" aria-hidden="true" />
+                    <span className="dw-pack-copy">
+                      <strong>{pack.title}</strong>
+                      <span>{formatCoins(pack.coins)} монет{pack.bonus > 0 ? ` · +${formatCoins(pack.bonus)} бонус` : ''}</span>
+                    </span>
+                    <span className="dw-pack-price">{pack.nanoton / 1e9} TON</span>
+                  </motion.button>
+                ))
+            }
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ─── Info sheet ──────────────────────────────────────────── */
+
+function InfoSheet({ onClose }) {
+  return (
+    <div className="dw-sheet-backdrop" onClick={onClose}>
+      <div className="dw-deposit-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="dw-panel-head" style={{ marginBottom: 14 }}>
+          <div>
+            <span className="dw-kicker">info</span>
+            <h2>Как играть</h2>
+          </div>
+          <button className="dw-icon-btn" onClick={onClose}>×</button>
+        </div>
+
+        <div className="dw-info-list">
+          <div className="dw-info-row">
+            <span className="dw-info-num">I</span>
+            <p>Выбери уровень: <strong>дешевый</strong> или <strong>премиум</strong>.</p>
+          </div>
+          <div className="dw-info-row">
+            <span className="dw-info-num">II</span>
+            <p>Нажми <strong>запечатать</strong> — вход списан, перед тобой пять контрактов.</p>
+          </div>
+          <div className="dw-info-row">
+            <span className="dw-info-num">III</span>
+            <p>Сорви печать с одного из <strong>пяти</strong>. Один таит золото — другой проклятый долг.</p>
+          </div>
+          <div className="dw-info-row">
+            <span className="dw-info-num">IV</span>
+            <p><strong>1 монета</strong> = 20 Stars или 0.1 TON. Первый дешевый контракт — даром.</p>
+          </div>
+        </div>
+
+        <div className="dw-info-modes">
+          <div className="dw-info-mode">
+            <span className="dw-kicker">Дешевое</span>
+            <strong>10</strong>
+            <p>тихий вход</p>
+          </div>
+          <div className="dw-info-mode premium">
+            <span className="dw-kicker">Премиум</span>
+            <strong>150</strong>
+            <p>крупная плата · ×2 множитель</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Helper components ───────────────────────────────────── */
+
+function QuestPanel({ title, items, onClaim }) {
+  return (
+    <article className="dw-panel">
+      <div className="dw-panel-head">
+        <h2>{title}</h2>
+      </div>
+      <div className="dw-history-list">
+        {items.map((item) => (
+          <div className="dw-history-row dw-quest-row" key={item.id}>
+            <div className="dw-history-copy">
+              <strong>{item.title}</strong>
+              <p>{item.progress}</p>
+            </div>
+            {item.state === 'claimable' ? (
+              <button className="dw-btn primary small dw-claim-btn" onClick={() => onClaim(item.id)}>
+                +{item.xp} XP
+              </button>
+            ) : (
+              <span className={`dw-badge ${item.state === 'claimed' ? 'accent' : ''}`}>
+                {item.state === 'claimed' ? 'Сдано' : `+${item.xp} XP`}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function RewardCell({ title, reward, onClaim, locked }) {
+  return (
+    <div className={`dw-reward-cell ${reward.state}`}>
+      <span>{title}</span>
+      <strong>{reward.title}</strong>
+      {reward.state === 'claimable' && !locked ? (
+        <button className="dw-btn primary small dw-claim-btn" onClick={onClaim}>Claim</button>
+      ) : (
+        <em className={locked ? 'locked' : reward.state}>
+          {locked ? 'Premium' : reward.state === 'claimed' ? 'получено' : reward.state}
+        </em>
+      )}
+    </div>
+  );
+}
+
+function StatTile({ label, value }) {
+  return (
+    <div className="dw-stat-tile">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function EmptyState({ title, copy }) {
+  return (
+    <article className="dw-empty-state">
+      <div className="dw-empty-seal">DW</div>
+      <strong>{title}</strong>
+      <p>{copy}</p>
+    </article>
+  );
+}
+
+function Toast({ toast }) {
+  return <div className={`dw-toast ${toast.tone}`}>{toast.text}</div>;
+}
+
+function TicketsShop({ ticketPacks, inventory, balance, onBuyTickets }) {
+  const cheap = ticketPacks?.cheap || [];
+  const premium = ticketPacks?.premium || [];
+
+  return (
+    <div className="dw-stack">
+      <div className="dw-tickets-strip">
+        <article className={`dw-ticket-card ${inventory.cheap > 0 ? '' : 'empty'}`}>
+          <span className="dw-kicker">Дешёвые карты</span>
+          <div className="dw-ticket-count">{inventory.cheap}</div>
+          <p>Сжигаются при покупке PvP-карты вместо монет.</p>
+        </article>
+        <article className={`dw-ticket-card ${inventory.premium > 0 ? '' : 'empty'}`}>
+          <span className="dw-kicker">Премиум карты</span>
+          <div className="dw-ticket-count">{inventory.premium}</div>
+          <p>Сжигаются при печати соло-завещания вместо 150 монет.</p>
+        </article>
+      </div>
+
+      {cheap.length > 0 && (
+        <article className="dw-panel">
+          <div className="dw-tickets-section-head">
+            <h3>Дешёвые карты</h3>
+            <span>5 монет за штуку</span>
+          </div>
+          <div className="dw-ticket-pack-list">
+            {cheap.map((pack) => {
+              const each = (pack.priceCoins / pack.count).toFixed(2).replace(/\.00$/, '');
+              const cant = balance < pack.priceCoins;
+              return (
+                <button
+                  key={pack.id}
+                  className="dw-ticket-pack"
+                  onClick={() => !cant && onBuyTickets('cheap', pack)}
+                  disabled={cant}
+                >
+                  <span className="dw-ticket-pack-glyph" />
+                  <span className="dw-ticket-pack-copy">
+                    <strong>{pack.count} карт</strong>
+                    <span>{each} монет за карту{pack.count >= 20 ? ' · скидка' : ''}</span>
+                  </span>
+                  <span className="dw-ticket-pack-price">{formatCoins(pack.priceCoins)}</span>
+                </button>
+              );
+            })}
+          </div>
+        </article>
+      )}
+
+      {premium.length > 0 && (
+        <article className="dw-panel">
+          <div className="dw-tickets-section-head">
+            <h3>Премиум карты</h3>
+            <span>150 монет за штуку</span>
+          </div>
+          <div className="dw-ticket-pack-list">
+            {premium.map((pack) => {
+              const each = Math.round(pack.priceCoins / pack.count);
+              const cant = balance < pack.priceCoins;
+              return (
+                <button
+                  key={pack.id}
+                  className="dw-ticket-pack"
+                  onClick={() => !cant && onBuyTickets('premium', pack)}
+                  disabled={cant}
+                >
+                  <span className="dw-ticket-pack-glyph" />
+                  <span className="dw-ticket-pack-copy">
+                    <strong>{pack.count} карт{pack.count > 1 ? '' : 'а'}</strong>
+                    <span>{each} монет за карту{pack.count >= 5 ? ' · скидка' : ''}</span>
+                  </span>
+                  <span className="dw-ticket-pack-price">{formatCoins(pack.priceCoins)}</span>
+                </button>
+              );
+            })}
+          </div>
+        </article>
+      )}
+    </div>
+  );
+}
+
+export default App;

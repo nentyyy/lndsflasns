@@ -1,0 +1,33 @@
+{
+  "name": "cursed-will",
+  "version": "1.0.0",
+  "description": "Dark Premium Telegram Mini App - Cursed Will Game",
+  "type": "module",
+  "main": "src/api/index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:bot\" \"npm run dev:miniapp\" \"npm run dev:api\"",
+    "dev:bot": "nodemon src/bot/index.js",
+    "dev:miniapp": "cd /d src\\miniapp && npm run dev",
+    "dev:api": "nodemon src/api/index.js",
+    "migrate": "node src/api/lib/migrate.js",
+    "build": "cd /d src\\miniapp && npm run build",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "workspaces": [
+    "src/bot",
+    "src/api",
+    "src/miniapp"
+  ],
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.0",
+    "express": "^4.21.2",
+    "grammy": "^1.38.4",
+    "concurrently": "^8.0.0",
+    "nodemon": "^3.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.0.0"
+  }
+}

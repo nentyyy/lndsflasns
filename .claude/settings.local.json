@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5174/)",
+      "WebSearch",
+      "Bash(curl -s http://localhost:5177/ -o /dev/null -w \"dev server HTTP %{http_code}\\\\n\")",
+      "WebFetch(domain:www.thealien.design)",
+      "WebFetch(domain:dribbble.com)",
+      "WebFetch(domain:turumburum.com)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:mobbin.com)",
+      "WebFetch(domain:www.toptal.com)",
+      "WebFetch(domain:www.untitledui.com)",
+      "WebFetch(domain:designcode.io)",
+      "WebFetch(domain:muz.li)",
+      "Bash(npm install *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d['version']\\)\")",
+      "Bash(npm list *)",
+      "Bash(node --check src/api/lib/config.js)",
+      "Bash(node --check src/api/lib/game.js)",
+      "Bash(node --check src/api/lib/tournaments.js)",
+      "Bash(node --check src/api/lib/referral.js)",
+      "Bash(node --check src/api/lib/migrate.js)",
+      "Bash(node --check src/api/lib/pvp.js)",
+      "Bash(node --check src/api/index.js)",
+      "WebFetch(domain:www.figma.com)",
+      "Bash(python -c \"from PIL import Image; img = Image.open\\('Default Gifts.png'\\); print\\(img.size, img.mode\\)\")",
+      "Bash(node -e \"const fs=require\\('fs'\\);const b=fs.readFileSync\\('Default Gifts.png'\\);const w=b.readUInt32BE\\(16\\),h=b.readUInt32BE\\(20\\);console.log\\('size',w,'x',h\\);\")",
+      "Bash(sshpass *)",
+      "Bash(ssh -V)",
+      "Bash(apt-get install *)",
+      "Bash(yum install *)"
+    ]
+  }
+}
