@@ -85,7 +85,6 @@ function App() {
   const [ticketPacks, setTicketPacks] = useState({ cheap: [], premium: [] });
   const [splashActive, setSplashActive] = useState(true);
   const [bootReady, setBootReady] = useState(false);
-  const [tournament, setTournament] = useState(null);
   const [refData, setRefData] = useState(null);
   const [roundArmed, setRoundArmed] = useState(false);
   const [selectedClause, setSelectedClause] = useState(null);
@@ -135,7 +134,6 @@ function App() {
         }));
         setStarsPacks(data.starsPacks || []);
         setTonPacks(data.tonPacks || []);
-        if (data.tournament) setTournament(data.tournament);
         if (data.referral) setRefData(data.referral);
         if (data.projectTonWallet) setProjectTonWallet(data.projectTonWallet);
         if (data.ticketPacks) setTicketPacks(data.ticketPacks);
@@ -880,66 +878,6 @@ function HomeTab({ player, liveWins, onOpenPlay, onOpenDeposit }) {
     </section>
   );
 }
-
-/* ─── Tournament section ──────────────────────────────────── */
-
-function TournamentSection({ tournament }) {
-  if (!tournament) {
-    return (
-      <article className="dw-empty-state">
-        <div className="dw-empty-seal">DW</div>
-        <strong>Турнир собирает участников</strong>
-        <p>Сыграй раунд — и попадешь в текущий цикл.</p>
-      </article>
-    );
-  }
-
-  const left = timeLeft(tournament.endsAt);
-  const prizeClass = (place) => place === 1 ? 'gold' : place === 2 ? 'silver' : place === 3 ? 'bronze' : '';
-
-  return (
-    <article className="dw-tour-card">
-      <div className="dw-tour-head">
-        <div>
-          <span className="dw-kicker">Турнир · цикл 3 дня</span>
-          <h2>{tournament.title}</h2>
-        </div>
-        <span className="dw-tour-timer">До конца · {left}</span>
-      </div>
-
-      <div className="dw-tour-prizes">
-        {tournament.prizes.map((p) => (
-          <div key={p.place} className={`dw-tour-prize ${prizeClass(p.place)}`}>
-            <span className="dw-tour-prize-place">{p.place} место</span>
-            <strong className="dw-tour-prize-amount">{p.label}</strong>
-          </div>
-        ))}
-      </div>
-
-      <div className="dw-tour-meta">
-        <span>Участников: <strong>{tournament.participants}</strong></span>
-        <span>Твой счёт: <strong>{tournament.me ? formatCompact(tournament.me.score) : '0'}</strong></span>
-      </div>
-
-      <div className="dw-tour-leaderboard">
-        {tournament.top.length === 0 ? (
-          <p style={{ textAlign: 'center', color: 'var(--bone-soft)', fontFamily: 'var(--font-serif)', fontStyle: 'italic', padding: '14px 0' }}>
-            Зал пуст. Брось первый контракт.
-          </p>
-        ) : (
-          tournament.top.map((row) => (
-            <div key={row.userId} className={`dw-tour-row ${tournament.me && tournament.me.userId === row.userId ? 'mine' : ''}`}>
-              <span className={`dw-tour-row-place ${prizeClass(row.place)}`}>{row.place}</span>
-              <span className="dw-tour-row-name">{row.name}</span>
-              <span className="dw-tour-row-score">{formatCompact(row.score)}</span>
-            </div>
-          ))
-        )}
-      </div>
-    </article>
-  );
-}
-
 /* ─── Play tab ────────────────────────────────────────────── */
 
 function WillTab(props) {

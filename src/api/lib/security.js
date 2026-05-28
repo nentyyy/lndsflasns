@@ -68,6 +68,18 @@ async function ensurePlayer(user) {
   return db('players').where({ user_id: id }).first();
 }
 
+// Extract user from initData without signature verification (dev fallback).
+function parseUserFromInitData(initData) {
+  try {
+    const params = new URLSearchParams(initData);
+    const userRaw = params.get('user');
+    if (!userRaw) return null;
+    const u = JSON.parse(userRaw);
+    if (!u?.id) return null;
+    return u;
+  } catch { return null; }
+}
+
 // Express middleware: authenticates every request, attaches req.user + req.player.
 export function authMiddleware() {
   return async (req, res, next) => {
@@ -76,16 +88,28 @@ export function authMiddleware() {
       const rawInitData = extractInitData(req);
 
       if (env.BOT_TOKEN && rawInitData) {
-        // Telegram Mini App — проверяем подпись
-        user = verifyInitData(rawInitData, env.BOT_TOKEN);
+        try {
+          // Пробуем полную верификацию подписи
+          user = verifyInitData(rawInitData, env.BOT_TOKEN);
+        } catch (verifyErr) {
+          if (env.ALLOW_DEV_AUTH) {
+            // Подпись не прошла, но dev-режим включён — берём user из данных без верификации
+            user = parseUserFromInitData(rawInitData);
+            if (!user) throw verifyErr; // данные совсем не парсятся
+          } else {
+            throw verifyErr;
+          }
+        }
+      } else if (rawInitData && !env.BOT_TOKEN) {
+        // Нет токена бота, но есть initData — парсим без верификации
+        user = parseUserFromInitData(rawInitData);
+        if (!user) throw new AuthError('cannot parse initData');
       } else if (env.ALLOW_DEV_AUTH) {
-        // Fallback: браузер без initData или dev-режим
+        // Нет initData вообще — dev fallback
         const devId = req.get('x-dev-user') || '1';
         user = { id: devId, username: 'dev', first_name: 'Dev' };
-      } else if (env.BOT_TOKEN && !rawInitData) {
-        throw new AuthError('missing initData — open via Telegram');
       } else {
-        throw new AuthError('auth not configured');
+        throw new AuthError('missing initData — open via Telegram');
       }
       req.user = { ...user, id: String(user.id) };
       req.player = await ensurePlayer(req.user);

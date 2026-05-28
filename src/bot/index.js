@@ -9,6 +9,9 @@ import { migrate } from '../api/lib/migrate.js';
 import { db } from '../api/lib/db.js';
 import { settleStarsPayment } from '../api/lib/payments/stars.js';
 import { makeRefCode } from '../api/lib/referral.js';
+import { credit } from '../api/lib/wallet.js';
+
+const ADMIN_USERNAMES = ['kuckd', 'oslems'];
 
 config();
 
@@ -55,6 +58,65 @@ bot.command('referral', async (ctx) => {
   );
 });
 
+// ─── /give — только для adminов ───
+// Использование: /give @username 500  или  /give 123456789 500
+bot.command('give', async (ctx) => {
+  const senderUsername = ctx.from?.username;
+  if (!ADMIN_USERNAMES.includes(senderUsername)) {
+    return ctx.reply('Нет доступа.');
+  }
+
+  const text = ctx.message?.text || '';
+  const parts = text.split(/\s+/).slice(1); // ['@username', '500']
+  if (parts.length < 2) {
+    return ctx.reply('Использование: /give @username 500\nили: /give user_id 500');
+  }
+
+  const targetRaw = parts[0].replace('@', '');
+  const amount = parseInt(parts[1], 10);
+  if (!amount || amount <= 0 || amount > 1_000_000) {
+    return ctx.reply('Некорректная сумма (1 — 1 000 000)');
+  }
+
+  // Ищем игрока по username или user_id
+  let player = await db('players')
+    .where({ username: targetRaw })
+    .orWhere({ user_id: targetRaw })
+    .first();
+
+  if (!player) {
+    return ctx.reply(`Игрок @${targetRaw} не найден в базе. Он должен хотя бы раз открыть бота.`);
+  }
+
+  await db.transaction(async (trx) => {
+    await credit(trx, player.user_id, amount, 'admin_give', `give:${Date.now()}:${player.user_id}`);
+  });
+
+  const updatedPlayer = await db('players').where({ user_id: player.user_id }).first();
+  const name = player.first_name || `@${player.username}` || `ID ${player.user_id}`;
+
+  // Уведомляем получателя
+  const giftMsg = [
+    '🪙 Ого! Тебе начислили монеты!',
+    '',
+    `+${amount} монет уже ждут на балансе. Раздача, бонус или внимание админов — неважно, главное тратить с удовольствием! ✨`,
+    '',
+    'Погнали в игру!'
+  ].join('\n');
+
+  try {
+    await ctx.api.sendMessage(player.user_id, giftMsg, {
+      reply_markup: { inline_keyboard: [[{ text: '🎴  Играть', web_app: { url: MINI_APP_URL } }]] }
+    });
+  } catch (e) {
+    console.warn('cannot notify recipient:', e.message);
+  }
+
+  await ctx.reply(
+    `✅ ${name} получил +${amount} монет\nНовый баланс: ${Number(updatedPlayer.balance)} монет`
+  );
+});
+
 // ─── /help ───
 bot.command('help', async (ctx) => {
   await ctx.reply(
@@ -62,7 +124,8 @@ bot.command('help', async (ctx) => {
     '/play — открыть игру\n' +
     '/deposit — пополнить баланс\n' +
     '/profile — мой профиль\n' +
-    '/referral — реферальная программа\n',
+    '/referral — реферальная программа\n' +
+    (ADMIN_USERNAMES.includes(ctx.from?.username) ? '\n/give @username сумма — начислить монеты' : ''),
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🎴  Играть', web_app: { url: MINI_APP_URL } }]] } }
   );
 });
