@@ -13,7 +13,9 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 
-dotenv.config();
+// Загружаем .env из корня проекта (/opt/deadwill/.env)
+const envPath = new URL('../../.env', import.meta.url).pathname;
+dotenv.config({ path: envPath });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SESSION_FILE = path.join(__dirname, 'session.txt');
