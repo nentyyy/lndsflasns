@@ -1,25 +1,21 @@
-// Portals Userbot — парсит подарки из @PortalsBot и синкает в БД.
-// Запуск: node src/userbot/index.js
-// Первый запуск: введи номер телефона и код подтверждения.
+// Portals Userbot — парсит подарки из @portals и синкает в БД.
 import { TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions/index.js';
-import { Api } from 'telegram';
 import input from 'input';
 import { db } from '../api/lib/db.js';
 import { migrate } from '../api/lib/migrate.js';
-import { COIN_RATE } from '../api/lib/config.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 
-// Загружаем .env из корня проекта (/opt/deadwill/.env)
-const envPath = new URL('../../.env', import.meta.url).pathname;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Загружаем .env из корня проекта
+const envPath = path.join(__dirname, '..', '..', '.env');
 dotenv.config({ path: envPath });
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SESSION_FILE = path.join(__dirname, 'session.txt');
-
 const API_ID = Number(process.env.TG_API_ID || '');
 const API_HASH = process.env.TG_API_HASH || '';
 
@@ -34,77 +30,147 @@ if (fs.existsSync(SESSION_FILE)) {
 }
 
 const session = new StringSession(sessionString);
-const client = new TelegramClient(session, API_ID, API_HASH, {
-  connectionRetries: 5,
-});
+const client = new TelegramClient(session, API_ID, API_HASH, { connectionRetries: 5 });
 
-// Конвертируем TON → монеты (1 монета = 0.1 TON)
-function tonToCoins(tonAmount) {
-  return Math.ceil(tonAmount / 0.1);
-}
+// 1 монета = 0.1 TON
+function tonToCoins(ton) { return Math.ceil(ton / 0.1); }
 
-// Парсим подарки из WebApp Portals или из сообщений бота @PortalsBot
-async function fetchPortalsGifts() {
+// Пытаемся получить WebApp URL и данные подарков из ответа @portals
+async function fetchPortalsData() {
   try {
-    // Отправляем /start боту @PortalsBot чтобы получить список
     const portalsBot = 'portals';
 
-    // Получаем inline кнопки или список через bot API
+    // Отправляем /start
     await client.sendMessage(portalsBot, { message: '/start' });
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 3000));
 
-    const messages = await client.getMessages(portalsBot, { limit: 5 });
-    console.log('[portals] got', messages.length, 'messages from bot');
+    const messages = await client.getMessages(portalsBot, { limit: 10 });
+    let webAppUrl = null;
 
-    // Возвращаем placeholder данные пока не подключён реальный парсинг
-    // В production здесь будет парсинг ответов бота
-    return [];
+    for (const msg of messages) {
+      // Ищем WebApp URL в кнопках
+      if (msg.replyMarkup) {
+        for (const row of (msg.replyMarkup.rows || [])) {
+          for (const btn of (row.buttons || [])) {
+            const url = btn.url || btn.webView?.url || '';
+            if (url.includes('t.me') || url.startsWith('https://')) {
+              console.log('[portals] button url:', url);
+              if (!webAppUrl) webAppUrl = url;
+            }
+          }
+        }
+      }
+      if (msg.message) {
+        console.log('[portals] message text:', msg.message.slice(0, 200));
+      }
+    }
+
+    // Если нашли WebApp URL — пробуем получить данные через HTTP
+    if (webAppUrl) {
+      console.log('[portals] trying to fetch gift data from:', webAppUrl);
+      const gifts = await fetchGiftsFromWebApp(webAppUrl);
+      return gifts;
+    }
+
+    // Пробуем известные Portals API endpoints напрямую
+    return await tryPortalsApi();
+
   } catch (e) {
-    console.error('[portals] fetch error:', e.message);
+    console.error('[portals] fetchPortalsData error:', e.message);
     return [];
   }
 }
 
-// Синкаем кеш подарков в базу данных
-async function syncGiftsToDb(gifts) {
-  if (!gifts || gifts.length === 0) {
-    console.log('[portals] no gifts to sync');
+// Пробуем Portals HTTP API
+async function tryPortalsApi() {
+  const endpoints = [
+    'https://api.portals.win/gifts',
+    'https://portals.win/api/gifts',
+    'https://ton-portals.app/api/gifts',
+    'https://portals.tg/api/gifts',
+  ];
+
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const data = await res.json();
+        console.log('[portals] found API at:', url);
+        return parseGiftsResponse(data);
+      }
+    } catch {}
+  }
+
+  console.log('[portals] no known API endpoint responded');
+  return [];
+}
+
+// Получаем данные через URL мини-апп
+async function fetchGiftsFromWebApp(webAppUrl) {
+  try {
+    // Извлекаем домен и пробуем /api/gifts или /gifts
+    const base = new URL(webAppUrl);
+    const apiUrl = `${base.protocol}//${base.host}/api/gifts`;
+    const res = await fetch(apiUrl, { signal: AbortSignal.timeout(5000) });
+    if (res.ok) {
+      const data = await res.json();
+      return parseGiftsResponse(data);
+    }
+  } catch (e) {
+    console.log('[portals] webApp API fetch failed:', e.message);
+  }
+  return [];
+}
+
+// Парсим ответ в единый формат
+function parseGiftsResponse(data) {
+  const list = Array.isArray(data) ? data : (data.gifts || data.items || data.data || []);
+  return list.map(item => ({
+    id: String(item.id || item.slug || item.name).toLowerCase().replace(/\s+/g, '-'),
+    name: item.name || item.title || String(item.id),
+    file: item.file || item.image || item.emoji || `${item.id}.webp`,
+    rarity: item.rarity || item.tier || 'Common',
+    priceTon: Number(item.price || item.priceTon || item.ton_price || 0),
+    stock: Number(item.stock || item.available || item.count || 999),
+    available: item.available !== false && item.stock !== 0,
+  })).filter(g => g.priceTon > 0);
+}
+
+// Синкаем в БД
+async function syncGifts(gifts) {
+  if (!gifts.length) {
+    console.log('[portals] no gifts found via API — check logs above for WebApp URL');
+    console.log('[portals] add gifts manually via: /api/admin/portals-cache endpoint');
     return;
   }
-  for (const gift of gifts) {
-    await db('portals_cache')
-      .insert({
-        id: gift.id,
-        name: gift.name,
-        file: gift.file || `${gift.id}.webp`,
-        rarity: gift.rarity || 'Common',
-        priceCoins: gift.priceCoins || tonToCoins(gift.priceTon || 0.1),
-        priceTon: gift.priceTon || 0,
-        stock: gift.stock || 999,
-        available: gift.available !== false,
-        updated_at: new Date().toISOString()
-      })
-      .onConflict('id')
-      .merge();
+  for (const g of gifts) {
+    await db('portals_cache').insert({
+      id: g.id, name: g.name, file: g.file, rarity: g.rarity,
+      priceCoins: tonToCoins(g.priceTon), priceTon: g.priceTon,
+      stock: g.stock, available: g.available ? 1 : 0,
+      updated_at: new Date().toISOString()
+    }).onConflict('id').merge();
   }
-  console.log(`[portals] synced ${gifts.length} gifts`);
+  console.log(`[portals] synced ${gifts.length} gifts to DB`);
 }
 
-// Купить подарок через Portals (для команды из API)
-async function buyGiftViaPortals(giftId, recipientUserId) {
+// Купить подарок — запись заказа в БД
+async function processOrders() {
+  const orderFile = path.join(__dirname, 'pending_order.json');
+  if (!fs.existsSync(orderFile)) return;
   try {
-    const portalsBot = 'portals';
-    // Команда покупки — зависит от API бота
-    await client.sendMessage(portalsBot, { message: `/buy ${giftId} ${recipientUserId}` });
-    console.log(`[portals] sent buy request for ${giftId} to user ${recipientUserId}`);
-    return { ok: true };
+    const order = JSON.parse(fs.readFileSync(orderFile, 'utf8'));
+    fs.unlinkSync(orderFile);
+    console.log('[portals] processing order:', order);
+    // Отправляем сообщение боту @portals для покупки
+    await client.sendMessage('portals', { message: `/buy ${order.giftId}` });
+    await db('portals_purchases').where({ id: order.purchaseId }).update({ status: 'sent', sent_at: new Date().toISOString() });
+    console.log('[portals] order sent:', order.purchaseId);
   } catch (e) {
-    console.error('[portals] buy error:', e.message);
-    return { ok: false, error: e.message };
+    console.error('[portals] order error:', e.message);
   }
 }
 
-// Главный цикл
 async function main() {
   await migrate();
 
@@ -115,43 +181,25 @@ async function main() {
     onError: (err) => console.error('Auth error:', err.message),
   });
 
-  // Сохраняем сессию
-  const savedSession = client.session.save();
-  fs.writeFileSync(SESSION_FILE, savedSession);
+  const saved = client.session.save();
+  fs.writeFileSync(SESSION_FILE, saved);
   console.log('[userbot] session saved');
   console.log('[userbot] connected as:', (await client.getMe()).username || 'user');
 
   // Первичная синхронизация
-  await syncGiftsToDb(await fetchPortalsGifts());
+  const gifts = await fetchPortalsData();
+  await syncGifts(gifts);
 
-  // Периодический цикл: каждые 5 минут обновляем цены
+  // Каждые 5 минут обновляем
   setInterval(async () => {
-    console.log('[portals] syncing...');
-    await syncGiftsToDb(await fetchPortalsGifts());
+    const g = await fetchPortalsData();
+    await syncGifts(g);
   }, 5 * 60 * 1000);
 
-  // Слушаем HTTP-команды на покупку через простой файл-флаг
-  setInterval(async () => {
-    const orderFile = path.join(__dirname, 'pending_order.json');
-    if (fs.existsSync(orderFile)) {
-      try {
-        const order = JSON.parse(fs.readFileSync(orderFile, 'utf8'));
-        fs.unlinkSync(orderFile);
-        console.log('[portals] processing order:', order);
-        const result = await buyGiftViaPortals(order.giftId, order.userId);
-        if (result.ok) {
-          await db('portals_purchases').where({ id: order.purchaseId }).update({ status: 'sent', sent_at: new Date().toISOString() });
-        }
-      } catch (e) {
-        console.error('[portals] order error:', e.message);
-      }
-    }
-  }, 3000);
+  // Каждые 3 секунды проверяем очередь заказов
+  setInterval(processOrders, 3000);
 
   console.log('[userbot] running. Ctrl+C to stop.');
 }
 
-main().catch(e => {
-  console.error('Fatal:', e.message);
-  process.exit(1);
-});
+main().catch(e => { console.error('Fatal:', e.message); process.exit(1); });

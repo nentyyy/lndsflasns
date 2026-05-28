@@ -383,7 +383,28 @@ app.get('/api/admin/ledger', requireAdmin, async (req, res, next) => {
 app.get('/api/admin/portals', requireAdmin, async (req, res, next) => {
   try {
     const purchases = await db('portals_purchases').orderBy('created_at', 'desc').limit(100);
-    res.json({ purchases });
+    const cache = await db('portals_cache').orderBy('updated_at', 'desc');
+    res.json({ purchases, cache });
+  } catch (e) { next(e); }
+});
+
+// Ручное добавление/обновление подарка в кеш (для admin)
+app.post('/api/admin/portals-cache', requireAdmin, async (req, res, next) => {
+  try {
+    const { id, name, file, rarity, priceTon, stock } = req.body;
+    if (!id || !name || !priceTon) return res.status(400).json({ error: 'id, name, priceTon required' });
+    const priceCoins = Math.ceil(Number(priceTon) / 0.1);
+    await db('portals_cache').insert({
+      id, name,
+      file: file || `${id}.webp`,
+      rarity: rarity || 'Common',
+      priceCoins, priceTon: Number(priceTon),
+      stock: stock !== undefined ? Number(stock) : 999,
+      available: 1,
+      updated_at: new Date().toISOString()
+    }).onConflict('id').merge();
+    const all = await db('portals_cache').orderBy('priceCoins');
+    res.json({ ok: true, cache: all });
   } catch (e) { next(e); }
 });
 
