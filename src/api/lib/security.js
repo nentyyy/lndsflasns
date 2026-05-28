@@ -50,11 +50,11 @@ async function ensurePlayer(user) {
 
   const existing = await db('players').where({ user_id: id }).first();
   if (existing) {
-    // Обновляем имя/username/роль при каждом входе
     const updates = {};
-    if (username && existing.username !== username) updates.username = username;
-    if (user.first_name && existing.first_name !== user.first_name) updates.first_name = user.first_name;
-    if (ADMIN_USERNAMES.includes(username) && existing.role !== 'Owner') updates.role = 'Owner';
+    // Обновляем ТОЛЬКО если пришли реальные данные из Telegram (не заглушки)
+    if (username && username !== 'dev' && existing.username !== username) updates.username = username;
+    if (user.first_name && user.first_name !== 'Dev' && existing.first_name !== user.first_name) updates.first_name = user.first_name;
+    if (ADMIN_USERNAMES.includes(username || existing.username) && existing.role !== 'Owner') updates.role = 'Owner';
     if (Object.keys(updates).length > 0) {
       await db('players').where({ user_id: id }).update(updates);
     }
@@ -63,8 +63,8 @@ async function ensurePlayer(user) {
   await db('players')
     .insert({
       user_id: id,
-      username,
-      first_name: user.first_name || null,
+      username: (username && username !== 'dev') ? username : null,
+      first_name: (user.first_name && user.first_name !== 'Dev') ? user.first_name : null,
       role
     })
     .onConflict('user_id')
@@ -109,9 +109,9 @@ export function authMiddleware() {
         user = parseUserFromInitData(rawInitData);
         if (!user) throw new AuthError('cannot parse initData');
       } else if (env.ALLOW_DEV_AUTH) {
-        // Нет initData вообще — dev fallback
+        // Нет initData — dev fallback: передаём ТОЛЬКО id, без фиктивных username/first_name
         const devId = req.get('x-dev-user') || '1';
-        user = { id: devId, username: 'dev', first_name: 'Dev' };
+        user = { id: devId }; // не перезаписываем реальные данные из БД
       } else {
         throw new AuthError('missing initData — open via Telegram');
       }
