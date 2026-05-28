@@ -78,7 +78,6 @@ function encodeTonComment(text) {
 function App() {
   const [state, setState] = useState(createInitialState);
   const [tab, setTab] = useState('home');
-  const [homeView, setHomeView] = useState('hall'); // hall | tournament
   const modeId = 'premium';
   const [willView, setWillView] = useState('pvp'); // pvp | solo
   const [pvpState, setPvpState] = useState(null);
@@ -102,9 +101,8 @@ function App() {
   const [paymentMethod, setPaymentMethod] = useState('stars');
   const [payPending, setPayPending] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
-  const [passOpen, setPassOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
   const [roundId, setRoundId] = useState(null);
+  const [depositView, setDepositView] = useState('main'); // main | packs | manual
   const [starsPacks, setStarsPacks] = useState([]);
   const [tonPacks, setTonPacks] = useState([]);
   const [tonIntent, setTonIntent] = useState(null);
@@ -151,13 +149,6 @@ function App() {
       .finally(() => setBootReady(true));
   }, []);
 
-  // Перепроверка турнира при открытии вкладки.
-  useEffect(() => {
-    if (homeView === 'tournament') {
-      api.tournament().then(setTournament).catch(() => {});
-    }
-  }, [homeView]);
-
   // Polling PvP лобби пока пользователь на Will/pvp.
   useEffect(() => {
     let cancelled = false;
@@ -167,10 +158,16 @@ function App() {
       try {
         const s = await api.pvpState('cheap');
         if (!cancelled) setPvpState(s);
+        if (!cancelled) {
+          const endsAt = s?.lobby?.endsAt;
+          const secsLeft = endsAt ? (new Date(endsAt).getTime() - Date.now()) / 1000 : 999;
+          // Ускоряем поллинг когда мало времени
+          const delay = secsLeft <= 3 ? 400 : secsLeft <= 8 ? 800 : 2000;
+          timer = setTimeout(tick, delay);
+        }
       } catch (e) {
-        console.warn('pvp state failed', e.status, e.message);
+        if (!cancelled) timer = setTimeout(tick, 2000);
       }
-      if (!cancelled) timer = setTimeout(tick, 2000);
     };
     tick();
     return () => { cancelled = true; clearTimeout(timer); };
@@ -661,14 +658,9 @@ function App() {
           {tab === 'home' && (
             <HomeTab
               player={state.player}
-              dailyBonus={state.dailyBonus}
-              tournament={tournament}
-              view={homeView}
-              onViewChange={setHomeView}
-              onClaimDaily={claimDaily}
+              liveWins={liveWins}
               onOpenPlay={() => setTab('play')}
               onOpenDeposit={() => setDepositOpen(true)}
-              onOpenInfo={() => setInfoOpen(true)}
             />
           )}
 
@@ -700,12 +692,9 @@ function App() {
 
           {tab === 'clans' && (
             <ClansTab
-              clans={state.clans}
-              clanTab={clanTab}
-              onTabChange={setClanTab}
               player={state.player}
-              onJoinClan={joinClan}
               onBack={() => setTab('profile')}
+              onNotify={notify}
             />
           )}
 
@@ -766,8 +755,10 @@ function App() {
 
       {depositOpen && (
         <DepositSheet
+          view={depositView}
+          onViewChange={setDepositView}
           method={paymentMethod}
-          onClose={() => { setDepositOpen(false); setTonIntent(null); }}
+          onClose={() => { setDepositOpen(false); setTonIntent(null); setDepositView('main'); }}
           onMethodChange={setPaymentMethod}
           starsPacks={starsPacks}
           tonPacks={tonPacks}
@@ -778,7 +769,6 @@ function App() {
           tonWallet={tonWallet}
           tonIntent={tonIntent}
           onConnectTon={connectTonWallet}
-          sendBotLink={sendBotLink}
         />
       )}
 
@@ -787,16 +777,6 @@ function App() {
           userId={playerProfileOpen.userId}
           data={playerProfileData}
           onClose={() => { setPlayerProfileOpen(null); setPlayerProfileData(null); }}
-        />
-      )}
-
-      {passOpen && (
-        <PassOverlay
-          passData={state.pass}
-          player={state.player}
-          onClose={() => setPassOpen(false)}
-          onClaimReward={claimPassReward}
-          onClaimQuest={claimQuest}
         />
       )}
 
@@ -810,8 +790,6 @@ function App() {
           onClose={resetRound}
         />
       )}
-
-      {infoOpen && <InfoSheet onClose={() => setInfoOpen(false)} />}
 
       {adminOpen && (
         <AdminPanel
@@ -953,80 +931,62 @@ function DeathSeal() {
 
 /* ─── Home tab ────────────────────────────────────────────── */
 
-function timeLeft(endIso) {
-  if (!endIso) return null;
-  const diff = new Date(endIso).getTime() - Date.now();
-  if (diff <= 0) return 'завершён';
-  const d = Math.floor(diff / 86400000);
-  const h = Math.floor((diff % 86400000) / 3600000);
-  const m = Math.floor((diff % 3600000) / 60000);
-  if (d > 0) return `${d}д ${h}ч`;
-  if (h > 0) return `${h}ч ${m}м`;
-  return `${m}м`;
-}
-
-function HomeTab({ player, dailyBonus, tournament, view, onViewChange, onClaimDaily, onOpenPlay, onOpenDeposit }) {
+function HomeTab({ player, liveWins, onOpenPlay, onOpenDeposit }) {
   return (
     <section className="dw-page dw-home-page">
-      <div className="dw-home-tabs">
-        <button className={`dw-home-tab ${view === 'hall' ? 'active' : ''}`} onClick={() => onViewChange('hall')}>
-          Зал
+      <motion.div
+        className="dw-home-hero"
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+      >
+        <DeathSeal />
+        <h1 className="dw-hero-title">DEADWILL</h1>
+        <p className="dw-hero-tagline">Выбери карту — узнай судьбу</p>
+      </motion.div>
+
+      <motion.div
+        className="dw-home-actions"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: 0.18 }}
+      >
+        <button className="dw-btn-play" onClick={onOpenPlay}>
+          {player.welcomeAvailable ? '🎴  Играть бесплатно' : '🎴  Играть'}
         </button>
-        <button className={`dw-home-tab ${view === 'tournament' ? 'active' : ''}`} onClick={() => onViewChange('tournament')}>
-          Турниры
+        <button className="dw-btn-deposit" onClick={onOpenDeposit}>
+          + Пополнить
         </button>
+      </motion.div>
+
+      <div className="dw-home-info">
+        <div className="dw-home-info-item">
+          <span className="dw-home-info-val">5 монет</span>
+          <span className="dw-home-info-lbl">вход в раунд</span>
+        </div>
+        <div className="dw-home-info-sep" />
+        <div className="dw-home-info-item">
+          <span className="dw-home-info-val">+40 монет</span>
+          <span className="dw-home-info-lbl">топ приз</span>
+        </div>
+        <div className="dw-home-info-sep" />
+        <div className="dw-home-info-item">
+          <span className="dw-home-info-val">36 карт</span>
+          <span className="dw-home-info-lbl">в раунде</span>
+        </div>
       </div>
 
-      {view === 'hall' && (
-        <>
-          <section className="dw-home-hero">
-            <motion.div
-              className="dw-hero-inner"
-              initial={{ opacity: 0, y: 22 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, ease: [0.2, 0, 0, 1] }}
-            >
-              <DeathSeal />
-              <h1 className="dw-hero-title">DEADWILL</h1>
-              <p className="dw-hero-subtitle">пять запечатанных<br />завещаний</p>
-              <div className="dw-flourish"><span className="dw-flourish-dot" /></div>
-              <p className="dw-hero-sub">выбери одно из пяти</p>
-            </motion.div>
-
-            <motion.div
-              className="dw-hero-actions"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.22, ease: [0.2, 0, 0, 1] }}
-            >
-              <button className="dw-btn primary full" onClick={onOpenPlay}>
-                {player.welcomeAvailable ? 'начать · бесплатно' : 'играть'}
-              </button>
-              <button className="dw-btn ghost full" onClick={onOpenDeposit}>пополнить</button>
-            </motion.div>
-          </section>
-
-          {dailyBonus.claimable && (
-            <motion.button
-              className="dw-daily-chip"
-              onClick={onClaimDaily}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3, delay: 0.38 }}
-              whileTap={{ scale: 0.97 }}
-            >
-              <span className="dw-daily-chip-copy">
-                <span className="dw-kicker">ежедневный сбор</span>
-                <strong>+{formatCoins(dailyBonus.coins)}</strong>
+      {liveWins.length > 0 && (
+        <div className="dw-live-feed">
+          <span className="dw-live-dot" />
+          <div className="dw-live-scroll">
+            {liveWins.map((w, i) => (
+              <span key={i} className="dw-live-item">
+                <strong>{w.name}</strong> выиграл {w.amount} монет
               </span>
-              <span className="dw-daily-chip-cta">забрать ›</span>
-            </motion.button>
-          )}
-        </>
-      )}
-
-      {view === 'tournament' && (
-        <TournamentSection tournament={tournament} />
+            ))}
+          </div>
+        </div>
       )}
     </section>
   );
@@ -1385,102 +1345,121 @@ function SoloPanel({
 
 /* ─── Clans tab ───────────────────────────────────────────── */
 
-function ClansTab({ clans, clanTab, onTabChange, player, onJoinClan, onBack }) {
+function ClansTab({ onBack, player, onNotify }) {
+  const [clans, setClans] = React.useState([]);
+  const [myClanId, setMyClanId] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [creating, setCreating] = React.useState(false);
+  const [form, setForm] = React.useState({ name: '', tag: '', description: '' });
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const data = await api.clans();
+      setClans(data.clans || []);
+      setMyClanId(data.myClanId || null);
+    } catch {}
+    setLoading(false);
+  };
+
+  React.useEffect(() => { load(); }, []);
+
+  const handleCreate = async () => {
+    if (!form.name.trim()) return;
+    try {
+      await api.createClan(form.name, form.tag, form.description);
+      setCreating(false);
+      setForm({ name: '', tag: '', description: '' });
+      load();
+      onNotify('Клан создан!', 'success');
+    } catch (e) {
+      onNotify(e.message === 'name_taken' ? 'Имя занято' : e.message === 'already_in_clan' ? 'Ты уже в клане' : 'Ошибка', 'danger');
+    }
+  };
+
+  const handleJoin = async (clanId) => {
+    try {
+      await api.joinClan(clanId);
+      load();
+      onNotify('Вступил в клан', 'success');
+    } catch (e) {
+      onNotify(e.message === 'already_in_clan' ? 'Уже в клане' : 'Ошибка', 'danger');
+    }
+  };
+
+  const myClan = clans.find((c) => c.id === myClanId);
+
   return (
     <section className="dw-page dw-clans-page">
-      <button className="dw-back-link" onClick={onBack}>‹ профиль</button>
-      <div className="dw-segment-switch">
-        {clanTabs.map((item) => (
-          <button
-            key={item}
-            className={`dw-segment-chip ${clanTab === item ? 'active' : ''}`}
-            onClick={() => onTabChange(item)}
-          >
-            {item === 'my' ? 'Мой клан' : item === 'chat' ? 'Чат' : 'Топ кланов'}
-          </button>
-        ))}
-      </div>
+      <button className="dw-back-link" onClick={onBack}>‹ назад</button>
+      <h2 style={{ marginBottom: 16 }}>Кланы</h2>
 
-      {clanTab === 'my' && (
+      {loading && <div className="dw-pay-loading"><div className="dw-pay-spinner" /></div>}
+
+      {!loading && myClan && (
+        <article className="dw-panel" style={{ marginBottom: 12 }}>
+          <div className="dw-panel-head">
+            <div>
+              <span className="dw-kicker">Мой клан</span>
+              <h2>[{myClan.tag}] {myClan.name}</h2>
+            </div>
+            <span className="dw-badge">{myClan.memberCount} чел.</span>
+          </div>
+          {myClan.description && <p style={{ color: 'var(--bone-soft)', marginTop: 6 }}>{myClan.description}</p>}
+        </article>
+      )}
+
+      {!loading && !myClanId && (
         <>
-          <article className="dw-guild-card">
-            <div className="dw-guild-emblem">{clans.myClan.level}</div>
-            <div className="dw-guild-main">
-              <span className="dw-kicker">Guild chamber</span>
-              <h2>{clans.myClan.name}</h2>
-              <p>{clans.myClan.description}</p>
-              <div className="dw-guild-progress">
-                <span style={{ width: '62%' }} />
-              </div>
-              <div className="dw-guild-stats">
-                <span><b>{clans.myClan.members}/50</b> участников</span>
-                <span><b>{formatCompact(clans.myClan.contribution)}</b> монет</span>
-                <span><b>#{clans.myClan.seasonRank}</b> сезон</span>
-              </div>
-            </div>
-          </article>
-
-          <article className="dw-panel">
-            <div className="dw-panel-head">
-              <h2>Участники</h2>
-              <span className="dw-panel-sub">Сезонный рейтинг</span>
-            </div>
-            <div className="dw-member-list">
-              {clans.roster.map((member) => (
-                <div className="dw-member-row" key={member.name}>
-                  <div className={`dw-rank-token ${member.accent}`}>#{member.place}</div>
-                  <div className="dw-member-avatar">{member.name.slice(0, 1)}</div>
-                  <div className="dw-member-copy">
-                    <strong>{member.name}</strong>
-                    <p>{member.role}</p>
-                  </div>
-                  <span style={{ color: 'var(--gold-1)', fontWeight: 700 }}>{formatCompact(member.seasonCoins)}</span>
-                </div>
-              ))}
-            </div>
-          </article>
+          {!creating ? (
+            <button className="dw-btn primary full" style={{ marginBottom: 16 }} onClick={() => setCreating(true)}>
+              + Создать клан
+            </button>
+          ) : (
+            <article className="dw-panel" style={{ marginBottom: 16 }}>
+              <div className="dw-panel-head"><h2>Новый клан</h2><button className="dw-icon-btn" onClick={() => setCreating(false)}>×</button></div>
+              <input className="dw-manual-input" style={{ marginBottom: 10, textAlign: 'left', fontSize: 15 }}
+                placeholder="Название клана" value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+              <input className="dw-manual-input" style={{ marginBottom: 10, textAlign: 'left', fontSize: 15 }}
+                placeholder="Тег (до 8 символов)" maxLength={8} value={form.tag}
+                onChange={(e) => setForm((f) => ({ ...f, tag: e.target.value }))} />
+              <input className="dw-manual-input" style={{ marginBottom: 12, textAlign: 'left', fontSize: 15 }}
+                placeholder="Описание (необязательно)" value={form.description}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+              <button className="dw-btn primary full" onClick={handleCreate} disabled={!form.name.trim()}>
+                Создать
+              </button>
+            </article>
+          )}
         </>
       )}
 
-      {clanTab === 'chat' && (
-        <div className="dw-chat-stack">
-          {clans.chat.map((item) => (
-            <article className={`dw-chat-bubble ${item.type}`} key={item.id}>
-              <strong>{item.author}</strong>
-              <p>{item.body}</p>
-            </article>
-          ))}
-          <div className="dw-chat-input">
-            <span>Сообщение в клановый чат...</span>
-          </div>
-        </div>
+      {!loading && clans.length === 0 && (
+        <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: '24px 0' }}>Кланов пока нет. Создай первый!</p>
       )}
 
-      {clanTab === 'top' && (
-        <div className="dw-stack">
-          {clans.top.map((item) => (
-            <article className={`dw-panel ${item.place === 1 ? 'dw-top-hero' : ''}`} key={item.name}>
-              <div className="dw-panel-head">
-                <div>
-                  <span className="dw-kicker">#{item.place}</span>
-                  <h2>{item.name}</h2>
-                </div>
-                <span className="dw-badge">{item.members} чел.</span>
+      <div className="dw-stack">
+        {clans.map((clan, i) => (
+          <article className="dw-panel" key={clan.id}>
+            <div className="dw-panel-head">
+              <div>
+                <span className="dw-kicker">#{i + 1}</span>
+                <h2>[{clan.tag}] {clan.name}</h2>
               </div>
-              <div className="dw-clan-top-foot">
-                <strong className="dw-large-value">{item.seasonCoins}</strong>
-                {item.name === clans.myClan.name ? (
-                  <span className="dw-badge accent">Мой клан</span>
-                ) : (
-                  <button className="dw-btn secondary small" onClick={() => onJoinClan(item.name)}>
-                    Вступить
-                  </button>
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
+              <span className="dw-badge">{clan.memberCount} чел.</span>
+            </div>
+            {clan.description && <p style={{ color: 'var(--bone-soft)', fontSize: 13, marginTop: 4 }}>{clan.description}</p>}
+            <div style={{ marginTop: 10 }}>
+              {clan.isMember ? (
+                <span className="dw-badge accent">Мой клан</span>
+              ) : !myClanId ? (
+                <button className="dw-btn secondary small" onClick={() => handleJoin(clan.id)}>Вступить</button>
+              ) : null}
+            </div>
+          </article>
+        ))}
+      </div>
     </section>
   );
 }
@@ -2138,291 +2117,126 @@ function PlayerProfileModal({ userId, data, onClose }) {
   );
 }
 
-/* ─── Deposit sheet ───────────────────────────────────────── */
+/* ─── Deposit sheet — 2 кнопки ───────────────────────────── */
 
-function DepositSheet({ method, onMethodChange, starsPacks, tonPacks, onStarsPay, onTonPay, onCryptobotPay, payPending, tonWallet, tonIntent, onConnectTon, onClose, sendBotLink }) {
+function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, tonPacks, onStarsPay, onTonPay, payPending, tonWallet, tonIntent, onConnectTon, onClose }) {
+  const [manualTon, setManualTon] = React.useState('');
+  const handleManualSend = () => {
+    const amt = parseFloat(manualTon);
+    if (!amt || amt <= 0) return;
+    onTonPay({ id: 'manual', nanoton: Math.round(amt * 1e9), coins: Math.floor(amt * 10), bonus: 0, title: amt + ' TON' });
+  };
   return (
-    <motion.div
-      className="dw-sheet-backdrop"
-      onClick={onClose}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-    >
-      <motion.div
-        className="dw-deposit-sheet"
-        onClick={(e) => e.stopPropagation()}
-        initial={{ y: '100%' }}
-        animate={{ y: 0 }}
-        exit={{ y: '100%' }}
-        transition={{ duration: 0.35, ease: [0.32, 0, 0, 1] }}
-      >
-        <div className="dw-panel-head">
+    <motion.div className="dw-sheet-backdrop" onClick={onClose}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
+      <motion.div className="dw-deposit-sheet" onClick={(e) => e.stopPropagation()}
+        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+        transition={{ duration: 0.32, ease: [0.32, 0, 0, 1] }}>
+        <div className="dw-deposit-head">
           <div>
-            <span className="dw-kicker">Top up</span>
-            <h2>Пополнение</h2>
+            {view !== 'main' && <button className="dw-back-link" style={{ marginBottom: 4 }} onClick={() => onViewChange('main')}>← Назад</button>}
+            <h2 style={{ fontSize: 20, margin: '2px 0' }}>Пополнение</h2>
+            <p style={{ color: 'var(--bone-soft)', fontSize: 13, margin: 0 }}>1 монета = 20 ⭐ = 0.1 TON</p>
           </div>
           <button className="dw-icon-btn" onClick={onClose}>×</button>
         </div>
 
-        <div className="dw-deposit-tabs">
-          <button className={`dw-deposit-tab ${method === 'stars' ? 'active' : ''}`} onClick={() => onMethodChange('stars')}>
-            ⭐ Stars
-          </button>
-          <button className={`dw-deposit-tab ${method === 'ton' ? 'active' : ''}`} onClick={() => onMethodChange('ton')}>
-            TON
-          </button>
-          <button className={`dw-deposit-tab ${method === 'cryptobot' ? 'active' : ''}`} onClick={() => onMethodChange('cryptobot')}>
-            @send
-          </button>
-        </div>
-
-        <p style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: 13, color: 'var(--bone-soft)', margin: '4px 0 12px', textAlign: 'center' }}>
-          1 монета · 20&nbsp;Stars или 0.1&nbsp;TON
-        </p>
-
-        {/* TON: wallet not connected → connect block */}
-        {method === 'ton' && !tonWallet && !tonIntent && (
-          <motion.div
-            className="dw-ton-connect-block"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.28 }}
-          >
-            <div className="dw-ton-connect-glyph" aria-hidden="true" />
-            <strong>Подключите TON кошелёк</strong>
-            <p>Tonkeeper · MyTonWallet · Ton Space</p>
-            <button className="dw-btn primary full dw-ton-connect-btn" onClick={onConnectTon}>
-              Connect TON Wallet
+        {view === 'main' && !payPending && !tonIntent && (
+          <div className="dw-deposit-choices">
+            <button className="dw-deposit-choice" onClick={() => onViewChange('packs')}>
+              <span className="dw-deposit-choice-icon">⭐</span>
+              <div className="dw-deposit-choice-text">
+                <strong>Купить набор</strong>
+                <p>Stars или TON — готовые пакеты с бонусом</p>
+              </div>
+              <span className="dw-deposit-choice-arrow">›</span>
             </button>
-          </motion.div>
+            <button className="dw-deposit-choice" onClick={() => onViewChange('manual')}>
+              <span className="dw-deposit-choice-icon">💎</span>
+              <div className="dw-deposit-choice-text">
+                <strong>Ввести сумму TON</strong>
+                <p>Любая сумма, перевод напрямую</p>
+              </div>
+              <span className="dw-deposit-choice-arrow">›</span>
+            </button>
+          </div>
         )}
 
-        {/* TON: wallet connected → show address + packs */}
-        {method === 'ton' && tonWallet && !tonIntent && (
-          <motion.div
-            className="dw-wallet-row"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.22 }}
-          >
-            <div className="dw-wallet-info">
-              <span className="dw-kicker">TON Wallet</span>
-              <strong className="dw-wallet-addr">
-                {tonWallet.address.slice(0, 6)}…{tonWallet.address.slice(-4)}
-              </strong>
+        {view === 'packs' && !payPending && !tonIntent && (
+          <div>
+            <div className="dw-deposit-tabs">
+              <button className={`dw-deposit-tab ${method === 'stars' ? 'active' : ''}`} onClick={() => onMethodChange('stars')}>⭐ Stars</button>
+              <button className={`dw-deposit-tab ${method === 'ton' ? 'active' : ''}`} onClick={() => onMethodChange('ton')}>💎 TON</button>
             </div>
-            <button className="dw-btn ghost small" onClick={onConnectTon}>Сменить</button>
-          </motion.div>
+            {method === 'ton' && !tonWallet && (
+              <div className="dw-ton-connect-block">
+                <strong>Подключи TON кошелёк</strong>
+                <p>Tonkeeper · MyTonWallet</p>
+                <button className="dw-btn primary full" onClick={onConnectTon}>Подключить</button>
+              </div>
+            )}
+            {(method === 'stars' || (method === 'ton' && tonWallet)) && (
+              <div className="dw-pack-list">
+                {(method === 'stars' ? starsPacks : tonPacks).map((pack, i) => (
+                  <motion.button className="dw-pack-row" key={pack.id}
+                    onClick={() => method === 'stars' ? onStarsPay(pack) : onTonPay(pack)}
+                    initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.18, delay: 0.04 * i }} whileTap={{ scale: 0.97 }}>
+                    <span className="dw-pack-icon" data-icon={method === 'stars' ? 'stars' : 'ton'} />
+                    <span className="dw-pack-copy">
+                      <strong>{pack.title}</strong>
+                      <span>{formatCoins(pack.coins)} монет{pack.bonus > 0 ? ` + ${pack.bonus} бонус` : ''}</span>
+                    </span>
+                    <span className="dw-pack-price">{method === 'stars' ? `${pack.stars} ⭐` : `${pack.nanoton / 1e9} TON`}</span>
+                  </motion.button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
-        {/* TON intent — transfer instructions */}
-        {method === 'ton' && tonIntent && (
+        {view === 'manual' && !payPending && !tonIntent && (
+          <div className="dw-manual-deposit">
+            <p style={{ color: 'var(--bone)', fontSize: 15, marginBottom: 20, lineHeight: 1.5 }}>
+              Переведи TON — монеты зачислятся за ~30 сек автоматически
+            </p>
+            <div className="dw-manual-input-row">
+              <input className="dw-manual-input" type="number" step="0.1" min="0.1"
+                placeholder="Сумма в TON" value={manualTon}
+                onChange={(e) => setManualTon(e.target.value)} />
+            </div>
+            {manualTon && <p style={{ color: 'var(--gold)', fontSize: 18, margin: '10px 0', textAlign: 'center', fontWeight: 700 }}>{Math.floor(parseFloat(manualTon) * 10)} монет</p>}
+            <button className="dw-btn primary full" style={{ marginTop: 14 }}
+              onClick={handleManualSend} disabled={!manualTon || parseFloat(manualTon) <= 0}>
+              Создать счёт
+            </button>
+            <p style={{ color: 'var(--ash)', fontSize: 12, marginTop: 10, textAlign: 'center' }}>Минимум 0.1 TON</p>
+          </div>
+        )}
+
+        {payPending && (
+          <div className="dw-pay-loading"><div className="dw-pay-spinner" /><span>Создаём счёт…</span></div>
+        )}
+
+        {tonIntent && !payPending && (
           <article className="dw-ton-intent">
             <span className="dw-kicker">Реквизиты перевода</span>
-            <div className="dw-ton-intent-row">
-              <span>Кошелёк</span>
-              <strong className="dw-wallet-addr">{tonIntent.wallet}</strong>
-            </div>
-            <div className="dw-ton-intent-row">
-              <span>Сумма</span>
-              <strong>{tonIntent.amountTon} TON</strong>
-            </div>
-            <div className="dw-ton-intent-row">
-              <span>Комментарий</span>
-              <strong className="dw-wallet-addr">{tonIntent.comment}</strong>
-            </div>
-            <p className="dw-ton-intent-note">
-              Отправь точно эту сумму с комментарием. Монеты зачислятся через 10–30 секунд после подтверждения сети.
-            </p>
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button
-                className="dw-btn primary"
-                style={{ flex: 1 }}
-                onClick={() => {
-                  const link = `ton://transfer/${tonIntent.wallet}?amount=${tonIntent.amountNanoton}&text=${encodeURIComponent(tonIntent.comment)}`;
-                  if (window.Telegram?.WebApp?.openLink) window.Telegram.WebApp.openLink(link);
-                  else window.open(link, '_blank');
-                }}
-              >
-                открыть кошелёк
-              </button>
-              <button
-                className="dw-btn secondary"
-                style={{ flex: 1 }}
-                onClick={() => {
-                  navigator.clipboard?.writeText(tonIntent.comment).catch(() => {});
-                  notify('Комментарий скопирован', 'success');
-                }}
-              >
-                скопировать memo
-              </button>
-            </div>
-          </article>
-        )}
-
-        {/* CryptoBot/@send block */}
-        {method === 'cryptobot' && !tonIntent && !payPending && (
-          <motion.div
-            className="dw-ton-connect-block"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.28 }}
-          >
-            <strong>Оплата через @send</strong>
-            <p style={{ fontSize: 12, color: 'var(--bone-soft)', margin: '6px 0 10px' }}>
-              Выбери пакет — откроется @send с реквизитами. Укажи сумму и комментарий (depositId).
-            </p>
-            <div className="dw-pack-list">
-              {tonPacks.map((pack, i) => (
-                <motion.button
-                  className="dw-pack-row"
-                  key={pack.id}
-                  onClick={() => onCryptobotPay(pack)}
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.24, delay: 0.05 * i }}
-                  whileTap={{ scale: 0.97 }}
-                >
-                  <span className="dw-pack-icon" data-icon="ton" aria-hidden="true" />
-                  <span className="dw-pack-copy">
-                    <strong>{pack.title}</strong>
-                    <span>{formatCoins(pack.coins)} монет{pack.bonus > 0 ? ` · +${formatCoins(pack.bonus)} бонус` : ''}</span>
-                  </span>
-                  <span className="dw-pack-price">{pack.nanoton / 1e9} TON</span>
-                </motion.button>
-              ))}
-            </div>
-          </motion.div>
-        )}
-
-        {method === 'cryptobot' && tonIntent?.isCryptobot && (
-          <article className="dw-ton-intent">
-            <span className="dw-kicker">Реквизиты @send</span>
+            <div className="dw-ton-intent-row"><span>Кошелёк</span><strong className="dw-wallet-addr">{(tonIntent.wallet || '').slice(0, 14)}…</strong></div>
             <div className="dw-ton-intent-row"><span>Сумма</span><strong>{tonIntent.amountTon} TON</strong></div>
-            <div className="dw-ton-intent-row"><span>Комментарий (memo)</span><strong className="dw-wallet-addr">{tonIntent.comment}</strong></div>
-            <p className="dw-ton-intent-note">Открой @send, укажи точную сумму и этот комментарий.</p>
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button className="dw-btn primary" style={{ flex: 1 }}
-                onClick={() => {
-                  const l = tonIntent.deepLink || `https://t.me/send?start=IVA6oMXOKQEF`;
-                  if (window.Telegram?.WebApp?.openTelegramLink) window.Telegram.WebApp.openTelegramLink(l);
-                  else window.open(l, '_blank');
-                }}>
-                открыть @send
-              </button>
-              <button className="dw-btn secondary" style={{ flex: 1 }}
-                onClick={() => navigator.clipboard?.writeText(tonIntent.comment).catch(() => {})}>
-                скопировать memo
-              </button>
+            <div className="dw-ton-intent-row"><span>Memo</span><strong style={{ fontSize: 11, wordBreak: 'break-all' }}>{tonIntent.comment || ''}</strong></div>
+            <p className="dw-ton-intent-note">Отправь точную сумму с этим комментарием.</p>
+            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+              <button className="dw-btn primary" style={{ flex: 1 }} onClick={() => {
+                const link = `ton://transfer/${tonIntent.wallet}?amount=${tonIntent.amountNanoton}&text=${encodeURIComponent(tonIntent.comment)}`;
+                if (window.Telegram?.WebApp?.openLink) window.Telegram.WebApp.openLink(link);
+                else window.open(link, '_blank');
+              }}>Открыть кошелёк</button>
+              <button className="dw-btn secondary" style={{ flex: 1 }} onClick={() => navigator.clipboard?.writeText(tonIntent.comment).catch(() => {})}>Скопировать</button>
             </div>
           </article>
-        )}
-
-        {/* Pack list — stars always, ton only when wallet connected */}
-        {payPending ? (
-          <div className="dw-pay-loading">
-            <div className="dw-pay-spinner" />
-            <span>создаём платёж…</span>
-            <p style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: 12, color: 'var(--bone-soft)', marginTop: -4 }}>
-              Не закрывай окно. Telegram спросит подтверждение.
-            </p>
-          </div>
-        ) : !tonIntent && method !== 'cryptobot' && (method === 'stars' || (method === 'ton' && tonWallet)) && (
-          <div className="dw-pack-list">
-            {method === 'stars'
-              ? starsPacks.map((pack, i) => (
-                  <motion.button
-                    className="dw-pack-row"
-                    key={pack.id}
-                    onClick={() => onStarsPay(pack)}
-                    initial={{ opacity: 0, x: -8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.24, delay: 0.05 * i }}
-                    whileTap={{ scale: 0.97 }}
-                  >
-                    <span className="dw-pack-icon" data-icon="stars" aria-hidden="true" />
-                    <span className="dw-pack-copy">
-                      <strong>{pack.title}</strong>
-                      <span>{formatCoins(pack.coins)} монет{pack.bonus > 0 ? ` · +${formatCoins(pack.bonus)} бонус` : ''}</span>
-                    </span>
-                    <span className="dw-pack-price">{pack.stars} Stars</span>
-                  </motion.button>
-                ))
-              : tonPacks.map((pack, i) => (
-                  <motion.button
-                    className="dw-pack-row"
-                    key={pack.id}
-                    onClick={() => onTonPay(pack)}
-                    initial={{ opacity: 0, x: -8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.24, delay: 0.05 * i }}
-                    whileTap={{ scale: 0.97 }}
-                  >
-                    <span className="dw-pack-icon" data-icon="ton" aria-hidden="true" />
-                    <span className="dw-pack-copy">
-                      <strong>{pack.title}</strong>
-                      <span>{formatCoins(pack.coins)} монет{pack.bonus > 0 ? ` · +${formatCoins(pack.bonus)} бонус` : ''}</span>
-                    </span>
-                    <span className="dw-pack-price">{pack.nanoton / 1e9} TON</span>
-                  </motion.button>
-                ))
-            }
-          </div>
         )}
       </motion.div>
     </motion.div>
-  );
-}
-
-/* ─── Info sheet ──────────────────────────────────────────── */
-
-function InfoSheet({ onClose }) {
-  return (
-    <div className="dw-sheet-backdrop" onClick={onClose}>
-      <div className="dw-deposit-sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="dw-panel-head" style={{ marginBottom: 14 }}>
-          <div>
-            <span className="dw-kicker">info</span>
-            <h2>Как играть</h2>
-          </div>
-          <button className="dw-icon-btn" onClick={onClose}>×</button>
-        </div>
-
-        <div className="dw-info-list">
-          <div className="dw-info-row">
-            <span className="dw-info-num">I</span>
-            <p>Выбери уровень: <strong>дешевый</strong> или <strong>премиум</strong>.</p>
-          </div>
-          <div className="dw-info-row">
-            <span className="dw-info-num">II</span>
-            <p>Нажми <strong>запечатать</strong> — вход списан, перед тобой пять контрактов.</p>
-          </div>
-          <div className="dw-info-row">
-            <span className="dw-info-num">III</span>
-            <p>Сорви печать с одного из <strong>пяти</strong>. Один таит золото — другой проклятый долг.</p>
-          </div>
-          <div className="dw-info-row">
-            <span className="dw-info-num">IV</span>
-            <p><strong>1 монета</strong> = 20 Stars или 0.1 TON. Первый дешевый контракт — даром.</p>
-          </div>
-        </div>
-
-        <div className="dw-info-modes">
-          <div className="dw-info-mode">
-            <span className="dw-kicker">Дешевое</span>
-            <strong>10</strong>
-            <p>тихий вход</p>
-          </div>
-          <div className="dw-info-mode premium">
-            <span className="dw-kicker">Премиум</span>
-            <strong>150</strong>
-            <p>крупная плата · ×2 множитель</p>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 

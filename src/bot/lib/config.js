@@ -1,6 +1,7 @@
-export const MINI_APP_URL = process.env.MINI_APP_URL || 'https://example.com/deadwill';
-export const TON_TOPUP_URL = process.env.TON_TOPUP_URL || 'https://ton.example/deadwill/topup';
-export const PORTALS_URL = process.env.PORTALS_URL || 'https://portals.example/deadwill';
+export const MINI_APP_URL = process.env.MINI_APP_URL || 'https://194-31-223-100.sslip.io';
+export const BOT_USERNAME = process.env.BOT_USERNAME || 'DeadwillGame_bot';
+export const TON_TOPUP_URL = `https://t.me/${BOT_USERNAME}`;
+export const PORTALS_URL = 'https://t.me/send?start=IVA6oMXOKQEF';
 
 export const STAR_PACKS = [
   {

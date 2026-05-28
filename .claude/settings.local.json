@@ -30,7 +30,8 @@
       "Bash(sshpass *)",
       "Bash(ssh -V)",
       "Bash(apt-get install *)",
-      "Bash(yum install *)"
+      "Bash(yum install *)",
+      "Bash(node -e ' *)"
     ]
   }
 }

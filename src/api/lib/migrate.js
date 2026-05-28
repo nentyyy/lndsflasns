@@ -191,6 +191,28 @@ export async function migrate() {
     } catch {}
   }
 
+  // Кланы
+  if (!(await db.schema.hasTable('clans'))) {
+    await db.schema.createTable('clans', (t) => {
+      t.increments('id').primary();
+      t.string('name').notNullable().unique();
+      t.string('tag', 8).notNullable();
+      t.bigInteger('owner_id').notNullable().index();
+      t.text('description').nullable();
+      t.bigInteger('total_wagered').notNullable().defaultTo(0);
+      t.timestamp('created_at').defaultTo(db.fn.now());
+    });
+  }
+  if (!(await db.schema.hasTable('clan_members'))) {
+    await db.schema.createTable('clan_members', (t) => {
+      t.increments('id').primary();
+      t.integer('clan_id').notNullable().index();
+      t.bigInteger('user_id').notNullable().unique();
+      t.string('role').notNullable().defaultTo('member'); // owner | member
+      t.timestamp('joined_at').defaultTo(db.fn.now());
+    });
+  }
+
   // Покупки Portals/NFT
   if (!(await db.schema.hasTable('portals_purchases'))) {
     await db.schema.createTable('portals_purchases', (t) => {

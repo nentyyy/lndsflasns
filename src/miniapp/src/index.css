@@ -2758,6 +2758,236 @@ h2, .dw-panel h2 {
   100% { transform: rotate(0deg) scale(1); }
 }
 
+/* ─── Global font boost ─────────────────────────────────────── */
+.dw-app { font-size: 15px; }
+.dw-page p { font-size: 14px; }
+.dw-kicker { font-size: 11px; letter-spacing: 0.12em; }
+
+/* ─── Home page simplified ───────────────────────────────────── */
+.dw-home-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 20px 16px 24px;
+  min-height: calc(100vh - 120px);
+}
+
+.dw-home-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 28px;
+}
+
+.dw-hero-title {
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  color: var(--gold-bright);
+  text-shadow: 0 0 30px rgba(212,175,55,0.45);
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.dw-hero-tagline {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 16px;
+  color: var(--bone-soft);
+  margin: 0;
+  text-align: center;
+}
+
+.dw-home-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.dw-btn-play {
+  width: 100%;
+  padding: 16px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: linear-gradient(135deg, var(--gold-bright), var(--gold));
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(212,175,55,0.4);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.dw-btn-play:active { transform: scale(0.97); box-shadow: 0 2px 10px rgba(212,175,55,0.3); }
+
+.dw-btn-deposit {
+  width: 100%;
+  padding: 13px;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--gold);
+  background: transparent;
+  border: 1px solid var(--gold-line);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.dw-btn-deposit:active { background: var(--gold-faint); }
+
+.dw-home-info {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-top: 24px;
+  background: var(--surface-2);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  padding: 12px 0;
+  width: 100%;
+  max-width: 320px;
+}
+
+.dw-home-info-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.dw-home-info-val {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+.dw-home-info-lbl {
+  font-size: 11px;
+  color: var(--bone-soft);
+}
+
+.dw-home-info-sep {
+  width: 1px;
+  height: 32px;
+  background: var(--border);
+}
+
+/* Live feed */
+.dw-live-feed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  width: 100%;
+  max-width: 320px;
+  overflow: hidden;
+}
+
+.dw-live-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--emerald-glow);
+  box-shadow: 0 0 6px var(--emerald-glow);
+  flex-shrink: 0;
+  animation: dw-pulse 1.5s infinite;
+}
+
+@keyframes dw-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.dw-live-scroll {
+  display: flex;
+  gap: 16px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.dw-live-item {
+  font-size: 12px;
+  color: var(--bone-soft);
+  flex-shrink: 0;
+}
+
+.dw-live-item strong { color: var(--vellum); }
+
+/* ─── Deposit 2-button ─────────────────────────────────────── */
+.dw-deposit-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.dw-deposit-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0 8px;
+}
+
+.dw-deposit-choice {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.18s, background 0.18s;
+  width: 100%;
+}
+
+.dw-deposit-choice:active { background: var(--surface-3); border-color: var(--gold-line); }
+
+.dw-deposit-choice-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+}
+
+.dw-deposit-choice-text { flex: 1; }
+.dw-deposit-choice-text strong { display: block; font-size: 16px; color: var(--vellum); font-family: var(--font-sans); font-weight: 700; margin-bottom: 3px; }
+.dw-deposit-choice-text p { font-size: 13px; color: var(--bone-soft); margin: 0; }
+
+.dw-deposit-choice-arrow {
+  font-size: 22px;
+  color: var(--bone-soft);
+  flex-shrink: 0;
+}
+
+/* Manual deposit input */
+.dw-manual-deposit { padding: 8px 0; }
+.dw-manual-input-row { width: 100%; }
+.dw-manual-input {
+  width: 100%;
+  padding: 16px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--vellum);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  outline: none;
+  box-sizing: border-box;
+  text-align: center;
+  font-family: var(--font-sans);
+}
+.dw-manual-input:focus { border-color: var(--gold-line); }
+.dw-manual-input::placeholder { color: var(--ash); font-size: 16px; font-weight: 400; }
+
 /* ─── PvP 36-card live round ────────────────────────────────── */
 
 .dw-pvp-grid-36 {
@@ -2780,11 +3010,11 @@ h2, .dw-panel h2 {
   justify-content: space-between;
 }
 
-/* 36-card: cards are smaller than 20-card grid */
+/* 36-card: compact fixed-height — fit all on one screen */
 .dw-pvp-grid-36 .dw-pvp-card {
-  flex: 0 0 calc(20% - 4px);
+  flex: 0 0 calc(20% - 3px);
   min-width: 0;
-  aspect-ratio: 3/4;
+  height: 46px;
   border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--surface-2);
@@ -2800,8 +3030,9 @@ h2, .dw-panel h2 {
 }
 
 .dw-pvp-row.center3 .dw-pvp-card {
-  flex: 0 0 calc(33.33% - 6px);
-  max-width: 120px;
+  flex: 0 0 calc(33.33% - 4px);
+  max-width: 110px;
+  height: 46px;
 }
 
 .dw-pvp-grid-36 .dw-pvp-card:not(:disabled):hover {

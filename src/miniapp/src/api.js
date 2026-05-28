@@ -70,5 +70,9 @@ export const api = {
   adminLedger: (limit = 100, offset = 0) => request(`/api/admin/ledger?limit=${limit}&offset=${offset}`),
   adminPortals: () => request('/api/admin/portals'),
   adminEconomy: () => request('/api/admin/economy'),
-  adminAdjustBalance: (userId, amount, reason) => request(`/api/admin/users/${userId}/adjust`, { method: 'POST', body: { amount, reason } })
+  adminAdjustBalance: (userId, amount, reason) => request(`/api/admin/users/${userId}/adjust`, { method: 'POST', body: { amount, reason } }),
+  clans: () => request('/api/clans'),
+  createClan: (name, tag, description) => request('/api/clans', { method: 'POST', body: { name, tag, description } }),
+  joinClan: (id) => request(`/api/clans/${id}/join`, { method: 'POST', body: {} }),
+  leaveClan: (id) => request(`/api/clans/${id}/leave`, { method: 'POST', body: {} })
 };

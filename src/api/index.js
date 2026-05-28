@@ -9,7 +9,7 @@ import { armRound, revealRound, GameError } from './lib/game.js';
 import { InsufficientFunds } from './lib/wallet.js';
 import { createStarsDeposit } from './lib/payments/stars.js';
 import { createTonDeposit, startTonPoller } from './lib/payments/ton.js';
-import { createCryptobotDeposit, SEND_BOT_LINK } from './lib/payments/cryptobot.js';
+import { createCryptobotDeposit } from './lib/payments/cryptobot.js';
 import { getReferralView, bindReferrer, makeRefCode, claimReferralPending } from './lib/referral.js';
 import { getTournamentView, ensureActiveTournament } from './lib/tournaments.js';
 import { getPvpState, buyCard, PvpError, getLiveFeed } from './lib/pvp.js';
@@ -104,7 +104,6 @@ app.get('/api/bootstrap', async (req, res, next) => {
       tonPacks: TON_PACKS,
       ticketPacks: TICKET_PACKS,
       projectTonWallet: env.PROJECT_TON_WALLET || null,
-      sendBotLink: SEND_BOT_LINK,
       history: await recentHistory(req.user.id),
       referral,
       tournament,
@@ -453,6 +452,74 @@ app.post('/api/portals/buy',
     }
   }
 );
+
+// ─── Clans ───
+app.get('/api/clans', async (req, res, next) => {
+  try {
+    const clans = await db('clans')
+      .orderBy('total_wagered', 'desc')
+      .limit(50)
+      .select('id', 'name', 'tag', 'owner_id', 'description', 'total_wagered', 'created_at');
+    const enriched = await Promise.all(clans.map(async (c) => {
+      const count = await db('clan_members').where({ clan_id: c.id }).count('* as n').first();
+      const me = await db('clan_members').where({ clan_id: c.id, user_id: req.user.id }).first();
+      return { ...c, memberCount: Number(count.n), isMember: Boolean(me), isOwner: String(c.owner_id) === String(req.user.id) };
+    }));
+    const myClan = await db('clan_members').where({ user_id: req.user.id }).first();
+    res.json({ clans: enriched, myClanId: myClan?.clan_id || null });
+  } catch (e) { next(e); }
+});
+
+app.post('/api/clans',
+  rateLimit({ bucket: 'clan_create', max: 3, windowMs: 3600_000 }),
+  async (req, res, next) => {
+    try {
+      const { name, tag, description } = req.body || {};
+      if (!name || name.length < 2 || name.length > 32) return res.status(400).json({ error: 'invalid_name' });
+      const safeTag = (tag || name).slice(0, 8).replace(/[^a-zA-ZА-Яа-я0-9]/g, '').toUpperCase() || 'CLAN';
+
+      // Проверяем что уже не в клане
+      const already = await db('clan_members').where({ user_id: req.user.id }).first();
+      if (already) return res.status(409).json({ error: 'already_in_clan' });
+
+      const [clanId] = await db('clans').insert({
+        name: name.trim(),
+        tag: safeTag,
+        owner_id: req.user.id,
+        description: description ? String(description).slice(0, 200) : null
+      });
+
+      await db('clan_members').insert({ clan_id: clanId, user_id: req.user.id, role: 'owner' });
+      res.json({ ok: true, clanId });
+    } catch (e) {
+      if (e.message?.includes('UNIQUE')) return res.status(409).json({ error: 'name_taken' });
+      next(e);
+    }
+  }
+);
+
+app.post('/api/clans/:id/join', async (req, res, next) => {
+  try {
+    const clanId = Number(req.params.id);
+    const clan = await db('clans').where({ id: clanId }).first();
+    if (!clan) return res.status(404).json({ error: 'not_found' });
+    const already = await db('clan_members').where({ user_id: req.user.id }).first();
+    if (already) return res.status(409).json({ error: 'already_in_clan' });
+    await db('clan_members').insert({ clan_id: clanId, user_id: req.user.id, role: 'member' });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+app.post('/api/clans/:id/leave', async (req, res, next) => {
+  try {
+    const clanId = Number(req.params.id);
+    const clan = await db('clans').where({ id: clanId }).first();
+    if (!clan) return res.status(404).json({ error: 'not_found' });
+    if (String(clan.owner_id) === String(req.user.id)) return res.status(400).json({ error: 'owner_cannot_leave' });
+    await db('clan_members').where({ clan_id: clanId, user_id: req.user.id }).delete();
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
 
 // ─── Error handler ───
 app.use((err, _req, res, _next) => {

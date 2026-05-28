@@ -1,22 +1,15 @@
-import { InlineKeyboard } from 'grammy';
-import { buildTonTopupUrl, sendStarsInvoice } from '../lib/payments.js';
+import { depositKeyboard } from '../lib/keyboards.js';
 
 export async function depositCommand(ctx) {
-  const text = [
-    'Пополнение баланса',
-    'Telegram Stars: встроенный invoice внутри Telegram.',
-    'TON: внешний vault checkout для wallet top-up.',
-    'После оплаты монеты зачисляются во внутренний баланс DEADWILL.'
-  ].join('\n');
-
-  await ctx.reply(text, {
-    reply_markup: new InlineKeyboard()
-      .text('Stars invoice', 'stars:shadow')
-      .row()
-      .url('TON top-up', buildTonTopupUrl())
-  });
-
-  if (ctx.match?.includes('instant')) {
-    await sendStarsInvoice(ctx);
-  }
+  await ctx.reply(
+    '💰 *Пополнение баланса*\n\n' +
+    '⭐ *Telegram Stars* — мгновенно, внутри Telegram\n' +
+    '💎 *TON* — через @send или прямым переводом\n\n' +
+    '1 монета \\= 20 Stars \\= 0\\.1 TON\n\n' +
+    '_Первое пополнение: \\+15% бонус_',
+    {
+      parse_mode: 'MarkdownV2',
+      reply_markup: depositKeyboard()
+    }
+  );
 }

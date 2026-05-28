@@ -1,22 +1,28 @@
 import { InlineKeyboard } from 'grammy';
-import { MINI_APP_URL, PORTALS_URL, TON_TOPUP_URL } from './config.js';
+import { MINI_APP_URL, PORTALS_URL } from './config.js';
 
-export function appKeyboard(path = '') {
-  const url = path ? `${MINI_APP_URL}${path}` : MINI_APP_URL;
-  return new InlineKeyboard().webApp('Открыть DEADWILL', url);
+export function playKeyboard() {
+  return new InlineKeyboard()
+    .webApp('🎴  Играть', MINI_APP_URL);
 }
 
 export function startKeyboard() {
   return new InlineKeyboard()
-    .webApp('Открыть DEADWILL', MINI_APP_URL)
+    .webApp('🎴  Играть в DEADWILL', MINI_APP_URL)
     .row()
-    .url('TON top-up', TON_TOPUP_URL)
-    .url('Portals', PORTALS_URL);
+    .url('💎  Пополнить через @send', PORTALS_URL);
 }
 
-export function sectionKeyboard(sectionPath) {
+export function depositKeyboard() {
   return new InlineKeyboard()
-    .webApp('Открыть раздел', `${MINI_APP_URL}${sectionPath}`)
+    .webApp('⭐  Пополнить Stars', MINI_APP_URL)
     .row()
-    .url('Support', 'https://t.me/deadwill_support');
+    .url('💎  Пополнить TON через @send', PORTALS_URL)
+    .row()
+    .webApp('↩  Назад', MINI_APP_URL);
+}
+
+export function appKeyboard(path = '') {
+  const url = path ? `${MINI_APP_URL}${path}` : MINI_APP_URL;
+  return new InlineKeyboard().webApp('🎴  Открыть DEADWILL', url);
 }
