@@ -35,8 +35,7 @@ function mapResult(r) {
 }
 
 const tabs = ['home', 'play', 'shop', 'profile'];
-const shopTabs = ['coins', 'tickets', 'premium', 'nft', 'transfer'];
-const clanTabs = ['my', 'chat', 'top'];
+const shopTabs = ['nft'];
 const PREMIUM_CARDS = 10;
 
 // Кодируем text-комментарий для TON-перевода как base64 BoC.
@@ -92,9 +91,7 @@ function App() {
   const [selectedClause, setSelectedClause] = useState(null);
   const [revealing, setRevealing] = useState(false);
   const [result, setResult] = useState(null);
-  const [roundIndex, setRoundIndex] = useState(0);
-  const [shopTab, setShopTab] = useState('coins');
-  const [clanTab, setClanTab] = useState('my');
+  const [shopTab, setShopTab] = useState('nft');
   const [historyFilter, setHistoryFilter] = useState('all');
   const [toast, setToast] = useState(null);
   const [depositOpen, setDepositOpen] = useState(false);
@@ -109,8 +106,8 @@ function App() {
   const [playerProfileOpen, setPlayerProfileOpen] = useState(null); // {userId, name}
   const [playerProfileData, setPlayerProfileData] = useState(null);
   const [liveWins, setLiveWins] = useState([]);
-  const [sendBotLink, setSendBotLink] = useState(null);
   const [pvpShuffling, setPvpShuffling] = useState(false);
+  const [portalsGifts, setPortalsGifts] = useState([]);
 
   // Real TON Connect
   const [tonConnectUI] = useTonConnectUI();
@@ -143,7 +140,7 @@ function App() {
         if (data.projectTonWallet) setProjectTonWallet(data.projectTonWallet);
         if (data.ticketPacks) setTicketPacks(data.ticketPacks);
         if (data.liveWins) setLiveWins(data.liveWins);
-        if (data.sendBotLink) setSendBotLink(data.sendBotLink);
+        if (data.portalsGifts) setPortalsGifts(data.portalsGifts);
       })
       .catch((e) => console.warn('bootstrap failed', e.message))
       .finally(() => setBootReady(true));
@@ -273,72 +270,6 @@ function App() {
   // eslint-disable-next-line no-unused-vars
   const switchMode = () => {};
 
-  const earnXP = (amount) => {
-    setState((current) => {
-      const rawXp = current.player.passXp + amount;
-      const levelsGained = Math.floor(rawXp / XP_PER_LEVEL);
-      const newXp = rawXp % XP_PER_LEVEL;
-      const newLevel = current.player.passLevel + levelsGained;
-      const progress = Math.round((newXp / XP_PER_LEVEL) * 100);
-      return {
-        ...current,
-        player: { ...current.player, passXp: newXp, passLevel: newLevel, passProgress: progress },
-        pass: {
-          ...current.pass,
-          level: newLevel,
-          xpLabel: `${new Intl.NumberFormat('ru-RU').format(newXp)} / ${new Intl.NumberFormat('ru-RU').format(XP_PER_LEVEL)} XP`
-        }
-      };
-    });
-  };
-
-  const claimDaily = () => {
-    if (!state.dailyBonus.claimable) return;
-    setState((current) => ({
-      ...current,
-      dailyBonus: { ...current.dailyBonus, claimable: false },
-      player: { ...current.player, coins: current.player.coins + current.dailyBonus.coins }
-    }));
-    earnXP(150);
-    notify(`+${formatCoins(state.dailyBonus.coins)} монет`, 'success');
-  };
-
-  const claimPassReward = (level, tier) => {
-    const reward = state.pass.rewards.find((r) => r.level === level);
-    if (!reward || reward[tier].state !== 'claimable') return;
-    const credit = parseRewardCredit(reward[tier].title);
-    setState((current) => ({
-      ...current,
-      player: { ...current.player, coins: current.player.coins + credit },
-      pass: {
-        ...current.pass,
-        rewards: current.pass.rewards.map((r) =>
-          r.level === level ? { ...r, [tier]: { ...r[tier], state: 'claimed' } } : r
-        )
-      },
-      history: credit > 0 ? [
-        { id: `pass-${Date.now()}`, type: 'shop', title: `Pass reward Lvl ${level}`, date: 'Только что', amount: credit, status: 'completed' },
-        ...current.history
-      ] : current.history
-    }));
-    notify(credit > 0 ? `+${formatCoins(credit)} монет • Lvl ${level}` : `Награда Lvl ${level} получена`, 'success');
-  };
-
-  const claimQuest = (questId, questType) => {
-    const key = questType === 'daily' ? 'daily' : 'weekly';
-    const quest = state.pass[key].find((q) => q.id === questId);
-    if (!quest || quest.state !== 'claimable') return;
-    setState((current) => ({
-      ...current,
-      pass: {
-        ...current.pass,
-        [key]: current.pass[key].map((q) => q.id === questId ? { ...q, state: 'claimed' } : q)
-      }
-    }));
-    earnXP(quest.xp);
-    notify(`+${quest.xp} XP • задание выполнено`, 'violet');
-  };
-
   const handleStarsPay = async (pack) => {
     const webApp = window.Telegram?.WebApp;
     setPayPending(true);
@@ -461,46 +392,19 @@ function App() {
   const connectTonWallet = () => tonConnectUI.openModal();
   const disconnectTonWallet = () => tonConnectUI.disconnect();
 
-  const buyNft = (item) => {
+  const buyNft = async (item) => {
     if (state.player.coins < item.priceCoins) {
       notify('Недостаточно монет', 'danger');
       return;
     }
-    setState((current) => ({
-      ...current,
-      player: { ...current.player, coins: current.player.coins - item.priceCoins },
-      transfers: [
-        { id: `TR-${Math.floor(Date.now() / 1000)}`, asset: item.title, priceCoins: item.priceCoins, date: 'Только что', status: 'pending', comment: 'NFT будет передан через Portals App после проверки.', delay: '8h' },
-        ...current.transfers
-      ],
-      history: [
-        { id: `nft-${Date.now()}`, type: 'transfer', title: item.title, date: 'Только что', amount: -item.priceCoins, status: 'pending' },
-        ...current.history
-      ]
-    }));
-    notify('Transfer заявка создана', 'violet');
-  };
-
-  const buyPremium = (offer) => {
-    if (offer.active) return;
-    const webApp = window.Telegram?.WebApp;
-    if (webApp) {
-      notify(`Запуск оплаты: ${offer.title}`, 'violet');
-    } else {
-      setState((current) => ({
-        ...current,
-        shop: {
-          ...current.shop,
-          premiumOffers: current.shop.premiumOffers.map((o) =>
-            o.id === offer.id ? { ...o, active: true } : o
-          )
-        },
-        history: [
-          { id: `prem-${Date.now()}`, type: 'shop', title: offer.title, date: 'Только что', amount: 0, status: 'active' },
-          ...current.history
-        ]
-      }));
-      notify(`${offer.title} активирован`, 'success');
+    try {
+      const res = await api.portalsBuy(item.id, item.name, item.priceCoins);
+      setState((c) => ({ ...c, player: { ...c.player, coins: res.player.coins } }));
+      notify('Заявка создана — подарок придёт через Portals', 'success');
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
+    } catch (e) {
+      if (e.message === 'insufficient_balance') notify('Недостаточно монет', 'danger');
+      else notify('Ошибка при покупке', 'danger');
     }
   };
 
@@ -539,7 +443,7 @@ function App() {
         setRevealing(false);
         setRoundArmed(false);
         setRoundId(null);
-        setRoundIndex((current) => current + 1);
+
         setState((current) => ({
           ...current,
           player: {
@@ -551,7 +455,6 @@ function App() {
             bestWin: Math.max(current.player.bestWin, resolved.creditCoins)
           }
         }));
-        earnXP(XP_PER_ROUND[mode.id] || 45);
         notify(
           resolved.type === 'debt' ? 'Ставка сгорела' :
           resolved.type === 'empty' ? 'Контракт пуст' : 'Результат зачислен',
@@ -712,38 +615,24 @@ function App() {
 
           {tab === 'shop' && (
             <ShopTab
-              currentTab={shopTab}
-              onTabChange={setShopTab}
               shop={state.shop}
-              starsPacks={starsPacks}
-              tonPacks={tonPacks}
-              ticketPacks={ticketPacks}
               player={state.player}
-              transfers={state.transfers}
               onBuyNft={buyNft}
-              onBuyPremium={buyPremium}
-              onBuyTickets={buyTickets}
-              onStarsPay={handleStarsPay}
-              onTonPay={handleTonPay}
-              payPending={payPending}
+              portalsGifts={state.portalsGifts}
             />
           )}
 
           {tab === 'profile' && (
             <ProfileTab
               player={state.player}
-              sections={state.profileSections}
               filters={historyFilters}
               activeFilter={historyFilter}
               onFilterChange={setHistoryFilter}
               history={history}
-              notifications={state.notifications}
-              transfers={state.transfers}
               tonWallet={tonWallet}
               onConnectTon={connectTonWallet}
               onDisconnectTon={disconnectTonWallet}
               onOpenAdmin={() => setAdminOpen(true)}
-              onOpenPass={() => setPassOpen(true)}
               onOpenClans={() => setTab('clans')}
               onOpenRef={() => setTab('referral')}
             />
@@ -1619,28 +1508,21 @@ function ReferralTab({ referral, player, onCopy, onShare, onClaimReward, onBack,
 
 /* ─── Shop tab ────────────────────────────────────────────── */
 
-function ShopTab({ currentTab, onTabChange, shop, starsPacks, tonPacks, ticketPacks, player, transfers, onBuyNft, onBuyPremium, onBuyTickets, onStarsPay, onTonPay, payPending }) {
+function ShopTab({ shop, player, onBuyNft, portalsGifts }) {
   const [nftRarity, setNftRarity] = useState('all');
 
+  // Используем реальные данные Portals если есть, иначе GIFTS_CATALOG
+  const catalog = (portalsGifts && portalsGifts.length > 0) ? portalsGifts : GIFTS_CATALOG;
   const filteredGifts = nftRarity === 'all'
-    ? GIFTS_CATALOG
-    : GIFTS_CATALOG.filter((g) => g.rarity === nftRarity);
+    ? catalog
+    : catalog.filter((g) => g.rarity === nftRarity);
 
   return (
     <section className="dw-page dw-shop-page">
-      <h1 className="dw-shop-title">Shop</h1>
-
-      <div className="dw-shop-tabs">
-        {shopTabs.map((item) => (
-          <button
-            key={item}
-            className={`dw-shop-tab ${currentTab === item ? 'active' : ''}`}
-            onClick={() => onTabChange(item)}
-          >
-            {item === 'coins' ? 'Deposit' : item === 'tickets' ? 'Карты' : item === 'premium' ? 'Premium' : item === 'nft' ? 'NFT' : 'Transfer'}
-          </button>
-        ))}
-      </div>
+      <h1 className="dw-shop-title" style={{ fontSize: 22 }}>NFT Shop</h1>
+      <p style={{ color: 'var(--bone-soft)', fontSize: 13, marginBottom: 12, textAlign: 'center' }}>
+        Подарки доставляются через Portals
+      </p>
 
       {currentTab === 'coins' && (
         payPending ? (
@@ -1668,255 +1550,123 @@ function ShopTab({ currentTab, onTabChange, shop, starsPacks, tonPacks, ticketPa
                 <span className="dw-pack-price">{pack.stars} Stars</span>
               </motion.button>
             ))}
-            {tonPacks.map((pack, i) => (
-              <motion.button
-                className="dw-pack-row"
-                key={pack.id}
-                onClick={() => onTonPay(pack)}
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.24, delay: 0.05 * (starsPacks.length + i) }}
-                whileTap={{ scale: 0.97 }}
-              >
-                <span className="dw-pack-icon" data-icon="ton" aria-hidden="true" />
-                <span className="dw-pack-copy">
-                  <strong>{pack.title}</strong>
-                  <span>{formatCoins(pack.coins)} монет{pack.bonus > 0 ? ` · +${formatCoins(pack.bonus)} бонус` : ''}</span>
-                </span>
-                <span className="dw-pack-price">{pack.nanoton / 1e9} TON</span>
-              </motion.button>
-            ))}
-          </div>
-        )
-      )}
-
-      {currentTab === 'tickets' && (
-        <TicketsShop
-          ticketPacks={ticketPacks}
-          inventory={player?.tickets || { cheap: 0, premium: 0 }}
-          balance={player?.coins || 0}
-          onBuyTickets={onBuyTickets}
-        />
-      )}
-
-      {currentTab === 'premium' && (
-        <div className="dw-stack">
-          {shop.premiumOffers.map((offer) => (
-            <article className="dw-panel dw-premium-card" key={offer.id}>
-              <div className="dw-panel-head">
-                <h2>{offer.title}</h2>
-                {offer.active && <span className="dw-badge premium">Активно</span>}
+      <div className="dw-nft-rarity-bar">
+        {NFT_RARITIES.map((r) => (
+          <button key={r} className={`dw-nft-rarity-chip ${nftRarity === r ? 'active' : ''}`}
+            style={nftRarity === r && r !== 'all' ? { borderColor: RARITY_COLOR[r], color: RARITY_COLOR[r] } : {}}
+            onClick={() => setNftRarity(r)}>
+            {r === 'all' ? 'Все' : r}
+          </button>
+        ))}
+      </div>
+      <div className="dw-nft-grid">
+        {filteredGifts.map((item, i) => {
+          const canBuy = (player?.coins || 0) >= item.priceCoins;
+          return (
+            <motion.article className="dw-nft-tile" key={item.id}
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22, delay: Math.min(i * 0.03, 0.4) }}>
+              <div className={`dw-nft-preview rarity-${(item.rarity || 'common').toLowerCase()}`}>
+                <img src={`/gifts/${item.file}`} alt={item.name} className="dw-gift-img" loading="lazy" />
               </div>
-              <p>{offer.copy}</p>
-              <button
-                className={`dw-btn ${offer.active ? 'secondary' : 'primary'}`}
-                style={{ marginTop: 12 }}
-                onClick={() => onBuyPremium(offer)}
-                disabled={offer.active}
-              >
-                {offer.active ? 'Уже активно' : offer.price}
+              <span className="dw-kicker" style={{ color: RARITY_COLOR[item.rarity] }}>{item.rarity}</span>
+              <h2 style={{ fontSize: 14 }}>{item.name}</h2>
+              <strong style={{ fontSize: 15, color: 'var(--gold)' }}>{formatCoins(item.priceCoins)} монет</strong>
+              {item.stock > 0
+                ? <p style={{ color: 'var(--muted)', fontSize: 11, margin: '2px 0 6px' }}>Осталось {item.stock}</p>
+                : <p style={{ color: 'var(--crimson-glow)', fontSize: 11, margin: '2px 0 6px' }}>Нет в наличии</p>
+              }
+              <button className={`dw-btn ${canBuy && item.stock > 0 ? 'primary' : 'ghost'}`}
+                style={{ width: '100%', fontSize: 13 }}
+                onClick={() => onBuyNft({ ...item, title: item.name })}
+                disabled={!canBuy || item.stock === 0}>
+                {!canBuy ? 'Мало монет' : item.stock === 0 ? 'Нет в наличии' : 'Купить'}
               </button>
-            </article>
-          ))}
-        </div>
-      )}
-
-      {currentTab === 'nft' && (
-        <>
-          <div className="dw-nft-rarity-bar">
-            {NFT_RARITIES.map((r) => (
-              <button
-                key={r}
-                className={`dw-nft-rarity-chip ${nftRarity === r ? 'active' : ''}`}
-                style={nftRarity === r && r !== 'all' ? { borderColor: RARITY_COLOR[r], color: RARITY_COLOR[r] } : {}}
-                onClick={() => setNftRarity(r)}
-              >
-                {r === 'all' ? 'Все' : r}
-              </button>
-            ))}
-          </div>
-          <div className="dw-nft-grid">
-            {filteredGifts.map((item, i) => {
-              const canBuy = (player?.coins || 0) >= item.priceCoins;
-              return (
-                <motion.article
-                  className="dw-nft-tile"
-                  key={item.id}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.22, delay: Math.min(i * 0.03, 0.4) }}
-                >
-                  <div className={`dw-nft-preview rarity-${item.rarity.toLowerCase()}`}>
-                    <img
-                      src={`/gifts/${item.file}`}
-                      alt={item.name}
-                      className="dw-gift-img"
-                      loading="lazy"
-                    />
-                  </div>
-                  <span className="dw-kicker" style={{ color: RARITY_COLOR[item.rarity] }}>
-                    {item.rarity}
-                  </span>
-                  <h2>{item.name}</h2>
-                  <strong>{formatCoins(item.priceCoins)}</strong>
-                  <p style={{ color: 'var(--muted)', fontSize: 12, margin: '3px 0 8px' }}>
-                    Осталось {item.stock}
-                  </p>
-                  <button
-                    className={`dw-btn ${canBuy ? 'primary' : 'ghost'}`}
-                    style={{ width: '100%' }}
-                    onClick={() => onBuyNft({ ...item, title: item.name })}
-                    disabled={!canBuy}
-                  >
-                    {canBuy ? 'Купить' : 'нет монет'}
-                  </button>
-                </motion.article>
-              );
-            })}
-          </div>
-        </>
-      )}
-
-      {currentTab === 'transfer' && (
-        <div className="dw-stack">
-          {transfers.length === 0 ? (
-            <EmptyState title="Заявок пока нет" copy="После покупки NFT здесь появится статус передачи." />
-          ) : (
-            transfers.map((item) => (
-              <article className="dw-transfer-card" key={item.id}>
-                <div className="dw-panel-head">
-                  <div>
-                    <h2>{item.asset}</h2>
-                    <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 2 }}>{item.id} · {item.date}</p>
-                  </div>
-                  <span className={`dw-badge ${transferTone[item.status]}`}>{item.status}</span>
-                </div>
-                <strong style={{ display: 'block', marginTop: 8 }}>{formatCoins(item.priceCoins)} монет</strong>
-                <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4 }}>{item.comment}</p>
-              </article>
-            ))
-          )}
-        </div>
-      )}
+            </motion.article>
+          );
+        })}
+      </div>
     </section>
   );
 }
 
 /* ─── Profile tab ─────────────────────────────────────────── */
 
-function ProfileTab({ player, sections, filters, activeFilter, onFilterChange, history, notifications, transfers, tonWallet, onConnectTon, onDisconnectTon, onOpenAdmin, onOpenPass, onOpenClans, onOpenRef }) {
+function ProfileTab({ player, filters, activeFilter, onFilterChange, history, tonWallet, onConnectTon, onDisconnectTon, onOpenAdmin, onOpenClans, onOpenRef }) {
+  const initial = (player.name || 'D').slice(0, 1).toUpperCase();
   return (
     <section className="dw-page dw-profile-page">
 
       <div className="dw-profile-header">
-        <div className="dw-avatar large">{player.avatar}</div>
+        <div className="dw-avatar large">{initial}</div>
         <div className="dw-profile-header-copy">
-          <h1 className="dw-profile-name">{player.name}</h1>
-          <p className="dw-profile-meta">{player.id} · {player.clanName}</p>
-          <span className="dw-badge premium">{player.badge}</span>
+          <h1 className="dw-profile-name" style={{ fontSize: 20 }}>{player.name || 'Игрок'}</h1>
+          <p className="dw-profile-meta" style={{ fontSize: 13 }}>ID {String(player.id).slice(-6)}</p>
         </div>
       </div>
 
       <div className="dw-stats-row">
         <div className="dw-stat-cell">
           <span>игр</span>
-          <strong>{player.gamesPlayed}</strong>
+          <strong>{player.gamesPlayed || 0}</strong>
         </div>
         <div className="dw-stat-cell">
           <span>выиграно</span>
-          <strong>{formatCompact(player.coinsWon)}</strong>
+          <strong>{formatCompact(player.coinsWon || 0)}</strong>
         </div>
         <div className="dw-stat-cell">
           <span>потрачено</span>
-          <strong>{formatCompact(player.coinsSpent)}</strong>
+          <strong>{formatCompact(player.coinsSpent || 0)}</strong>
         </div>
         <div className="dw-stat-cell accent">
-          <span>лучший</span>
-          <strong>{formatCompact(player.bestWin)}</strong>
+          <span>рекорд</span>
+          <strong>{formatCompact(player.bestWin || 0)}</strong>
         </div>
       </div>
 
       <div className="dw-home-strip">
         <button className="dw-panel dw-nav-card" onClick={onOpenClans}>
-          <span className="dw-kicker">clans</span>
-          <strong>#{player.clanRank}</strong>
-          <p>{player.clanName}</p>
+          <span className="dw-kicker">кланы</span>
+          <strong>Кланы</strong>
+          <p>вступить или создать</p>
         </button>
         <button className="dw-panel dw-nav-card" onClick={onOpenRef}>
-          <span className="dw-kicker">referral</span>
+          <span className="dw-kicker">реферал</span>
           <strong>10%</strong>
           <p>зови друзей</p>
         </button>
       </div>
 
-      <button className="dw-panel dw-pass-link-card" onClick={onOpenPass} style={{ textAlign: 'left', width: '100%', cursor: 'pointer' }}>
-        <div className="dw-panel-head">
-          <div>
-            <span className="dw-kicker">battle pass</span>
-            <h2>Сезонные награды</h2>
-          </div>
-          <span className="dw-badge premium">Lvl {player.passLevel}</span>
-        </div>
-        <div className="dw-ledger-line" style={{ margin: '10px 0 6px' }}>
-          <div className="dw-ledger-fill" style={{ width: `${player.passProgress}%` }} />
-        </div>
-        <p style={{ color: 'var(--muted)', fontSize: 12 }}>{player.passProgress}% до следующего уровня</p>
-      </button>
-
-      <article className="dw-panel dw-ton-panel">
-        <div className="dw-panel-head">
-          <h2>TON Wallet</h2>
-          {tonWallet && <span className="dw-badge accent">Connected</span>}
-        </div>
-        {tonWallet ? (
-          <>
-            <p className="dw-wallet-addr" style={{ marginTop: 6 }}>
-              {tonWallet.address.slice(0, 8)}…{tonWallet.address.slice(-6)}
-            </p>
-            <div className="dw-inline-actions" style={{ marginTop: 10 }}>
-              <button className="dw-btn ghost small" onClick={onDisconnectTon}>Disconnect</button>
-            </div>
-          </>
-        ) : (
-          <>
-            <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 6 }}>Подключите TON кошелёк для оплаты через блокчейн</p>
-            <button className="dw-btn secondary" style={{ marginTop: 10, width: '100%' }} onClick={onConnectTon}>
-              Connect TON Wallet
-            </button>
-          </>
-        )}
-      </article>
-
       <article className="dw-panel">
         <div className="dw-panel-head" style={{ marginBottom: 12 }}>
-          <h2>История</h2>
-        </div>
-        <div className="dw-segment-switch compact">
-          {filters.map((item) => (
-            <button
-              key={item.id}
-              className={`dw-segment-chip ${activeFilter === item.id ? 'active' : ''}`}
-              onClick={() => onFilterChange(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
+          <h2>История операций</h2>
         </div>
         {history.length === 0 ? (
-          <EmptyState title="Операций пока нет" copy="История пополнений, игр и transfer появится здесь." />
+          <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: '16px 0', fontSize: 14 }}>
+            Операций пока нет
+          </p>
         ) : (
           <div className="dw-history-list">
-            {history.map((item) => (
-              <div className="dw-history-row" key={item.id}>
-                <div className="dw-history-copy">
-                  <strong>{item.title}</strong>
-                  <p>{item.date}</p>
+            {history.map((item) => {
+              const label = {
+                pvp_bet: 'Ставка PvP', pvp_payout: 'Выигрыш PvP',
+                bet: 'Ставка', payout: 'Выигрыш',
+                deposit_stars: 'Пополнение Stars', deposit_ton: 'Пополнение TON',
+                deposit_cryptobot: 'Пополнение @send', ref_bonus: 'Реферальный бонус',
+                ref_claim: 'Реферальные выведены', admin_adjust: 'Корректировка', portals_buy: 'NFT покупка'
+              }[item.type] || item.type;
+              return (
+                <div className="dw-history-row" key={item.id}>
+                  <div className="dw-history-copy">
+                    <strong style={{ fontSize: 14 }}>{label}</strong>
+                    <p style={{ fontSize: 12 }}>{new Date(item.date).toLocaleDateString('ru-RU')}</p>
+                  </div>
+                  <span className={item.amount >= 0 ? 'pos' : 'neg'} style={{ fontSize: 15 }}>
+                    {item.amount >= 0 ? '+' : ''}{formatCoins(item.amount)}
+                  </span>
                 </div>
-                <span className={item.amount >= 0 ? 'pos' : 'neg'}>
-                  {item.amount >= 0 ? '+' : ''}{formatCoins(item.amount)}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </article>

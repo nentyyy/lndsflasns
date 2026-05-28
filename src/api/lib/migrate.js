@@ -191,6 +191,21 @@ export async function migrate() {
     } catch {}
   }
 
+  // Portals gifts cache (заполняется юзерботом)
+  if (!(await db.schema.hasTable('portals_cache'))) {
+    await db.schema.createTable('portals_cache', (t) => {
+      t.string('id').primary(); // gift slug
+      t.string('name').notNullable();
+      t.string('file').notNullable();
+      t.string('rarity').notNullable().defaultTo('Common');
+      t.integer('priceCoins').notNullable().defaultTo(0);
+      t.float('priceTon').notNullable().defaultTo(0);
+      t.integer('stock').notNullable().defaultTo(0);
+      t.boolean('available').notNullable().defaultTo(true);
+      t.timestamp('updated_at').defaultTo(db.fn.now());
+    });
+  }
+
   // Кланы
   if (!(await db.schema.hasTable('clans'))) {
     await db.schema.createTable('clans', (t) => {

@@ -1,0 +1,10 @@
+{
+  "name": "cursed-will-userbot",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "dependencies": {
+    "telegram": "^2.26.22",
+    "input": "^1.0.1"
+  }
+}

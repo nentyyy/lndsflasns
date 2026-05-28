@@ -34,11 +34,11 @@ export async function createStarsDeposit(userId, packId) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title: `DEADWILL • ${pack.title}`,
-        description: `${pack.coins} монет + ${pack.bonus} бонус`,
-        payload: depositId, // links the payment back to this deposit
+        title: `DEADWILL — ${pack.title}`,
+        description: `${pack.coins + pack.bonus} монет${firstBonus > 0 ? ` (+${firstBonus} бонус первого деп)` : pack.bonus > 0 ? ` (+${pack.bonus} бонус)` : ''} на игру`,
+        payload: depositId,
         currency: 'XTR',
-        prices: [{ label: pack.title, amount: pack.stars }]
+        prices: [{ label: `${pack.coins} монет`, amount: pack.stars }]
       })
     });
     const data = await res.json();

@@ -2759,9 +2759,18 @@ h2, .dw-panel h2 {
 }
 
 /* ─── Global font boost ─────────────────────────────────────── */
-.dw-app { font-size: 15px; }
-.dw-page p { font-size: 14px; }
+html, body { font-size: 16px; }
+.dw-app { font-size: 16px; }
+.dw-page { font-size: 15px; }
+.dw-page p { font-size: 14px; line-height: 1.5; }
 .dw-kicker { font-size: 11px; letter-spacing: 0.12em; }
+.dw-panel h2 { font-size: 17px; }
+.dw-btn { font-size: 15px; }
+.dw-history-copy strong { font-size: 15px; }
+.dw-stat-cell strong { font-size: 18px; font-weight: 800; }
+.dw-stat-cell span { font-size: 12px; }
+.dw-profile-name { font-size: 22px !important; }
+.dw-toast { font-size: 14px; }
 
 /* ─── Home page simplified ───────────────────────────────────── */
 .dw-home-page {

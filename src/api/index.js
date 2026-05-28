@@ -96,6 +96,7 @@ app.get('/api/bootstrap', async (req, res, next) => {
     ]);
 
     const liveWins = await getLiveFeed(10).catch(() => []);
+    const portalsGifts = await db('portals_cache').select('*').catch(() => []);
 
     res.json({
       player: playerView(req.player),
@@ -107,7 +108,8 @@ app.get('/api/bootstrap', async (req, res, next) => {
       history: await recentHistory(req.user.id),
       referral,
       tournament,
-      liveWins
+      liveWins,
+      portalsGifts
     });
   } catch (e) {
     next(e);
@@ -434,6 +436,13 @@ app.post('/api/portals/buy',
       await db.transaction(async (trx) => {
         await dbDebit(trx, req.user.id, Number(priceCoins), 'portals_buy', `portals:${purchaseId}`);
       });
+
+      // Триггерим userbot через файл-флаг
+      const orderPath = new URL('../../userbot/pending_order.json', import.meta.url).pathname;
+      try {
+        const { writeFileSync } = await import('node:fs');
+        writeFileSync(orderPath, JSON.stringify({ purchaseId, giftId: String(giftId), userId: String(req.user.id) }));
+      } catch {}
 
       await db('portals_purchases').insert({
         id: purchaseId,

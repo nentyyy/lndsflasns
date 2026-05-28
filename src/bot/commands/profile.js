@@ -4,7 +4,7 @@ import { makeRefCode } from '../../api/lib/referral.js';
 
 export async function profileCommand(ctx) {
   const userId = String(ctx.from?.id);
-  const player = await db('players').where({ user_id: userId }).first();
+  const player = await db('players').where({ user_id: userId }).first().catch(() => null);
 
   if (!player) {
     return ctx.reply('Профиль не найден. Напиши /start чтобы начать.', {
@@ -14,18 +14,21 @@ export async function profileCommand(ctx) {
 
   const refCode = player.ref_code || makeRefCode(userId);
   const balance = Number(player.balance);
-  const won = Number(player.coins_won);
   const games = Number(player.games_played);
+  const won = Number(player.coins_won);
+  const best = Number(player.best_win);
 
-  await ctx.reply(
-    `👤 *${player.first_name || player.username || 'Игрок'}*\n\n` +
-    `💰 Баланс: *${balance} монет*\n` +
-    `🎮 Игр сыграно: *${games}*\n` +
-    `🏆 Выиграно: *${won} монет*\n\n` +
-    `🔗 Реферальный код: \`${refCode}\``,
-    {
-      parse_mode: 'Markdown',
-      reply_markup: appKeyboard()
-    }
-  );
+  const text = [
+    `👤 ${player.first_name || player.username || 'Игрок'}`,
+    '',
+    `💰 Баланс: ${balance} монет`,
+    `🎮 Игр: ${games}`,
+    `🏆 Выиграно: ${won} монет`,
+    `⭐ Лучший выигрыш: ${best} монет`,
+    '',
+    `Реферальный код: ${refCode}`,
+    `10% с каждого пополнения твоих рефералов`
+  ].join('\n');
+
+  await ctx.reply(text, { reply_markup: appKeyboard() });
 }

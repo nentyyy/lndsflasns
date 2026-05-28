@@ -16,48 +16,38 @@ async function ensurePlayer(ctx) {
   return id;
 }
 
-const WELCOME_TEXT = `🏴 *DEADWILL* — запечатанные завещания
-
-Перед тобой 36 карт. Каждая хранит тайну: золото, пустоту или проклятый долг.
-
-*Как играть:*
-• Занимаешь карту → делаешь ставку
-• Через 30–40 секунд открываются все карты
-• Твой приз — то, что скрывалось под твоей картой
-
-*Призы в раунде:*
-5 карт по +7 монет · 5 карт по +3 · 2 по +12
-Джекпоты: +14 · +15 · +20 · +25 · *+40 монет* 🔥
-
-*Валюта:*
-1 монета \= 0.1 TON \= 20 ⭐ Stars
-
-Первая карта — *бесплатно*. Удачи\!`;
-
 export async function startCommand(ctx) {
   const userId = await ensurePlayer(ctx);
 
-  // Реферальный код из /start DWxxxxx
   const payload = (ctx.match || '').toString().trim();
   if (userId && payload) {
     try { await bindReferrer(userId, payload); } catch {}
   }
 
-  // Отправляем красивый старт с фото-заглушкой (death seal SVG как URL недоступен в боте, используем текст)
+  const player = await db('players').where({ user_id: userId }).first().catch(() => null);
+  const balance = player ? Number(player.balance) : 0;
+  const welcomeFree = player ? !player.welcome_used : true;
+
+  const text = [
+    '🏴 DEADWILL — запечатанные завещания',
+    '',
+    'Перед тобой 36 карт. Каждая скрывает тайну:',
+    'золото, пустоту или проклятый долг.',
+    '',
+    '🎴 Как играть:',
+    '• Занимаешь карту → ставишь 5 монет',
+    '• Таймер 30–40 сек, другие игроки тоже занимают',
+    '• Все карты открываются одновременно',
+    '',
+    '💰 Призы: +3, +7, +12, +14, +15, +20, +25, +40 монет',
+    '',
+    '1 монета = 0.1 TON = 20 Stars',
+    welcomeFree ? '🎁 Первая карта — БЕСПЛАТНО!' : `Баланс: ${balance} монет`
+  ].join('\n');
+
   try {
-    await ctx.replyWithPhoto(
-      'https://194-31-223-100.sslip.io/og.png',
-      {
-        caption: WELCOME_TEXT,
-        parse_mode: 'MarkdownV2',
-        reply_markup: startKeyboard()
-      }
-    );
-  } catch {
-    // Нет фото — шлём текст
-    await ctx.reply(WELCOME_TEXT, {
-      parse_mode: 'MarkdownV2',
-      reply_markup: startKeyboard()
-    });
+    await ctx.reply(text, { reply_markup: startKeyboard() });
+  } catch (e) {
+    console.error('start reply error:', e.message);
   }
 }
