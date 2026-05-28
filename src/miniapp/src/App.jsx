@@ -1524,32 +1524,6 @@ function ShopTab({ shop, player, onBuyNft, portalsGifts }) {
         Подарки доставляются через Portals
       </p>
 
-      {currentTab === 'coins' && (
-        payPending ? (
-          <div className="dw-pay-loading">
-            <div className="dw-pay-spinner" />
-            <span>создаём платёж…</span>
-          </div>
-        ) : (
-          <div className="dw-pack-list">
-            {starsPacks.map((pack, i) => (
-              <motion.button
-                className="dw-pack-row"
-                key={pack.id}
-                onClick={() => onStarsPay(pack)}
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.24, delay: 0.05 * i }}
-                whileTap={{ scale: 0.97 }}
-              >
-                <span className="dw-pack-icon" data-icon="stars" aria-hidden="true" />
-                <span className="dw-pack-copy">
-                  <strong>{pack.title}</strong>
-                  <span>{formatCoins(pack.coins)} монет{pack.bonus > 0 ? ` · +${formatCoins(pack.bonus)} бонус` : ''}</span>
-                </span>
-                <span className="dw-pack-price">{pack.stars} Stars</span>
-              </motion.button>
-            ))}
       <div className="dw-nft-rarity-bar">
         {NFT_RARITIES.map((r) => (
           <button key={r} className={`dw-nft-rarity-chip ${nftRarity === r ? 'active' : ''}`}
