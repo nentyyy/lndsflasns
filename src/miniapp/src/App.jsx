@@ -52,9 +52,8 @@ function userDisplay(p) {
         .trim() || `Player #${String(id).slice(-4)}`;
   const initial = displayName.replace(/^@/, '').slice(0, 1).toUpperCase() || 'P';
   const avatarUrl = p.avatarUrl || p.photoUrl || null;
-  // badge решает СЕРВЕР (p.founder). Никаких хардкод-username на фронте.
-  const badge = p.founder ? 'Founder'
-    : (p.role === 'Owner' || p.role === 'Admin') ? 'Admin' : null;
+  // Бейджи (Founder/Admin) не показываем никому — роль работает на бэке.
+  const badge = null;
   return { displayName, initial, avatarUrl, badge };
 }
 
@@ -513,9 +512,9 @@ function App() {
     notify(`Заявка в ${clanName} отправлена`, 'violet');
   };
 
-  const botUsername = 'deadwill_bot';
-  const refCode = refData?.code || state.player?.refCode || state.referral?.code;
-  const refLink = `https://t.me/${botUsername}?start=${refCode}`;
+  // Ссылку формирует сервер (правильный username + ref_<userId>).
+  const refLink = refData?.link || state.referral?.link
+    || `https://t.me/DeadwillGame_bot?start=ref_${state.player?.id || ''}`;
 
   const copyRefLink = () => {
     navigator.clipboard?.writeText(refLink).catch(() => {});
@@ -524,7 +523,7 @@ function App() {
   };
 
   const shareRef = () => {
-    const text = `DEADWILL — выбери запечатанное завещание. Мой код: ${refCode}`;
+    const text = 'Играй в DEADWILL — выигрывай TON и NFT подарки!';
     const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${encodeURIComponent(text)}`;
     if (window.Telegram?.WebApp?.openTelegramLink) {
       window.Telegram.WebApp.openTelegramLink(shareUrl);

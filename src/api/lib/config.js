@@ -11,6 +11,7 @@ dotenv.config({ path: path.join(__dirname, '..', '..', '..', '.env') });
 export const env = {
   PORT: Number(process.env.PORT || 3000),
   BOT_TOKEN: process.env.BOT_TOKEN || '',
+  BOT_USERNAME: process.env.BOT_USERNAME || 'DeadwillGame_bot',
   MINI_APP_URL: process.env.MINI_APP_URL || 'https://example.com/deadwill',
 
   // DB: if DATABASE_URL is set we use Postgres, otherwise a local SQLite file.
@@ -34,6 +35,7 @@ export const STARS_PER_COIN = 20;        // 20 Stars = 1 монета
 export const MAX_OP_COINS = 100_000;     // потолок одной операции списания/начисления
 
 export const isProd = process.env.NODE_ENV === 'production';
+export const BOT_USERNAME = env.BOT_USERNAME;
 
 // Founder bootstrap привязан к telegram_id (НЕ к username — username можно
 // освободить/занять и захватить роль). Список из env FOUNDER_IDS (csv),

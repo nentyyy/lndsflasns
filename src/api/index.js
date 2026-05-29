@@ -1,7 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { env, MODES, STARS_PACKS, TON_PACKS, TICKET_PACKS, FOUNDER_IDS } from './lib/config.js';
+import { env, MODES, STARS_PACKS, TON_PACKS, TICKET_PACKS } from './lib/config.js';
 import { db } from './lib/db.js';
 import { migrate } from './lib/migrate.js';
 import { authMiddleware, rateLimit, requireAdmin, requireOwner } from './lib/security.js';
@@ -93,7 +93,6 @@ function playerView(p) {
     firstName: p.first_name || null,
     lastName: p.last_name || null,
     avatarUrl: p.avatar_file_id ? `/api/avatar/${p.avatar_file_id}` : null,
-    founder: FOUNDER_IDS.includes(String(p.user_id)),
     coins: Number(p.balance),
     multiplier: Number(p.multiplier),
     gamesPlayed: Number(p.games_played),
@@ -179,6 +178,13 @@ app.get('/api/referral', async (req, res, next) => {
   try {
     const data = await getReferralView(req.user.id);
     res.json(data);
+  } catch (e) { next(e); }
+});
+
+app.get('/api/referral/link', async (req, res, next) => {
+  try {
+    const d = await getReferralView(req.user.id);
+    res.json({ link: d.link, referralCount: d.referralCount, coinsEarned: d.coinsEarned });
   } catch (e) { next(e); }
 });
 

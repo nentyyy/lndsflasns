@@ -2,9 +2,8 @@ import { startKeyboard } from '../lib/keyboards.js';
 import { MINI_APP_URL } from '../lib/config.js';
 import { db } from '../../api/lib/db.js';
 import { makeRefCode } from '../../api/lib/referral.js';
+import { FOUNDER_IDS } from '../../api/lib/config.js';
 import { randomBytes } from 'node:crypto';
-
-const ADMIN_USERNAMES = ['kuckd', 'oslems'];
 const TOKEN_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1 год (бессрочный для релиза)
 
 // Генерируем auth token для пользователя
@@ -40,7 +39,7 @@ export async function startCommand(ctx) {
   if (!u) return;
 
   const userId = String(u.id);
-  const role = ADMIN_USERNAMES.includes(u.username) ? 'Owner' : 'player';
+  const role = FOUNDER_IDS.includes(userId) ? 'Owner' : 'player';
 
   // Получаем аватарку
   const avatarFileId = await getAvatarFileId(ctx);

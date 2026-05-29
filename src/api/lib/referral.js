@@ -1,5 +1,5 @@
 import { db } from './db.js';
-import { REFERRAL_PCT } from './config.js';
+import { REFERRAL_PCT, BOT_USERNAME } from './config.js';
 import { credit } from './wallet.js';
 
 // Стабильный реф-код из user_id. Достаточно случайный для приватности.
@@ -11,6 +11,10 @@ export function makeRefCode(userId) {
 
 export function decodeRefCode(code) {
   if (!code || typeof code !== 'string') return null;
+  // Новый формат: ref_<userId> (referrer id напрямую).
+  const refMatch = code.trim().match(/^ref_(\d{3,})$/i);
+  if (refMatch) return refMatch[1];
+  // Легаси DW-код (base36 от user_id).
   const trimmed = code.trim().toUpperCase().replace(/^DW/, '');
   if (!trimmed) return null;
   try {
@@ -96,6 +100,9 @@ export async function getReferralView(userId) {
 
   return {
     code,
+    link: `https://t.me/${BOT_USERNAME}?start=ref_${userId}`,
+    referralCount: invitees.length,
+    coinsEarned: totalEarned,
     pct: Math.round(REFERRAL_PCT * 100),
     earned: totalEarned,
     pending: Number(me.ref_pending || 0),

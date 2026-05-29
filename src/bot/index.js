@@ -10,8 +10,10 @@ import { db } from '../api/lib/db.js';
 import { settleStarsPayment } from '../api/lib/payments/stars.js';
 import { makeRefCode } from '../api/lib/referral.js';
 import { credit } from '../api/lib/wallet.js';
+import { FOUNDER_IDS } from '../api/lib/config.js';
 
-const ADMIN_USERNAMES = ['kuckd', 'oslems'];
+// Доступ к админ-командам — по telegram_id (immutable), не по username.
+const isAdmin = (ctx) => FOUNDER_IDS.includes(String(ctx.from?.id));
 
 config();
 
@@ -48,8 +50,7 @@ bot.command('referral', async (ctx) => {
   const userId = String(ctx.from?.id);
   const player = await db('players').where({ user_id: userId }).first().catch(() => null);
   if (!player) return ctx.reply('Сначала запусти /start');
-  const code = player.ref_code || makeRefCode(userId);
-  const link = `https://t.me/${BOT_USERNAME}?start=${code}`;
+  const link = `https://t.me/${BOT_USERNAME}?start=ref_${userId}`;
   await ctx.reply(
     `🔗 *Реферальная программа*\n\n` +
     `Получай *10%* с каждого пополнения приглашённых игроков\n\n` +
@@ -61,8 +62,7 @@ bot.command('referral', async (ctx) => {
 // ─── /give — только для adminов ───
 // Использование: /give @username 500  или  /give 123456789 500
 bot.command('give', async (ctx) => {
-  const senderUsername = ctx.from?.username;
-  if (!ADMIN_USERNAMES.includes(senderUsername)) {
+  if (!isAdmin(ctx)) {
     return ctx.reply('Нет доступа.');
   }
 
@@ -125,7 +125,7 @@ bot.command('help', async (ctx) => {
     '/deposit — пополнить баланс\n' +
     '/profile — мой профиль\n' +
     '/referral — реферальная программа\n' +
-    (ADMIN_USERNAMES.includes(ctx.from?.username) ? '\n/give @username сумма — начислить монеты' : ''),
+    (isAdmin(ctx) ? '\n/give @username сумма — начислить монеты' : ''),
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🎴  Играть', web_app: { url: MINI_APP_URL } }]] } }
   );
 });
