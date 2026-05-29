@@ -38,12 +38,16 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, app: 'DEADWILL', db: env.DATABASE_URL ? 'pg' : 'sqlite' });
 });
 
-// Аватарка через бот (проксируем файл из Telegram)
+// Аватарка через бот (проксируем файл из Telegram).
+// PUBLIC by necessity: browser <img src> не может слать auth-заголовки.
+// Это opaque-прокси по Telegram file_id — без доступа к балансу/данным игрока.
 app.get('/api/avatar/:fileId', async (req, res) => {
   try {
     if (!env.BOT_TOKEN) return res.status(404).send('no bot');
-    const fileId = req.params.fileId;
-    const fileRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getFile?file_id=${fileId}`);
+    const fileId = String(req.params.fileId);
+    // file_id состоит только из base64url-символов — отсекаем мусор/инъекции.
+    if (!/^[A-Za-z0-9_-]{20,200}$/.test(fileId)) return res.status(400).send('bad id');
+    const fileRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getFile?file_id=${encodeURIComponent(fileId)}`);
     const fileData = await fileRes.json();
     if (!fileData.ok) return res.status(404).send('not found');
     const filePath = fileData.result.file_path;
@@ -54,34 +58,18 @@ app.get('/api/avatar/:fileId', async (req, res) => {
   } catch (e) { res.status(500).send('error'); }
 });
 
-// Авторизация через токен бота (не требует initData)
-app.post('/api/auth/bot-token', async (req, res, next) => {
-  try {
-    const { token } = req.body || {};
-    if (!token) return res.status(400).json({ error: 'token_required' });
-    const record = await db('auth_tokens').where({ token }).first();
-    if (!record) return res.status(401).json({ error: 'invalid_token' });
-    if (new Date(record.expires_at).getTime() < Date.now()) {
-      await db('auth_tokens').where({ token }).delete();
-      return res.status(401).json({ error: 'token_expired' });
-    }
-    // Используем токен один раз (или оставляем — по желанию)
-    const player = await db('players').where({ user_id: record.user_id }).first();
-    if (!player) return res.status(404).json({ error: 'player_not_found' });
-    res.json({ ok: true, userId: String(record.user_id), player: playerView(player) });
-  } catch (e) { next(e); }
-});
+// ─── Auth required for ALL /api/* below (only /api/health and /api/avatar are public) ───
+// Validates Telegram WebApp initData (HMAC-SHA256 + BOT_TOKEN, ≤24h) or a DB-backed
+// bot token. Anything else → 401. See src/api/lib/security.js.
+app.use('/api', authMiddleware());
 
-// Live feed — public (no auth needed for display)
+// Live feed — requires auth (за middleware выше).
 app.get('/api/feed', async (_req, res, next) => {
   try {
     const feed = await getLiveFeed(20);
     res.json({ feed });
   } catch (e) { next(e); }
 });
-
-// ─── Auth required ───
-app.use('/api', authMiddleware());
 
 function playerView(p) {
   return {
