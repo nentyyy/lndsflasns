@@ -127,6 +127,7 @@ function App() {
   const [liveWins, setLiveWins] = useState([]);
   const [pvpShuffling, setPvpShuffling] = useState(false);
   const [portalsGifts, setPortalsGifts] = useState([]);
+  const [roundsOpen, setRoundsOpen] = useState(false);
   const [authError, setAuthError] = useState(false);
 
   // Real TON Connect
@@ -420,19 +421,21 @@ function App() {
       if (!res.depositId) { notify('TON-кошелёк проекта не настроен', 'danger'); return; }
       setTonIntent(res);
       const pack = { coins: res.coins, bonus: res.bonus || 0 };
-      if (tonConnectUI && wallet) {
-        try {
-          await tonConnectUI.sendTransaction({
-            validUntil: Math.floor(Date.now() / 1000) + 600,
-            messages: [{ address: res.wallet, amount: String(res.amountNanoton), payload: encodeTonComment(res.comment) }]
-          });
-          notify('Транзакция отправлена · ждём подтверждения', 'violet');
-          pollDepositUntilPaid(res.depositId, pack);
-        } catch (e) {
-          notify('Подпись отменена. Используй реквизиты ниже', 'default');
-        }
-      } else {
-        notify('Подключи TON-кошелёк или используй реквизиты', 'default');
+      if (!wallet) {
+        // Кошелёк не подключён — открываем окно подключения, затем повторить оплату.
+        try { await tonConnectUI.openModal(); } catch {}
+        notify('Подключи кошелёк и нажми оплату ещё раз', 'default');
+        return;
+      }
+      try {
+        await tonConnectUI.sendTransaction({
+          validUntil: Math.floor(Date.now() / 1000) + 600,
+          messages: [{ address: res.wallet, amount: String(res.amountNanoton), payload: encodeTonComment(res.comment) }]
+        });
+        notify('Транзакция отправлена · ждём подтверждения', 'violet');
+        pollDepositUntilPaid(res.depositId, pack);
+      } catch (e) {
+        notify(`Кошелёк отклонил: ${e?.message || 'отмена'}`, 'danger');
       }
     } catch (e) {
       setPayPending(false);
@@ -685,6 +688,7 @@ function App() {
               pvpBuying={pvpBuying}
               bestWin={state.player.bestWin || 0}
               lastRoundWin={liveWins[0]?.amount || 0}
+              onOpenRounds={() => setRoundsOpen(true)}
               onArmRound={armRound}
               onPickClause={playRound}
               onResetRound={resetRound}
@@ -792,6 +796,10 @@ function App() {
           data={playerProfileData}
           onClose={() => { setPlayerProfileOpen(null); setPlayerProfileData(null); }}
         />
+      )}
+
+      {roundsOpen && (
+        <RoundsHistory myId={state.player.id} onClose={() => setRoundsOpen(false)} />
       )}
 
       {pvpRoundResult && (
@@ -1128,7 +1136,7 @@ function PvpCard({ card, idx, settled, pvpBuying, lowBalance, onBuyPvpCard, onOp
   );
 }
 
-function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvpTotalReveals, bestWin = 0, lastRoundWin = 0, onBuyPvpCard, onOpenDeposit, onOpenPlayerProfile }) {
+function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvpTotalReveals, bestWin = 0, lastRoundWin = 0, onOpenRounds, onBuyPvpCard, onOpenDeposit, onOpenPlayerProfile }) {
   const [tick, setTick] = useState(0);
   const [shuffling, setShuffling] = useState(false);
   const prevStatus = React.useRef(null);
@@ -1180,17 +1188,17 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   return (
     <>
       <div className="dw-pvp-header dw-pvp-header--3col">
-        <div className="dw-pvp-stat">
-          <span>Лучший</span>
+        <button className="dw-pvp-stat" onClick={onOpenRounds}>
+          <span>Лучший ›</span>
           <strong>{formatCoins(bestWin)}</strong>
-        </div>
+        </button>
         <div className={`dw-pvp-timer ${urgent ? 'urgent' : idle || settled ? 'idle' : ''}`}>
           {settled ? '00' : timer ?? '35'}<span style={{ fontSize: 11, marginLeft: 4, opacity: 0.7 }}>с</span>
         </div>
-        <div className="dw-pvp-stat dw-pvp-stat--right">
-          <span>Прошлый раунд</span>
+        <button className="dw-pvp-stat dw-pvp-stat--right" onClick={onOpenRounds}>
+          <span>Прошлый раунд ›</span>
           <strong>{formatCoins(lastRoundWin)}</strong>
-        </div>
+        </button>
       </div>
 
       <div className="dw-pvp-grid-36">
@@ -1995,6 +2003,91 @@ function PersonalStats() {
         <div className="dw-stat-cell"><span>любимый подарок</span><strong style={{ fontSize: 13 }}>{s.favoriteGift || '—'}</strong></div>
       </div>
     </article>
+  );
+}
+
+/* ─── История раундов: список + детали по игрокам ─────────── */
+
+function RoundsHistory({ myId, onClose }) {
+  const [sort, setSort] = useState('all'); // all | best
+  const [rounds, setRounds] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [detail, setDetail] = useState(null); // { roundNumber, players[] }
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    api.rounds(sort, 0, 30).then((d) => setRounds(d.rounds || [])).catch(() => {}).finally(() => setLoading(false));
+  }, [sort]);
+
+  const openDetail = async (lobbyId) => {
+    setDetailLoading(true);
+    try { setDetail(await api.roundDetail(lobbyId)); } catch {} finally { setDetailLoading(false); }
+  };
+
+  return (
+    <motion.div className="dw-sheet-backdrop" onClick={onClose}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
+      <motion.div className="dw-round-result" onClick={(e) => e.stopPropagation()}
+        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ duration: 0.32, ease: [0.32, 0, 0, 1] }}>
+
+        {!detail ? (
+          <>
+            <div className="dw-round-result-header">
+              <h2>История раундов</h2>
+              <button className="dw-icon-btn" onClick={onClose}>×</button>
+            </div>
+            <div className="dw-will-pager" style={{ marginBottom: 12 }}>
+              <button className={`dw-will-pager-btn ${sort === 'all' ? 'active' : ''}`} onClick={() => setSort('all')}>Все</button>
+              <button className={`dw-will-pager-btn ${sort === 'best' ? 'active' : ''}`} onClick={() => setSort('best')}>Лучшие</button>
+            </div>
+            {loading ? (
+              <div className="dw-pay-loading"><div className="dw-pay-spinner" /></div>
+            ) : rounds.length === 0 ? (
+              <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: '16px 0', fontSize: 14 }}>Раундов пока нет</p>
+            ) : rounds.map((r) => {
+              const w = r.winner;
+              const u = w ? userDisplay(w) : null;
+              return (
+                <button key={r.lobbyId} className="dw-round-row" style={{ width: '100%', textAlign: 'left' }} onClick={() => openDetail(r.lobbyId)}>
+                  <span className="dw-lb-rank">#{r.roundNumber}</span>
+                  <span className="dw-round-row-avatar" style={u?.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+                    {u?.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : (u?.initial || '—')}
+                  </span>
+                  <span className="dw-round-row-name">{w ? `Победитель ${u.displayName}` : 'Без победителя'} · {r.players} игроков</span>
+                  <span className="dw-round-row-prize pos">{w ? `+${formatCoins(r.topPrize)}` : '0'}</span>
+                </button>
+              );
+            })}
+          </>
+        ) : (
+          <>
+            <div className="dw-round-result-header">
+              <button className="dw-btn ghost small" onClick={() => setDetail(null)}>‹ назад</button>
+              <h2 style={{ flex: 1, textAlign: 'center' }}>Раунд #{detail.roundNumber}</h2>
+              <button className="dw-icon-btn" onClick={onClose}>×</button>
+            </div>
+            {detailLoading ? <div className="dw-pay-loading"><div className="dw-pay-spinner" /></div> :
+              detail.players.length === 0 ? (
+                <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: '16px 0' }}>Никто не играл</p>
+              ) : detail.players.map((p, i) => {
+                const u = userDisplay(p);
+                const mine = String(p.userId) === String(myId);
+                return (
+                  <div key={i} className={`dw-round-row${mine ? ' dw-round-row--mine' : ''}`}>
+                    <span className="dw-lb-rank">{p.prize > 0 ? (i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1) : '—'}</span>
+                    <span className="dw-round-row-avatar" style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+                      {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : u.initial}
+                    </span>
+                    <span className="dw-round-row-name">{u.displayName}{mine ? ' (ты)' : ''} · карта #{p.cardIndex + 1}</span>
+                    <span className={`dw-round-row-prize ${p.prize > 0 ? 'pos' : ''}`}>{p.prize > 0 ? `+${formatCoins(p.prize)}` : '0'}</span>
+                  </div>
+                );
+              })}
+          </>
+        )}
+      </motion.div>
+    </motion.div>
   );
 }
 

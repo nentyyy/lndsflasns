@@ -130,6 +130,8 @@ export const api = {
   liveFeed: () => request('/api/feed'),
   leaderboard: () => request('/api/leaderboard'),
   stats: () => request('/api/stats'),
+  rounds: (sort = 'all', offset = 0, limit = 20) => request(`/api/rounds?sort=${sort}&offset=${offset}&limit=${limit}`),
+  roundDetail: (id) => request(`/api/rounds/${id}`),
   gifts: () => request('/api/gifts'),
   portalsBuy: (giftId) => request('/api/portals/buy', { method: 'POST', body: { giftId, idempotencyKey: uuid() } }),
   adminUsers: (limit = 50, offset = 0) => request(`/api/admin/users?limit=${limit}&offset=${offset}`),

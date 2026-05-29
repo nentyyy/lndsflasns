@@ -19,6 +19,7 @@ import { getPvpState, buyCard, PvpError, getLiveFeed, sweepExpiredLobbies } from
 import { buyTicketPack, TicketError } from './lib/tickets.js';
 import { getLeaderboard, getPersonalStats } from './lib/leaderboard.js';
 import { notifyAdminsPurchase } from './lib/admin-notify.js';
+import { listRounds, getRoundDetail } from './lib/rounds.js';
 
 const app = express();
 app.use(cors({
@@ -136,6 +137,24 @@ app.get('/api/me', async (req, res) => {
 app.get('/api/leaderboard', async (_req, res, next) => {
   try {
     res.json(await getLeaderboard());
+  } catch (e) { next(e); }
+});
+
+// История PvP-раундов (список) + детали по конкретному раунду.
+app.get('/api/rounds', async (req, res, next) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 20, 50);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const sort = req.query.sort === 'best' ? 'best' : 'all';
+    res.json(await listRounds({ limit, offset, sort }));
+  } catch (e) { next(e); }
+});
+
+app.get('/api/rounds/:id', async (req, res, next) => {
+  try {
+    const d = await getRoundDetail(req.params.id);
+    if (!d) return res.status(404).json({ error: 'not_found' });
+    res.json(d);
   } catch (e) { next(e); }
 });
 
