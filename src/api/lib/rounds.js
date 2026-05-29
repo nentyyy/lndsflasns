@@ -26,7 +26,7 @@ export async function listRounds({ limit = 20, offset = 0, sort = 'all' } = {}) 
     .groupBy('lobby_id')
     .select('lobby_id')
     .max('credit as topPrize')
-    .count('* as players');
+    .countDistinct('user_id as players'); // уникальные игроки, не карты
   const aggMap = new Map(agg.map((a) => [a.lobby_id, a]));
 
   let rounds = lobbies.map((l) => {

@@ -3186,6 +3186,14 @@ html, body { font-size: 16px; }
 .dw-lb-stats small { font-size: 11px; color: var(--bone-soft); }
 
 /* ─── Покупка карт по числу ───────────────────────────────── */
+.dw-card-panel {
+  margin-top: 16px; padding: 14px; border-radius: 14px;
+  border: 1px solid var(--gold-line); background: var(--surface-2);
+}
+.dw-card-panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px; font-size: 15px; font-weight: 700; color: var(--vellum);
+}
 .dw-card-buy-row { display: flex; gap: 8px; align-items: stretch; }
 .dw-card-buy-row .dw-coins-input { flex: 1; }
 .dw-card-buy-row .dw-btn { white-space: nowrap; }

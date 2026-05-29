@@ -36,7 +36,7 @@ function mapResult(r) {
 
 const tabs = ['play', 'shop', 'profile'];
 const shopTabs = ['nft'];
-const PREMIUM_CARDS = 7;
+const PREMIUM_CARDS = 5;
 
 // Единый helper для отображения пользователя — используется везде
 function userDisplay(p) {
@@ -1061,7 +1061,7 @@ function WillTab(props) {
           onClick={() => onViewChange('solo')}
         >
           Соло · Премиум
-          <small>150 монет · 7 печатей</small>
+          <small>150 монет · 5 печатей</small>
         </button>
       </div>
 
@@ -1323,7 +1323,7 @@ function SoloPanel({
           {hasTicket && <span className="dw-ticket-pill" style={{ marginLeft: 8 }}>{tickets.premium} в инвентаре</span>}
         </p>
         {roundArmed ? (
-          <p className="dw-play-hint">выбери одну из десяти</p>
+          <p className="dw-play-hint">выбери одну из пяти</p>
         ) : lowBalance ? (
           <button className="dw-btn ghost full" onClick={onOpenDeposit}>пополнить · недостаточно монет</button>
         ) : (
@@ -2393,15 +2393,20 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
               </button>
             </div>
 
-            {/* Плашка карт рядом с монетами — ввод числа, оплата монетами */}
-            <div className="dw-deposit-divider"><span>PvP карты · 5 монет/шт</span></div>
-            <div className="dw-card-buy-row">
-              <input className="dw-coins-input" type="number" min="1" placeholder="Сколько карт?"
-                value={cheapCards} onChange={(e) => setCheapCards(e.target.value)} />
-              <button className="dw-btn primary" disabled={!cheapN || (player?.coins || 0) < cheapN * 5}
-                onClick={() => onBuyCardsCount('cheap', cheapN)}>
-                {cheapN ? `Купить · ${formatCoins(cheapN * 5)}` : 'Купить'}
-              </button>
+            {/* Отдельная плашка карт рядом с монетами */}
+            <div className="dw-card-panel">
+              <div className="dw-card-panel-head">
+                <span>🎴 PvP карты</span>
+                <span className="dw-kicker">5 монет / шт</span>
+              </div>
+              <div className="dw-card-buy-row">
+                <input className="dw-coins-input" type="number" min="1" placeholder="Сколько карт?"
+                  value={cheapCards} onChange={(e) => setCheapCards(e.target.value)} />
+                <button className="dw-btn primary" disabled={!cheapN || (player?.coins || 0) < cheapN * 5}
+                  onClick={() => onBuyCardsCount('cheap', cheapN)}>
+                  {cheapN ? `Купить · ${formatCoins(cheapN * 5)}` : 'Купить'}
+                </button>
+              </div>
             </div>
           </div>
         )}
