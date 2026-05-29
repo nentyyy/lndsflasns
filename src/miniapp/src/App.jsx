@@ -1436,6 +1436,21 @@ function SoloPanel({
 /* ─── Clans tab ───────────────────────────────────────────── */
 
 function ClansTab({ onBack, player, onNotify }) {
+  // Система кланов временно закрыта — заглушка «будет позже».
+  return (
+    <section className="dw-page dw-clans-page">
+      <button className="dw-back-link" onClick={onBack}>‹ назад</button>
+      <div className="dw-tut-card" style={{ margin: '40px auto 0', position: 'static' }}>
+        <div className="dw-tut-icon">⚔️</div>
+        <h2 className="dw-tut-title">Кланы</h2>
+        <p className="dw-tut-text">Система кланов скоро появится. Загляни позже!</p>
+        <button className="dw-btn primary full" onClick={onBack}>Понятно</button>
+      </div>
+    </section>
+  );
+}
+
+function ClansTabDisabled({ onBack, player, onNotify }) {
   const [clans, setClans] = React.useState([]);
   const [myClanId, setMyClanId] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
@@ -2145,8 +2160,8 @@ function RoundsHistory({ myId, onClose }) {
                   <span className="dw-round-row-avatar" style={u?.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
                     {u?.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : (u?.initial || '—')}
                   </span>
-                  <span className="dw-round-row-name">{w ? `Победитель ${u.displayName}` : 'Без победителя'} · {r.players} игроков</span>
-                  <span className="dw-round-row-prize pos">{w ? `+${formatCoins(r.topPrize)}` : '0'}</span>
+                  <span className="dw-round-row-name">{w ? `Победитель ${u.displayName}` : 'Без победителя'} · {r.players} игроков{sort === 'best' ? ` · банк ${formatCoins(r.totalWon)}` : ''}</span>
+                  <span className="dw-round-row-prize pos">{(sort === 'best' ? r.totalWon : (w ? r.topPrize : 0)) > 0 ? `+${formatCoins(sort === 'best' ? r.totalWon : r.topPrize)}` : '0'}</span>
                 </button>
               );
             })}
@@ -2535,8 +2550,10 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
   const winners = takenCards.filter(c => c.outcome?.credit > 0)
     .sort((a, b) => b.outcome.credit - a.outcome.credit);
   const losers = takenCards.filter(c => !c.outcome?.credit);
-  const myCard = cards.find(c => c.mine);
-  const myWon = myCard?.outcome?.credit || 0;
+  // Игрок мог взять несколько карт — суммируем выигрыш по всем своим.
+  const myCardsAll = cards.filter(c => c.mine);
+  const myCard = myCardsAll.find(c => (c.outcome?.credit || 0) > 0) || myCardsAll[0];
+  const myWon = myCardsAll.reduce((sum, c) => sum + (c.outcome?.credit || 0), 0);
   const isWinner = myWon > 0;
 
   return (

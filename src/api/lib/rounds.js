@@ -26,6 +26,7 @@ export async function listRounds({ limit = 20, offset = 0, sort = 'all' } = {}) 
     .groupBy('lobby_id')
     .select('lobby_id')
     .max('credit as topPrize')
+    .sum('credit as totalWon')          // суммарно монет выиграно в раунде
     .countDistinct('user_id as players'); // уникальные игроки, не карты
   const aggMap = new Map(agg.map((a) => [a.lobby_id, a]));
 
@@ -37,15 +38,16 @@ export async function listRounds({ limit = 20, offset = 0, sort = 'all' } = {}) 
       settledAt: l.settled_at,
       entry: Number(l.entry_coins),
       topPrize: Number(a.topPrize || 0),
+      totalWon: Number(a.totalWon || 0),
       players: Number(a.players || 0)
     };
   });
 
-  // ALL — по убыванию номера (свежие сверху). BEST — по убыванию приза,
-  // при равном призе свежие выше.
+  // ALL — по убыванию номера (свежие сверху).
+  // BEST — по суммарным монетам раунда (самые крупные), tiebreak — свежие выше.
   rounds.sort((x, y) =>
     sort === 'best'
-      ? (y.topPrize - x.topPrize) || (y.roundNumber - x.roundNumber)
+      ? (y.totalWon - x.totalWon) || (y.roundNumber - x.roundNumber)
       : (y.roundNumber - x.roundNumber));
   const total = rounds.length;
   const page = rounds.slice(offset, offset + limit);
