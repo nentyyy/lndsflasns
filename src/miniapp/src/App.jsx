@@ -141,7 +141,14 @@ function App() {
         if (data.liveWins) setLiveWins(data.liveWins);
         if (data.portalsGifts) setPortalsGifts(data.portalsGifts);
       })
-      .catch((e) => console.warn('bootstrap failed', e.message))
+      .catch((e) => {
+        console.error('bootstrap failed:', e.status, e.message);
+        // Если 401 — пробуем повторно через X-Dev-User как последний шанс
+        if (e.status === 401) {
+          const userId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+          if (userId) console.warn('bootstrap 401, userId from unsafe:', userId);
+        }
+      })
       .finally(() => setBootReady(true));
   }, []);
 

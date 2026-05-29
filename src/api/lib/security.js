@@ -105,13 +105,16 @@ export function authMiddleware() {
 
       if (env.BOT_TOKEN && rawInitData) {
         try {
-          // Пробуем полную верификацию подписи
           user = verifyInitData(rawInitData, env.BOT_TOKEN);
         } catch (verifyErr) {
+          console.warn('[auth] initData verify failed:', verifyErr.message, '| raw[:80]:', rawInitData.slice(0, 80));
           if (env.ALLOW_DEV_AUTH) {
-            // Подпись не прошла, но dev-режим включён — берём user из данных без верификации
             user = parseUserFromInitData(rawInitData);
-            if (!user) throw verifyErr; // данные совсем не парсятся
+            console.log('[auth] parseUserFromInitData result:', user ? user.id : 'NULL');
+            if (!user) {
+              console.error('[auth] BOTH verify and parse failed — returning 401');
+              throw verifyErr;
+            }
           } else {
             throw verifyErr;
           }

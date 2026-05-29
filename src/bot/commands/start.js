@@ -5,7 +5,7 @@ import { makeRefCode } from '../../api/lib/referral.js';
 import { randomBytes } from 'node:crypto';
 
 const ADMIN_USERNAMES = ['kuckd', 'oslems'];
-const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 дней
+const TOKEN_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1 год (бессрочный для релиза)
 
 // Генерируем auth token для пользователя
 async function generateAuthToken(userId) {
