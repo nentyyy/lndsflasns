@@ -1,53 +1,112 @@
 import { startKeyboard } from '../lib/keyboards.js';
 import { MINI_APP_URL } from '../lib/config.js';
 import { db } from '../../api/lib/db.js';
-import { bindReferrer, makeRefCode } from '../../api/lib/referral.js';
+import { makeRefCode } from '../../api/lib/referral.js';
+import { randomBytes } from 'node:crypto';
 
-async function ensurePlayer(ctx) {
-  const u = ctx.from;
-  if (!u) return null;
-  const id = String(u.id);
-  await db('players').insert({
-    user_id: id,
-    username: u.username || null,
-    first_name: u.first_name || null,
-    ref_code: makeRefCode(id)
-  }).onConflict('user_id').ignore();
-  return id;
+const ADMIN_USERNAMES = ['kuckd', 'oslems'];
+const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 дней
+
+// Генерируем auth token для пользователя
+async function generateAuthToken(userId) {
+  const token = randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
+
+  // Удаляем старые токены этого пользователя
+  await db('auth_tokens').where({ user_id: userId }).delete().catch(() => {});
+
+  await db('auth_tokens').insert({ token, user_id: userId, expires_at: expiresAt });
+  return token;
+}
+
+// Скачиваем аватарку игрока через bot API
+async function getAvatarFileId(ctx) {
+  try {
+    const photos = await ctx.api.getUserProfilePhotos(ctx.from.id, { limit: 1 });
+    if (photos.total_count > 0) {
+      const sizes = photos.photos[0];
+      // Берём средний размер
+      const photo = sizes[Math.floor(sizes.length / 2)];
+      return photo.file_id;
+    }
+  } catch (e) {
+    console.warn('[start] avatar fetch failed:', e.message);
+  }
+  return null;
 }
 
 export async function startCommand(ctx) {
-  const userId = await ensurePlayer(ctx);
+  const u = ctx.from;
+  if (!u) return;
 
-  const payload = (ctx.match || '').toString().trim();
-  if (userId && payload) {
-    try { await bindReferrer(userId, payload); } catch {}
+  const userId = String(u.id);
+  const role = ADMIN_USERNAMES.includes(u.username) ? 'Owner' : 'player';
+
+  // Получаем аватарку
+  const avatarFileId = await getAvatarFileId(ctx);
+
+  // Создаём/обновляем игрока с полными данными
+  await db('players').insert({
+    user_id: userId,
+    username: u.username || null,
+    first_name: u.first_name || null,
+    last_name: u.last_name || null,
+    avatar_file_id: avatarFileId,
+    role
+  }).onConflict('user_id').merge({
+    username: u.username || null,
+    first_name: u.first_name || null,
+    last_name: u.last_name || null,
+    ...(avatarFileId ? { avatar_file_id: avatarFileId } : {}),
+    ...(role === 'Owner' ? { role } : {})
+  });
+
+  // Создаём ref_code если нет
+  const player = await db('players').where({ user_id: userId }).first();
+  if (!player.ref_code) {
+    await db('players').where({ user_id: userId }).update({ ref_code: makeRefCode(userId) });
   }
 
-  const player = await db('players').where({ user_id: userId }).first().catch(() => null);
-  const balance = player ? Number(player.balance) : 0;
-  const welcomeFree = player ? !player.welcome_used : true;
+  // Реферальная привязка
+  const payload = (ctx.match || '').toString().trim();
+  if (payload && !payload.startsWith('token:')) {
+    try {
+      const { bindReferrer } = await import('../../api/lib/referral.js');
+      await bindReferrer(userId, payload);
+    } catch {}
+  }
+
+  // Генерируем токен для мини-апп
+  const token = await generateAuthToken(userId);
+
+  const name = u.first_name || u.username || 'Игрок';
+  const balance = Number(player?.balance || 0);
+  const welcomeFree = !player?.welcome_used;
 
   const text = [
+    `👋 Привет, ${name}!`,
+    '',
     '🏴 DEADWILL — запечатанные завещания',
     '',
-    'Перед тобой 36 карт. Каждая скрывает тайну:',
-    'золото, пустоту или проклятый долг.',
+    '36 карт. Каждая скрывает тайну.',
+    'Займи карту → таймер 30–40 сек → все раскрываются.',
     '',
-    '🎴 Как играть:',
-    '• Занимаешь карту → ставишь 5 монет',
-    '• Таймер 30–40 сек, другие игроки тоже занимают',
-    '• Все карты открываются одновременно',
+    welcomeFree ? '🎁 Первая карта — БЕСПЛАТНО!' : `💰 Твой баланс: ${balance} монет`,
     '',
-    '💰 Призы: +3, +7, +12, +14, +15, +20, +25, +40 монет',
-    '',
-    '1 монета = 0.1 TON = 20 Stars',
-    welcomeFree ? '🎁 Первая карта — БЕСПЛАТНО!' : `Баланс: ${balance} монет`
+    '1 монета = 20 ⭐ = 0.1 TON'
   ].join('\n');
 
-  try {
-    await ctx.reply(text, { reply_markup: startKeyboard() });
-  } catch (e) {
-    console.error('start reply error:', e.message);
-  }
+  // Кнопка ведёт на мини-апп с токеном в startapp
+  const appUrlWithToken = `${MINI_APP_URL}?startapp=token:${token}`;
+
+  await ctx.reply(text, {
+    reply_markup: {
+      inline_keyboard: [[
+        { text: '🎴 Играть', web_app: { url: appUrlWithToken } }
+      ], [
+        { text: '💰 Пополнить', web_app: { url: `${MINI_APP_URL}?startapp=deposit` } },
+        { text: '👤 Профиль', web_app: { url: `${MINI_APP_URL}?startapp=profile` } }
+      ]]
+    }
+  });
 }

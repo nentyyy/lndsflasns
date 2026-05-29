@@ -191,6 +191,25 @@ export async function migrate() {
     } catch {}
   }
 
+  // Токены авторизации (создаёт бот при /start, использует мини-апп)
+  if (!(await db.schema.hasTable('auth_tokens'))) {
+    await db.schema.createTable('auth_tokens', (t) => {
+      t.string('token').primary();
+      t.bigInteger('user_id').notNullable().index();
+      t.timestamp('expires_at').notNullable();
+      t.timestamp('created_at').defaultTo(db.fn.now());
+    });
+  }
+
+  // avatar_file_id для игроков (Telegram file_id фото профиля)
+  const pCols = await db('players').columnInfo().catch(() => ({}));
+  if (pCols && !pCols.avatar_file_id) {
+    await db.schema.alterTable('players', (t) => t.string('avatar_file_id').nullable());
+  }
+  if (pCols && !pCols.last_name) {
+    await db.schema.alterTable('players', (t) => t.string('last_name').nullable());
+  }
+
   // Portals gifts cache (заполняется юзерботом)
   if (!(await db.schema.hasTable('portals_cache'))) {
     await db.schema.createTable('portals_cache', (t) => {

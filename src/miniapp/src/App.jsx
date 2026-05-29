@@ -712,9 +712,14 @@ function TopBar({ player, tonWallet, onOpenDeposit }) {
       transition={{ duration: 0.35, ease: [0.2, 0, 0, 1] }}
     >
       <div className="dw-profile-compact">
-        <div className="dw-avatar">{(player.name || '?').slice(0, 1).toUpperCase()}</div>
+        <div className="dw-avatar" style={player.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+          {player.avatarUrl
+            ? <img src={player.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+            : (player.name || '?').slice(0, 1).toUpperCase()
+          }
+        </div>
         <div className="dw-profile-copy-compact">
-          <strong>{player.name}</strong>
+          <strong>{player.name || (player.username ? '@' + player.username : 'Игрок')}</strong>
           {tonWallet && (
             <motion.span
               className="dw-ton-status"

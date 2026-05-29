@@ -1,37 +1,62 @@
-// Thin client for the DEADWILL backend.
+// DEADWILL API client — auth priority: bot-token > initData > dev fallback
 const BASE = import.meta.env.VITE_API_BASE || '';
+const BOT_TOKEN_KEY = 'dw_bot_token';
+const BOT_TOKEN_EXP_KEY = 'dw_bot_token_exp';
+
+// Пытаемся получить token из URL (?startapp=token:XXX) или startParam
+function extractBotToken() {
+  try {
+    // 1. Из initDataUnsafe.start_param (когда открыто через бота)
+    const sp = window.Telegram?.WebApp?.initDataUnsafe?.start_param || '';
+    if (sp.startsWith('token:')) {
+      const t = sp.slice(6);
+      if (t) {
+        // Сохраняем на 7 дней
+        const exp = Date.now() + 7 * 24 * 60 * 60 * 1000;
+        try { localStorage.setItem(BOT_TOKEN_KEY, t); localStorage.setItem(BOT_TOKEN_EXP_KEY, String(exp)); } catch {}
+        return t;
+      }
+    }
+    // 2. Из localStorage (если уже авторизован через бота)
+    const saved = localStorage.getItem(BOT_TOKEN_KEY);
+    const exp = Number(localStorage.getItem(BOT_TOKEN_EXP_KEY) || 0);
+    if (saved && exp > Date.now()) return saved;
+  } catch {}
+  return null;
+}
+
+function clearBotToken() {
+  try { localStorage.removeItem(BOT_TOKEN_KEY); localStorage.removeItem(BOT_TOKEN_EXP_KEY); } catch {}
+}
 
 function authHeaders() {
+  // Приоритет 1: Bot token (самый надёжный)
+  const botToken = extractBotToken();
+  if (botToken) return { 'X-Bot-Token': botToken };
+
   const webApp = window.Telegram?.WebApp;
   const initData = webApp?.initData;
 
-  // Если есть полноценный initData (открыто через кнопку бота) — используем его
-  if (initData) {
-    return { Authorization: `tma ${initData}` };
-  }
+  // Приоритет 2: полный initData (открыто через кнопку бота)
+  if (initData) return { Authorization: `tma ${initData}` };
 
-  // initData пустой — пробуем взять реальный user ID из initDataUnsafe
-  // (работает когда мини-апп открыт через прямую ссылку внутри Telegram)
+  // Приоритет 3: initDataUnsafe.user.id (открыто ссылкой в Telegram)
   const userId = webApp?.initDataUnsafe?.user?.id;
-  if (userId) {
-    return { 'X-Dev-User': String(userId) };
-  }
+  if (userId) return { 'X-Dev-User': String(userId) };
 
-  // Последний fallback — dev-режим (браузер вне Telegram)
+  // Fallback: dev
   return { 'X-Dev-User': '1' };
 }
 
 async function request(path, { method = 'GET', body } = {}) {
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders()
-    },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: body ? JSON.stringify(body) : undefined
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (res.status === 401) clearBotToken(); // токен протух — удаляем
     const err = new Error(data.error || `http_${res.status}`);
     err.status = res.status;
     err.data = data;

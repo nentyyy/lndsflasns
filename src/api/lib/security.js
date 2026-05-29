@@ -89,6 +89,18 @@ export function authMiddleware() {
   return async (req, res, next) => {
     try {
       let user;
+
+      // Приоритет 1: Bot-Token авторизация (самая надёжная)
+      const botToken = req.get('x-bot-token') || '';
+      if (botToken) {
+        const record = await db('auth_tokens').where({ token: botToken }).first();
+        if (record && new Date(record.expires_at).getTime() > Date.now()) {
+          req.user = { id: String(record.user_id) };
+          req.player = await ensurePlayer(req.user);
+          return next();
+        }
+      }
+
       const rawInitData = extractInitData(req);
 
       if (env.BOT_TOKEN && rawInitData) {
