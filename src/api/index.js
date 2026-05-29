@@ -5,18 +5,19 @@ import { env, MODES, STARS_PACKS, TON_PACKS, TICKET_PACKS, FOUNDER_IDS } from '.
 import { db } from './lib/db.js';
 import { migrate } from './lib/migrate.js';
 import { authMiddleware, rateLimit, requireAdmin, requireOwner } from './lib/security.js';
-import { credit as walletCredit, debit as walletDebit } from './lib/wallet.js';
+import { credit as walletCredit, debit as walletDebit, AmountError } from './lib/wallet.js';
 import { getGiftFromCache } from './lib/portals.js';
 import { validate, armSchema, revealSchema, depositSchema, pvpBuySchema } from './lib/validators.js';
 import { armRound, revealRound, GameError } from './lib/game.js';
 import { InsufficientFunds } from './lib/wallet.js';
 import { createStarsDeposit } from './lib/payments/stars.js';
-import { createTonDeposit, startTonPoller } from './lib/payments/ton.js';
+import { createTonDeposit, createSendDeposit, startTonPoller } from './lib/payments/ton.js';
 import { createCryptobotDeposit } from './lib/payments/cryptobot.js';
 import { getReferralView, bindReferrer, makeRefCode, claimReferralPending } from './lib/referral.js';
 import { getTournamentView, ensureActiveTournament } from './lib/tournaments.js';
-import { getPvpState, buyCard, PvpError, getLiveFeed } from './lib/pvp.js';
+import { getPvpState, buyCard, PvpError, getLiveFeed, sweepExpiredLobbies } from './lib/pvp.js';
 import { buyTicketPack, TicketError } from './lib/tickets.js';
+import { getLeaderboard, getPersonalStats } from './lib/leaderboard.js';
 
 const app = express();
 app.use(cors({
@@ -125,6 +126,22 @@ async function recentHistory(userId, limit = 25) {
 
 app.get('/api/me', async (req, res) => {
   res.json({ player: playerView(req.player) });
+});
+
+// Топ игроков (кэш 5 мин на бэке): all-time + сегодня.
+app.get('/api/leaderboard', async (_req, res, next) => {
+  try {
+    res.json(await getLeaderboard());
+  } catch (e) { next(e); }
+});
+
+// Личная статистика текущего игрока.
+app.get('/api/stats', async (req, res, next) => {
+  try {
+    const stats = await getPersonalStats(req.user.id);
+    if (!stats) return res.status(404).json({ error: 'not_found' });
+    res.json(stats);
+  } catch (e) { next(e); }
 });
 
 app.get('/api/bootstrap', async (req, res, next) => {
@@ -293,16 +310,40 @@ app.post('/api/deposits',
   }
 );
 
+// @send-депозит произвольной суммой: 6-значный memo + таймер 30 мин.
+app.post('/api/deposits/create',
+  rateLimit({ bucket: 'deposit_send', max: 20, windowMs: 60_000 }),
+  async (req, res, next) => {
+    try {
+      const amountTon = Number(req.body?.amountTon);
+      const out = await createSendDeposit(req.user.id, amountTon);
+      res.json({ method: 'ton', ...out });
+    } catch (e) {
+      if (e.userMessage) return res.status(400).json({ error: e.message, detail: e.userMessage });
+      next(e);
+    }
+  }
+);
+
 app.get('/api/deposits/:id', async (req, res, next) => {
   try {
     const d = await db('deposits').where({ id: req.params.id, user_id: req.user.id }).first();
     if (!d) return res.status(404).json({ error: 'not_found' });
+    // Просрочен, но ещё pending в БД → отдаём expired (sweeper догонит запись).
+    let status = d.status;
+    if (status === 'pending' && d.expires_at && new Date(d.expires_at).getTime() < Date.now()) {
+      status = 'expired';
+    }
+    if (status === 'paid') status = 'confirmed'; // единый словарь статусов для UI
     res.json({
       id: d.id,
       method: d.method,
-      status: d.status,
+      status, // pending | confirmed | expired | failed
       coins: Number(d.coins) + Number(d.bonus),
-      comment: d.ton_comment,
+      amountTon: Number(d.expected_amount) / 1e9,
+      memo: d.ton_comment,
+      wallet: env.PROJECT_TON_WALLET,
+      expiresAt: d.expires_at,
       paidAt: d.paid_at
     });
   } catch (e) { next(e); }
@@ -517,6 +558,23 @@ app.post('/api/admin/users/:userId/adjust', requireOwner, async (req, res, next)
   }
 });
 
+// Каталог подарков — id, name, priceCoins, priceTON. Источник цен — БД.
+app.get('/api/gifts', async (_req, res, next) => {
+  try {
+    const rows = await db('portals_cache').where({ available: true }).orderBy('priceCoins');
+    res.json({
+      gifts: rows.map((g) => ({
+        id: g.id,
+        name: g.name,
+        priceCoins: Number(g.priceCoins),
+        priceTON: Number(g.priceTon),
+        rarity: g.rarity,
+        stock: Number(g.stock)
+      }))
+    });
+  } catch (e) { next(e); }
+});
+
 // Portals purchase — цена и название берутся ТОЛЬКО из server-side каталога.
 // Клиент присылает лишь giftId + idempotencyKey. priceCoins/giftName из body игнорируются.
 app.post('/api/portals/buy',
@@ -650,13 +708,19 @@ app.post('/api/clans/:id/leave', async (req, res, next) => {
 
 // ─── Error handler ───
 app.use((err, _req, res, _next) => {
+  if (err instanceof AmountError) return res.status(400).json({ error: 'invalid_amount', detail: err.message });
+  if (err instanceof InsufficientFunds) return res.status(400).json({ error: 'insufficient_balance' });
   console.error(err);
   res.status(500).json({ error: 'internal_error' });
 });
 
 migrate()
-  .then(() => {
+  .then(async () => {
     startTonPoller();
+    // Restart-safety: доплачиваем по лобби, истёкшим пока сервис был down.
+    try { const n = await sweepExpiredLobbies(); if (n) console.log(`recovered ${n} expired lobbies`); } catch (e) { console.error('lobby sweep failed', e.message); }
+    // Idle-safety: периодически завершаем истёкшие лобби даже без трафика.
+    setInterval(() => sweepExpiredLobbies().catch(() => {}), 10_000);
     // Bind to loopback only — API must be reachable solely via the nginx HTTPS proxy.
     app.listen(env.PORT, '127.0.0.1', () => console.log(`API on 127.0.0.1:${env.PORT} (db: ${env.DATABASE_URL ? 'pg' : 'sqlite'})`));
   })

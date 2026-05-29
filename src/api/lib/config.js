@@ -27,6 +27,12 @@ export const env = {
   INITDATA_TTL: Number(process.env.INITDATA_TTL || 3600)
 };
 
+// Экономика: 1 монета = 0.1 TON, 20 Stars = 1 монета. Баланс — целые монеты (BIGINT).
+// Защита от overflow/абуза: не более 100k монет за одну операцию баланса.
+export const COIN_PER_TON = 10;          // 1 TON = 10 монет (1 монета = 0.1 TON)
+export const STARS_PER_COIN = 20;        // 20 Stars = 1 монета
+export const MAX_OP_COINS = 100_000;     // потолок одной операции списания/начисления
+
 export const isProd = process.env.NODE_ENV === 'production';
 
 // Founder bootstrap привязан к telegram_id (НЕ к username — username можно

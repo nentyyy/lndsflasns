@@ -125,6 +125,21 @@ async function settleIfExpired(lobby) {
   return db('pvp_lobbies').where({ id: lobby.id }).first();
 }
 
+// Restart-safety + idle-safety: завершаем все истёкшие лобби, по которым
+// ещё не прошла выплата (settleIfExpired ленивый — без трафика не сработает).
+export async function sweepExpiredLobbies() {
+  const stale = await db('pvp_lobbies')
+    .where({ status: 'open' })
+    .whereNotNull('ends_at')
+    .where('ends_at', '<', new Date().toISOString());
+  let settled = 0;
+  for (const lobby of stale) {
+    try { await settleIfExpired(lobby); settled++; }
+    catch (e) { console.error('sweep settle err', lobby.id, e.message); }
+  }
+  return settled;
+}
+
 // ─── Loss protection: если у игрока ≥ MAX_ZERO_STREAK нулей подряд,
 // свапаем его карту с первой non-zero свободной картой.
 async function applyLossProtection(trx, lobbyId, cardIndex, player) {
@@ -357,14 +372,16 @@ async function viewLobby(lobby, userId, allRevealed) {
 export async function getLiveFeed(limit = 20) {
   const rows = await db('ledger as l')
     .join('players as p', 'l.user_id', 'p.user_id')
-    .where('l.ref_type', 'pvp_payout')
+    .whereIn('l.ref_type', ['pvp_payout', 'payout'])
     .where('l.amount', '>', 0)
     .orderBy('l.id', 'desc')
     .limit(limit)
-    .select('l.amount', 'l.created_at', 'p.first_name', 'p.username');
+    .select('l.amount', 'l.created_at', 'p.user_id', 'p.first_name', 'p.last_name', 'p.username', 'p.avatar_file_id');
   return rows.map((r) => ({
+    userId: String(r.user_id),
     name: [r.first_name, r.last_name].filter(Boolean).join(' ') || r.username || 'Игрок',
     username: r.username || null,
+    avatarUrl: r.avatar_file_id ? `/api/avatar/${r.avatar_file_id}` : null,
     amount: Number(r.amount),
     date: r.created_at
   }));

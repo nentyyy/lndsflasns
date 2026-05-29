@@ -45,8 +45,75 @@ export async function createTonDeposit(userId, packId) {
   };
 }
 
+const SEND_TTL_MS = 30 * 60 * 1000; // 30 минут
+const MIN_TON = 0.5;                 // минимум 0.5 TON = 5 монет
+
+// @send-депозит произвольной суммой: 6-значный memo + таймер 30 мин.
+// Монеты = TON / 0.1. Цена/конвертация считаются на сервере.
+export async function createSendDeposit(userId, amountTonRaw) {
+  if (!env.PROJECT_TON_WALLET) {
+    const err = new Error('ton_wallet_not_configured');
+    err.userMessage = 'TON-кошелёк проекта не настроен';
+    throw err;
+  }
+  const amountTon = Math.round(Number(amountTonRaw) * 10) / 10; // шаг 0.1 TON
+  if (!Number.isFinite(amountTon) || amountTon < MIN_TON) {
+    const err = new Error('amount_too_small');
+    err.userMessage = `Минимум ${MIN_TON} TON`;
+    throw err;
+  }
+  const coins = Math.round(amountTon * 10); // 1 TON = 10 монет
+  const nanoton = Math.round(amountTon * 1e9);
+
+  // Уникальный 6-значный memo (среди ещё живых pending).
+  let memo;
+  for (let i = 0; i < 20; i++) {
+    const cand = String(Math.floor(100000 + Math.random() * 900000));
+    const clash = await db('deposits').where({ ton_comment: cand }).first();
+    if (!clash) { memo = cand; break; }
+  }
+  if (!memo) throw new Error('memo_alloc_failed');
+
+  const depositId = randomUUID();
+  const expiresAt = new Date(Date.now() + SEND_TTL_MS);
+  await db('deposits').insert({
+    id: depositId,
+    user_id: userId,
+    method: 'ton',
+    pack_id: 'send',
+    status: 'pending',
+    coins,
+    bonus: 0,
+    currency: 'TON',
+    expected_amount: nanoton,
+    ton_comment: memo,
+    expires_at: expiresAt
+  });
+
+  return {
+    depositId,
+    wallet: env.PROJECT_TON_WALLET,
+    memo,
+    amountTon,
+    coins,
+    expiresAt: expiresAt.toISOString(),
+    ttlMs: SEND_TTL_MS
+  };
+}
+
+// Помечаем просроченные pending как expired.
+export async function expireStaleDeposits() {
+  return db('deposits')
+    .where({ status: 'pending' })
+    .whereNotNull('expires_at')
+    .where('expires_at', '<', new Date().toISOString())
+    .update({ status: 'expired' });
+}
+
 // Poll on-chain transactions to the project wallet and settle matching deposits.
 export async function pollTonDeposits() {
+  await expireStaleDeposits().catch(() => {});
+
   if (!env.PROJECT_TON_WALLET) return { checked: 0, settled: 0 };
 
   const { data } = await axios.get(`${env.TONCENTER_BASE}/getTransactions`, {

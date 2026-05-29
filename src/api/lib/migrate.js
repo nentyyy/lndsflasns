@@ -1,4 +1,5 @@
 import { db } from './db.js';
+import { seedGifts } from './seed-gifts.js';
 
 export async function migrate() {
   if (!(await db.schema.hasTable('players'))) {
@@ -56,11 +57,17 @@ export async function migrate() {
       t.string('ref_type').notNullable(); // bet | payout | deposit_stars | deposit_ton | transfer
       t.string('ref_id').notNullable();
       t.bigInteger('amount').notNullable(); // signed
+      t.bigInteger('balance_before').nullable();
       t.bigInteger('balance_after').notNullable();
+      t.text('meta').nullable(); // JSON
       t.timestamp('created_at').defaultTo(db.fn.now());
       // idempotency: a given (ref_type, ref_id) can only post once
       t.unique(['ref_type', 'ref_id']);
     });
+  } else {
+    const lcols = await db('ledger').columnInfo();
+    if (!lcols.balance_before) await db.schema.alterTable('ledger', (t) => t.bigInteger('balance_before').nullable());
+    if (!lcols.meta)           await db.schema.alterTable('ledger', (t) => t.text('meta').nullable());
   }
 
   if (!(await db.schema.hasTable('rounds'))) {
@@ -101,9 +108,13 @@ export async function migrate() {
       t.string('telegram_charge_id');
       t.timestamp('created_at').defaultTo(db.fn.now());
       t.timestamp('paid_at');
+      t.timestamp('expires_at').nullable();
       t.unique(['telegram_charge_id']);
       t.unique(['ton_comment']);
     });
+  } else {
+    const dcols = await db('deposits').columnInfo();
+    if (!dcols.expires_at) await db.schema.alterTable('deposits', (t) => t.timestamp('expires_at').nullable());
   }
 
   if (!(await db.schema.hasTable('transfers'))) {
@@ -290,6 +301,9 @@ export async function migrate() {
       t.unique(['deposit_id']);
     });
   }
+
+  // Каталог подарков с захардкоженными ценами (идемпотентный upsert).
+  await seedGifts();
 }
 
 // Allow `node lib/migrate.js` direct run
