@@ -204,7 +204,7 @@ export const MAX_ZERO_STREAK = 4;
 
 // ─── Free spin ───
 // Каждые FREE_SPIN_EVERY открытий одно открытие бесплатное.
-export const FREE_SPIN_EVERY = 5;
+export const FREE_SPIN_EVERY = 10;
 
 // ─── First deposit bonus ───
 // +15% к первому пополнению.

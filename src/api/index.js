@@ -67,9 +67,10 @@ app.get('/api/avatar/:fileId', async (req, res) => {
     if (!fileData.ok) return res.status(404).send('not found');
     const filePath = fileData.result.file_path;
     const imgRes = await fetch(`https://api.telegram.org/file/bot${env.BOT_TOKEN}/${filePath}`);
+    const buf = Buffer.from(await imgRes.arrayBuffer()); // fetch().body — web-stream, .pipe нет
     res.setHeader('Content-Type', imgRes.headers.get('content-type') || 'image/jpeg');
     res.setHeader('Cache-Control', 'public, max-age=86400');
-    imgRes.body.pipe(res);
+    res.end(buf);
   } catch (e) { res.status(500).send('error'); }
 });
 

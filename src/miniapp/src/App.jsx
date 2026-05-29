@@ -151,7 +151,8 @@ function App() {
       .then((data) => {
         setState((current) => ({
           ...current,
-          player: { ...current.player, ...data.player }
+          player: { ...current.player, ...data.player },
+          history: data.history || current.history
         }));
         setStarsPacks(data.starsPacks || []);
         setTonPacks(data.tonPacks || []);
@@ -688,7 +689,7 @@ function App() {
               shop={state.shop}
               player={state.player}
               onBuyNft={buyNft}
-              portalsGifts={state.portalsGifts}
+              portalsGifts={portalsGifts}
             />
           )}
 
@@ -992,7 +993,7 @@ function WillTab(props) {
           className={`dw-will-pager-btn ${view === 'pvp' ? 'active' : ''}`}
           onClick={() => onViewChange('pvp')}
         >
-          PvP · Живой раунд
+          ПВП
           <small>5 монет · 36 карт</small>
         </button>
         <button
@@ -1133,7 +1134,7 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   const priceLabel = welcomeFree ? 'free' : hasTicket ? '1 карта' : `${entry}`;
 
   // Free spin counter
-  const FREE_EVERY = 5;
+  const FREE_EVERY = 10;
   const reveals = pvpTotalReveals || 0;
   const tillFree = reveals === 0 ? FREE_EVERY : FREE_EVERY - (reveals % FREE_EVERY);
   const isFreeNext = reveals > 0 && reveals % FREE_EVERY === FREE_EVERY - 1;
@@ -1148,7 +1149,7 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
     <>
       <div className="dw-pvp-header">
         <div className="dw-pvp-header-left">
-          <strong>Живой раунд</strong>
+          <strong>ПВП</strong>
           <span>{settled ? 'Раунд завершён' : idle ? 'Ожидание игроков' : 'Раунд идёт'}</span>
         </div>
         <div className={`dw-pvp-timer ${urgent ? 'urgent' : idle || settled ? 'idle' : ''}`}>
@@ -2201,20 +2202,7 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
               </div>
               <span className="dw-deposit-choice-arrow">›</span>
             </button>
-            <button className="dw-deposit-choice" onClick={() => onViewChange('send')}>
-              <span className="dw-deposit-choice-icon">💸</span>
-              <div className="dw-deposit-choice-text">
-                <strong>Перевод TON (@send)</strong>
-                <p>Вручную на адрес с комментарием</p>
-              </div>
-              <span className="dw-deposit-choice-arrow">›</span>
-            </button>
           </div>
-        )}
-
-        {/* SEND — ручной TON-перевод с memo */}
-        {view === 'send' && (
-          <SendDeposit onPaid={onSendPaid} onNotify={notify} />
         )}
 
         {/* COINS — вводишь сколько монет хочешь */}
@@ -2242,33 +2230,6 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
                 <span>💎 Оплатить TON</span>
                 {coinsNum > 0 && <span className="dw-coins-pay-amt">{tonForCoins} TON</span>}
               </button>
-            </div>
-            <div className="dw-deposit-divider"><span>Наборы с бонусом</span></div>
-            <div className="dw-pack-list">
-              {tonPacks.map((pack, i) => (
-                <motion.button className="dw-pack-row" key={pack.id} onClick={() => onTonPay(pack)}
-                  initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.15, delay: 0.04 * i }} whileTap={{ scale: 0.97 }}>
-                  <span className="dw-pack-icon" data-icon="ton" />
-                  <span className="dw-pack-copy">
-                    <strong>{pack.title}</strong>
-                    <span>{formatCoins(pack.coins)} монет{pack.bonus > 0 ? ` + ${pack.bonus} бонус` : ''}</span>
-                  </span>
-                  <span className="dw-pack-price">{pack.nanoton / 1e9} TON</span>
-                </motion.button>
-              ))}
-              {starsPacks.map((pack, i) => (
-                <motion.button className="dw-pack-row" key={pack.id} onClick={() => onStarsPay(pack)}
-                  initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.15, delay: 0.04 * (tonPacks.length + i) }} whileTap={{ scale: 0.97 }}>
-                  <span className="dw-pack-icon" data-icon="stars" />
-                  <span className="dw-pack-copy">
-                    <strong>{pack.title}</strong>
-                    <span>{formatCoins(pack.coins)} монет{pack.bonus > 0 ? ` + ${pack.bonus} бонус` : ''}</span>
-                  </span>
-                  <span className="dw-pack-price">{pack.stars} ⭐</span>
-                </motion.button>
-              ))}
             </div>
           </div>
         )}
