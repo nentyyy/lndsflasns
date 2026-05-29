@@ -169,8 +169,12 @@ export async function pollTonDeposits() {
     const deposit = await db('deposits')
       .where({ ton_comment: comment, method: 'ton', status: 'pending' })
       .first();
-    if (!deposit) continue;
-    if (value < Number(deposit.expected_amount)) continue; // underpaid → leave pending
+    if (!deposit) { console.log('[ton] tx comment не сматчился с pending:', comment, 'value', value); continue; }
+    if (value < Number(deposit.expected_amount)) {
+      console.log('[ton] недоплата по', comment, ':', value, '<', deposit.expected_amount);
+      continue; // underpaid → leave pending
+    }
+    console.log('[ton] матч депозита', deposit.id, 'comment', comment, 'value', value);
 
     const total = Number(deposit.coins) + Number(deposit.bonus);
     const { applied } = await creditOnce(deposit.user_id, total, 'deposit_ton', deposit.id);
