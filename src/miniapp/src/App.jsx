@@ -37,6 +37,26 @@ function mapResult(r) {
 const tabs = ['play', 'shop', 'profile'];
 const shopTabs = ['nft'];
 const PREMIUM_CARDS = 5;
+const FOUNDERS = ['kuckd', 'oslems'];
+
+// Единый helper для отображения пользователя — используется везде
+function userDisplay(p) {
+  if (!p) return { displayName: 'Игрок', initial: 'И', avatarUrl: null, badge: null };
+  const id = p.id || p.userId || p.user_id || '';
+  const u = p.username || '';
+  const displayName = u
+    ? `@${u}`
+    : [p.name, p.firstName, p.first_name, p.lastName, p.last_name]
+        .map(v => (v || '').trim())
+        .filter(v => v && v !== 'Dev')
+        .join(' ')
+        .trim() || `Player #${String(id).slice(-4)}`;
+  const initial = displayName.replace(/^@/, '').slice(0, 1).toUpperCase() || 'P';
+  const avatarUrl = p.avatarUrl || p.photoUrl || null;
+  const badge = FOUNDERS.includes(u) ? 'Founder'
+    : (p.role === 'Owner' || p.role === 'Admin') ? 'Admin' : null;
+  return { displayName, initial, avatarUrl, badge };
+}
 
 // Кодируем text-комментарий для TON-перевода как base64 BoC.
 // Формат ячейки: 4 байта (op = 0) + UTF-8 строка, упаковано в Bag of Cells.
@@ -711,33 +731,27 @@ function App() {
 /* ─── Top bar ─────────────────────────────────────────────── */
 
 function TopBar({ player, tonWallet, onOpenDeposit }) {
+  const u = userDisplay(player);
   return (
-    <motion.header
-      className="dw-topbar"
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: [0.2, 0, 0, 1] }}
-    >
+    <motion.header className="dw-topbar"
+      initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: [0.2, 0, 0, 1] }}>
       <div className="dw-profile-compact">
-        <div className="dw-avatar" style={player.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
-          {player.avatarUrl
-            ? <img src={player.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-            : (player.name || '?').slice(0, 1).toUpperCase()
-          }
+        <div className="dw-avatar" style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+          {u.avatarUrl
+            ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+            : u.initial}
         </div>
         <div className="dw-profile-copy-compact">
-          <strong>{player.name || (player.username ? '@' + player.username : 'Игрок')}</strong>
+          <strong>
+            {u.displayName}
+            {u.badge && <span className="dw-badge" style={{ fontSize: 10, marginLeft: 6, verticalAlign: 'middle' }}>{u.badge}</span>}
+          </strong>
           {tonWallet && (
-            <motion.span
-              className="dw-ton-status"
-              initial={{ opacity: 0, scale: 0.85 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.25 }}
-            >
+            <motion.span className="dw-ton-status"
+              initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.25 }}>
               <span className="dw-ton-dot" />
-              <span className="dw-ton-addr">
-                {tonWallet.address.slice(0, 4)}…{tonWallet.address.slice(-4)}
-              </span>
+              <span className="dw-ton-addr">{tonWallet.address.slice(0, 4)}…{tonWallet.address.slice(-4)}</span>
             </motion.span>
           )}
         </div>
@@ -996,15 +1010,16 @@ function PvpCard({ card, idx, settled, pvpBuying, lowBalance, onBuyPvpCard, onOp
       transition={{ duration: 0.18, delay: 0.008 * idx }}
       whileTap={{ scale: 0.95 }}
     >
-      {card.owner && (
-        <button
-          className="dw-pvp-avatar-btn"
+      {card.owner && (() => { const u = userDisplay(card.owner); return (
+        <button className="dw-pvp-avatar-btn"
           onClick={(e) => { e.stopPropagation(); onOpenPlayerProfile(card.owner.userId); }}
-          title={card.owner.name}
-        >
-          <span className="dw-pvp-avatar">{card.owner.name.slice(0, 1).toUpperCase()}</span>
+          title={u.displayName}
+          style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+          {u.avatarUrl
+            ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : <span className="dw-pvp-avatar">{u.initial}</span>}
         </button>
-      )}
+      ); })()}
       <span className="dw-pvp-card-num">{idx + 1}</span>
       {!isRevealed && <span className="dw-pvp-card-seal" />}
       {isRevealed && <span className="dw-pvp-card-stamp">{card.outcome.stamp}</span>}
@@ -1526,17 +1541,20 @@ function ShopTab({ shop, player, onBuyNft, portalsGifts }) {
 /* ─── Profile tab ─────────────────────────────────────────── */
 
 function ProfileTab({ player, filters, activeFilter, onFilterChange, history, tonWallet, onConnectTon, onDisconnectTon, onOpenAdmin, onOpenClans, onOpenRef }) {
-  const initial = (player.name || 'D').slice(0, 1).toUpperCase();
+  const u = userDisplay(player);
   return (
     <section className="dw-page dw-profile-page">
 
       <div className="dw-profile-header">
-        <div className="dw-avatar large">{initial}</div>
+        <div className="dw-avatar large" style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+          {u.avatarUrl
+            ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+            : u.initial}
+        </div>
         <div className="dw-profile-header-copy">
-          <h1 className="dw-profile-name" style={{ fontSize: 20 }}>{player.name || 'Игрок'}</h1>
-          <p className="dw-profile-meta" style={{ fontSize: 13 }}>
-            {player.username ? `@${player.username}` : `ID ${player.id}`}
-          </p>
+          <h1 className="dw-profile-name" style={{ fontSize: 20 }}>{u.displayName}</h1>
+          {u.badge && <span className="dw-badge premium" style={{ marginBottom: 4 }}>{u.badge}</span>}
+          <p className="dw-profile-meta" style={{ fontSize: 13 }}>ID {player.id}</p>
         </div>
       </div>
 
@@ -1752,13 +1770,21 @@ function ContractOverlay({ mode, revealing, result, selectedClause, onReplay, on
 /* ─── Player profile modal ────────────────────────────────── */
 
 function PlayerProfileModal({ userId, data, onClose }) {
+  const u = userDisplay(data);
   return (
     <div className="dw-sheet-backdrop" onClick={onClose}>
       <div className="dw-deposit-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="dw-panel-head" style={{ marginBottom: 14 }}>
-          <div>
-            <span className="dw-kicker">Профиль игрока</span>
-            <h2>{data?.name || '…'}</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div className="dw-avatar" style={u.avatarUrl ? { padding: 0, overflow: 'hidden', width: 40, height: 40, flexShrink: 0 } : { width: 40, height: 40, flexShrink: 0 }}>
+              {u.avatarUrl
+                ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                : u.initial}
+            </div>
+            <div>
+              <span className="dw-kicker">Профиль игрока</span>
+              <h2 style={{ margin: 0 }}>{data ? u.displayName : '…'}</h2>
+            </div>
           </div>
           <button className="dw-icon-btn" onClick={onClose}>×</button>
         </div>
@@ -2049,13 +2075,19 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
         {winners.length > 0 && (
           <div className="dw-round-section">
             <span className="dw-kicker" style={{ color: 'var(--gold)' }}>Победители</span>
-            {winners.map((c, i) => (
-              <div key={i} className="dw-round-row">
-                <span className="dw-round-row-avatar">{(c.owner?.name || '?')[0]}</span>
-                <span className="dw-round-row-name">{c.owner?.name || `Карта ${c.index + 1}`}</span>
-                <span className="dw-round-row-prize pos">+{c.outcome.credit}</span>
-              </div>
-            ))}
+            {winners.map((c, i) => {
+              const u = userDisplay(c.owner);
+              const isMine = c.mine;
+              return (
+                <div key={i} className={`dw-round-row${isMine ? ' dw-round-row--mine' : ''}`}>
+                  <span className="dw-round-row-avatar" style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+                    {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : u.initial}
+                  </span>
+                  <span className="dw-round-row-name">{u.displayName}{isMine ? ' (ты)' : ''}</span>
+                  <span className="dw-round-row-prize pos">+{c.outcome.credit}</span>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -2063,13 +2095,19 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
         {losers.length > 0 && (
           <div className="dw-round-section">
             <span className="dw-kicker" style={{ color: 'var(--bone-soft)' }}>Выбыли</span>
-            {losers.slice(0, 8).map((c, i) => (
-              <div key={i} className="dw-round-row">
-                <span className="dw-round-row-avatar" style={{ opacity: 0.5 }}>{(c.owner?.name || '?')[0]}</span>
-                <span className="dw-round-row-name" style={{ opacity: 0.6 }}>{c.owner?.name || `Карта ${c.index + 1}`}</span>
-                <span className="dw-round-row-prize neg">—{entryCoins}</span>
-              </div>
-            ))}
+            {losers.slice(0, 8).map((c, i) => {
+              const u = userDisplay(c.owner);
+              const isMine = c.mine;
+              return (
+                <div key={i} className={`dw-round-row${isMine ? ' dw-round-row--mine' : ''}`} style={{ opacity: isMine ? 1 : 0.6 }}>
+                  <span className="dw-round-row-avatar" style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+                    {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : u.initial}
+                  </span>
+                  <span className="dw-round-row-name">{u.displayName}{isMine ? ' (ты)' : ''}</span>
+                  <span className="dw-round-row-prize neg">—{entryCoins}</span>
+                </div>
+              );
+            })}
           </div>
         )}
 

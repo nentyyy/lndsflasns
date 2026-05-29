@@ -309,9 +309,13 @@ async function viewLobby(lobby, userId, allRevealed) {
   const takenUserIds = [...new Set(cards.filter((c) => c.user_id).map((c) => String(c.user_id)))];
   let playerMap = {};
   if (takenUserIds.length > 0) {
-    const players = await db('players').whereIn('user_id', takenUserIds).select('user_id', 'first_name', 'username');
+    const players = await db('players').whereIn('user_id', takenUserIds).select('user_id', 'first_name', 'last_name', 'username', 'avatar_file_id');
     for (const p of players) {
-      playerMap[String(p.user_id)] = { name: p.first_name || p.username || `P${String(p.user_id).slice(-3)}`, username: p.username };
+      playerMap[String(p.user_id)] = {
+        name: [p.first_name, p.last_name].filter(Boolean).join(' ') || p.username || `Player #${String(p.user_id).slice(-4)}`,
+        username: p.username || null,
+        avatarUrl: p.avatar_file_id ? `/api/avatar/${p.avatar_file_id}` : null,
+      };
     }
   }
 
@@ -324,7 +328,7 @@ async function viewLobby(lobby, userId, allRevealed) {
       status: c.status,
       mine: Boolean(mine),
       taken: c.status !== 'free',
-      owner: owner ? { name: owner.name, userId: String(c.user_id) } : null,
+      owner: owner ? { name: owner.name, username: owner.username, avatarUrl: owner.avatarUrl, userId: String(c.user_id) } : null,
       outcome: isRevealed ? { key: c.outcome_key, type: c.outcome_type, credit: Number(c.credit), stamp: c.stamp } : null
     };
   });
@@ -359,7 +363,8 @@ export async function getLiveFeed(limit = 20) {
     .limit(limit)
     .select('l.amount', 'l.created_at', 'p.first_name', 'p.username');
   return rows.map((r) => ({
-    name: r.first_name || r.username || 'Игрок',
+    name: [r.first_name, r.last_name].filter(Boolean).join(' ') || r.username || 'Игрок',
+    username: r.username || null,
     amount: Number(r.amount),
     date: r.created_at
   }));

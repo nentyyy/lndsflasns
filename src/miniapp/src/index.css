@@ -3152,6 +3152,7 @@ html, body { font-size: 16px; }
 }
 .dw-round-row-name { flex: 1; font-size: 14px; }
 .dw-round-row-prize { font-size: 15px; font-weight: 800; font-family: var(--font-display); }
+.dw-round-row--mine { background: rgba(212,175,55,0.07); border-radius: 8px; padding: 4px 6px; margin: -4px -6px; }
 
 /* ─── PvP 36-card live round ────────────────────────────────── */
 

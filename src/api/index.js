@@ -100,8 +100,10 @@ app.use('/api', authMiddleware());
 function playerView(p) {
   return {
     id: String(p.user_id),
-    name: [p.first_name, p.last_name].filter(Boolean).join(' ') || p.username || 'Игрок',
+    name: [p.first_name, p.last_name].filter(Boolean).join(' ') || p.username || `Player #${String(p.user_id).slice(-4)}`,
     username: p.username || null,
+    firstName: p.first_name || null,
+    lastName: p.last_name || null,
     avatarUrl: p.avatar_file_id ? `/api/avatar/${p.avatar_file_id}` : null,
     coins: Number(p.balance),
     multiplier: Number(p.multiplier),
@@ -335,9 +337,10 @@ app.get('/api/players/:userId', async (req, res, next) => {
       .orderBy('id', 'desc')
       .limit(20);
     res.json({
-      id: p.user_id,
-      name: p.first_name || p.username || `Игрок`,
-      username: p.username,
+      id: String(p.user_id),
+      name: [p.first_name, p.last_name].filter(Boolean).join(' ') || p.username || `Player #${String(p.user_id).slice(-4)}`,
+      username: p.username || null,
+      avatarUrl: p.avatar_file_id ? `/api/avatar/${p.avatar_file_id}` : null,
       gamesPlayed: Number(p.games_played),
       coinsWon: Number(p.coins_won),
       bestWin: Number(p.best_win),
