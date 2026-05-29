@@ -1,10 +1,10 @@
 import React from 'react';
 
 const labels = {
-  home:     'Hall',
-  play:     'Will',
-  shop:     'Vault',
-  profile:  'Sigil'
+  home:     'Холл',
+  play:     'Игра',
+  shop:     'Сейф',
+  profile:  'Профиль'
 };
 
 // SVG-глифы вместо эмодзи — гравюрная эстетика

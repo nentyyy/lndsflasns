@@ -179,9 +179,10 @@ function App() {
       try {
         const s = await api.pvpState('cheap');
         if (!cancelled) {
-          // Если раунд только что завершился — показываем итоги
-          if (prevStatus === 'open' && s?.lobby?.status === 'settled' && s.cards?.length > 0) {
-            setPvpRoundResult(s);
+          // Раунд только что завершился — авто-показ итогов через 1с
+          // (только если игрок участвовал — иначе модал не нужен).
+          if (prevStatus === 'open' && s?.lobby?.status === 'settled' && (s.cards || []).some((c) => c.mine)) {
+            setTimeout(() => { if (!cancelled) setPvpRoundResult(s); }, 1000);
           }
           prevStatus = s?.lobby?.status || prevStatus;
           setPvpState(s);
@@ -382,7 +383,7 @@ function App() {
     while (Date.now() < deadline) {
       try {
         const s = await api.depositStatus(depositId);
-        if (s.status === 'paid') {
+        if (s.status === 'paid' || s.status === 'confirmed') {
           const data = await api.bootstrap();
           setState((c) => ({ ...c, player: { ...c.player, ...data.player } }));
           setDepositOpen(false);
@@ -672,6 +673,15 @@ function App() {
               onOpenAdmin={() => setAdminOpen(true)}
               onOpenClans={() => setTab('clans')}
               onOpenRef={() => setTab('referral')}
+              onOpenLeaderboard={() => setTab('leaderboard')}
+            />
+          )}
+
+          {tab === 'leaderboard' && (
+            <LeaderboardTab
+              myId={state.player.id}
+              liveWins={liveWins}
+              onBack={() => setTab('profile')}
             />
           )}
         </main>
@@ -697,6 +707,16 @@ function App() {
           ticketPacks={ticketPacks}
           onBuyTickets={buyTickets}
           player={state.player}
+          notify={notify}
+          onSendPaid={async (coins) => {
+            try {
+              const data = await api.bootstrap();
+              setState((c) => ({ ...c, player: { ...c.player, ...data.player } }));
+            } catch {}
+            notify(`+${formatCoins(coins)} монет зачислено`, 'success');
+            window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
+            setTimeout(() => { setDepositOpen(false); setDepositView('main'); }, 1500);
+          }}
         />
       )}
 
@@ -939,7 +959,7 @@ function WillTab(props) {
           className={`dw-will-pager-btn ${view === 'pvp' ? 'active' : ''}`}
           onClick={() => onViewChange('pvp')}
         >
-          PvP · Live Round
+          PvP · Живой раунд
           <small>5 монет · 36 карт</small>
         </button>
         <button
@@ -1095,8 +1115,8 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
     <>
       <div className="dw-pvp-header">
         <div className="dw-pvp-header-left">
-          <strong>Live Round</strong>
-          <span>{settled ? 'Раунд завершён' : idle ? 'Ждём первого игрока' : 'Раунд идёт'}</span>
+          <strong>Живой раунд</strong>
+          <span>{settled ? 'Раунд завершён' : idle ? 'Ожидание игроков' : 'Раунд идёт'}</span>
         </div>
         <div className={`dw-pvp-timer ${urgent ? 'urgent' : idle || settled ? 'idle' : ''}`}>
           {settled ? '00' : timer ?? '35'}<span style={{ fontSize: 11, marginLeft: 4, opacity: 0.7 }}>с</span>
@@ -1555,7 +1575,7 @@ function ShopTab({ shop, player, onBuyNft, portalsGifts }) {
 
 /* ─── Profile tab ─────────────────────────────────────────── */
 
-function ProfileTab({ player, filters, activeFilter, onFilterChange, history, tonWallet, onConnectTon, onDisconnectTon, onOpenAdmin, onOpenClans, onOpenRef }) {
+function ProfileTab({ player, filters, activeFilter, onFilterChange, history, tonWallet, onConnectTon, onDisconnectTon, onOpenAdmin, onOpenClans, onOpenRef, onOpenLeaderboard }) {
   const u = userDisplay(player);
   return (
     <section className="dw-page dw-profile-page">
@@ -1591,6 +1611,14 @@ function ProfileTab({ player, filters, activeFilter, onFilterChange, history, to
           <strong>{formatCompact(player.bestWin || 0)}</strong>
         </div>
       </div>
+
+      <PersonalStats />
+
+      <button className="dw-panel dw-nav-card" style={{ width: '100%', marginBottom: 12 }} onClick={onOpenLeaderboard}>
+        <span className="dw-kicker">рейтинг</span>
+        <strong>🏆 Топ игроков</strong>
+        <p>лучшие за всё время и сегодня</p>
+      </button>
 
       <div className="dw-home-strip">
         <button className="dw-panel dw-nav-card" onClick={onOpenClans}>
@@ -1843,9 +1871,221 @@ function PlayerProfileModal({ userId, data, onClose }) {
   );
 }
 
+/* ─── Личная статистика ───────────────────────────────────── */
+
+function PersonalStats() {
+  const [s, setS] = useState(null);
+  useEffect(() => { api.stats().then(setS).catch(() => {}); }, []);
+  if (!s) return null;
+  const winRate = s.roundsPlayed > 0 ? Math.round((s.wins / s.roundsPlayed) * 100) : 0;
+  return (
+    <article className="dw-panel" style={{ marginBottom: 12 }}>
+      <div className="dw-panel-head" style={{ marginBottom: 12 }}><h2>Статистика</h2></div>
+      <div className="dw-stats-row" style={{ marginBottom: 10 }}>
+        <div className="dw-stat-cell"><span>раундов</span><strong>{formatCoins(s.roundsPlayed)}</strong></div>
+        <div className="dw-stat-cell"><span>побед</span><strong>{formatCoins(s.wins)}</strong></div>
+        <div className="dw-stat-cell"><span>поражений</span><strong>{formatCoins(s.losses)}</strong></div>
+        <div className="dw-stat-cell accent"><span>winrate</span><strong>{winRate}%</strong></div>
+      </div>
+      <div className="dw-stats-row">
+        <div className="dw-stat-cell"><span>лучший выигрыш</span><strong>{formatCoins(s.bestWin)}</strong></div>
+        <div className="dw-stat-cell"><span>любимый подарок</span><strong style={{ fontSize: 13 }}>{s.favoriteGift || '—'}</strong></div>
+      </div>
+    </article>
+  );
+}
+
+/* ─── Топ игроков ─────────────────────────────────────────── */
+
+function timeAgo(date) {
+  const diff = Math.max(0, Date.now() - new Date(date).getTime());
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'только что';
+  if (m < 60) return `${m} мин назад`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} ч назад`;
+  return `${Math.floor(h / 24)} дн назад`;
+}
+
+function LeaderboardRow({ p, rank, myId }) {
+  const u = userDisplay(p);
+  const mine = String(p.userId) === String(myId);
+  return (
+    <div className={`dw-lb-row${mine ? ' dw-lb-row--mine' : ''}`}>
+      <span className="dw-lb-rank">{rank <= 3 ? ['🥇', '🥈', '🥉'][rank - 1] : rank}</span>
+      <span className="dw-round-row-avatar" style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+        {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : u.initial}
+      </span>
+      <span className="dw-lb-name">{u.displayName}{mine ? ' (ты)' : ''}</span>
+      <span className="dw-lb-stats">
+        <strong className="gold">{formatCoins(p.coinsWon)}</strong>
+        <small>{formatCoins(p.roundsPlayed)} раундов</small>
+      </span>
+    </div>
+  );
+}
+
+function LeaderboardTab({ myId, liveWins, onBack }) {
+  const [data, setData] = useState(null);
+  const [period, setPeriod] = useState('allTime');
+  useEffect(() => { api.leaderboard().then(setData).catch(() => {}); }, []);
+  const list = data ? (period === 'allTime' ? data.allTime : data.today) : [];
+
+  return (
+    <section className="dw-page dw-profile-page">
+      <div className="dw-panel-head" style={{ marginBottom: 12 }}>
+        <h2>🏆 Топ игроков</h2>
+        <button className="dw-btn ghost small" onClick={onBack}>назад</button>
+      </div>
+
+      <div className="dw-will-pager" style={{ marginBottom: 12 }}>
+        <button className={`dw-will-pager-btn ${period === 'allTime' ? 'active' : ''}`} onClick={() => setPeriod('allTime')}>За всё время</button>
+        <button className={`dw-will-pager-btn ${period === 'today' ? 'active' : ''}`} onClick={() => setPeriod('today')}>Сегодня</button>
+      </div>
+
+      <article className="dw-panel" style={{ marginBottom: 12 }}>
+        {list.length === 0 ? (
+          <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: '16px 0', fontSize: 14 }}>Пока пусто</p>
+        ) : list.map((p, i) => <LeaderboardRow key={p.userId} p={p} rank={i + 1} myId={myId} />)}
+      </article>
+
+      {(liveWins || []).length > 0 && (
+        <article className="dw-panel">
+          <div className="dw-panel-head" style={{ marginBottom: 12 }}><h2>Последние выигрыши</h2></div>
+          {liveWins.slice(0, 20).map((w, i) => {
+            const u = userDisplay(w);
+            return (
+              <div className="dw-round-row" key={i}>
+                <span className="dw-round-row-avatar" style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+                  {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : u.initial}
+                </span>
+                <span className="dw-round-row-name">{u.displayName} выиграл <strong className="gold">{formatCoins(w.amount)}</strong> монет</span>
+                <span className="dw-round-row-prize" style={{ fontSize: 11, opacity: 0.6 }}>{timeAgo(w.date)}</span>
+              </div>
+            );
+          })}
+        </article>
+      )}
+    </section>
+  );
+}
+
+/* ─── @send депозит: адрес + memo + таймер 30 мин ─────────── */
+
+function SendDeposit({ onPaid, onNotify }) {
+  const [amount, setAmount] = useState('');
+  const [dep, setDep] = useState(null);
+  const [status, setStatus] = useState('pending');
+  const [left, setLeft] = useState(0);
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    if (!dep) return undefined;
+    const t = setInterval(() => {
+      const s = Math.max(0, Math.floor((new Date(dep.expiresAt).getTime() - Date.now()) / 1000));
+      setLeft(s);
+      if (s === 0) setStatus((st) => (st === 'pending' ? 'expired' : st));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [dep]);
+
+  useEffect(() => {
+    if (!dep || status !== 'pending') return undefined;
+    let cancelled = false;
+    let id;
+    const poll = async () => {
+      try {
+        const s = await api.depositStatus(dep.depositId);
+        if (cancelled) return;
+        if (s.status === 'confirmed' || s.status === 'paid') { setStatus('confirmed'); onPaid?.(dep.coins); return; }
+        if (s.status === 'expired') { setStatus('expired'); return; }
+      } catch {}
+      if (!cancelled) id = setTimeout(poll, 8000);
+    };
+    id = setTimeout(poll, 8000);
+    return () => { cancelled = true; clearTimeout(id); };
+  }, [dep, status]);
+
+  const create = async () => {
+    const amt = parseFloat(amount);
+    if (!amt || amt < 0.5) { onNotify?.('Минимум 0.5 TON', 'danger'); return; }
+    setCreating(true);
+    try {
+      const res = await api.createSendDeposit(amt);
+      setDep(res);
+      setStatus('pending');
+    } catch (e) {
+      onNotify?.(e.data?.detail || 'Не удалось создать депозит', 'danger');
+    } finally { setCreating(false); }
+  };
+
+  const copy = (t) => { try { navigator.clipboard?.writeText(t); onNotify?.('Скопировано', 'success'); } catch {} };
+  const mmss = `${String(Math.floor(left / 60)).padStart(2, '0')}:${String(left % 60).padStart(2, '0')}`;
+
+  if (!dep) {
+    const amt = parseFloat(amount) || 0;
+    return (
+      <div className="dw-coins-buy">
+        <p style={{ color: 'var(--bone-soft)', fontSize: 13, margin: '0 0 12px' }}>
+          Переведи TON на адрес проекта с указанным комментарием. Минимум 0.5 TON (5 монет).
+        </p>
+        <div className="dw-coins-input-wrap">
+          <input className="dw-coins-input" type="number" min="0.5" step="0.1" placeholder="Сумма в TON"
+            value={amount} onChange={(e) => setAmount(e.target.value)} />
+          {amt >= 0.5 && (
+            <div className="dw-coins-preview"><span>{formatCoins(Math.round(amt * 10))} монет</span></div>
+          )}
+        </div>
+        <button className="dw-btn primary full" onClick={create} disabled={creating || amt < 0.5}>
+          {creating ? 'Создаём…' : 'Создать заявку'}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="dw-send-wait">
+      {status === 'pending' && (
+        <>
+          <div className="dw-send-status">
+            <span className="dw-live-dot" /> Ожидание оплаты…
+            <strong className="dw-send-timer">{mmss}</strong>
+          </div>
+          <p style={{ color: 'var(--bone-soft)', fontSize: 12, margin: '4px 0 14px' }}>
+            Отправь <strong className="gold">{dep.amountTon} TON</strong> ({formatCoins(dep.coins)} монет) на адрес ниже, обязательно с комментарием.
+          </p>
+          <label className="dw-send-field-label">Адрес кошелька</label>
+          <button className="dw-send-copy" onClick={() => copy(dep.wallet)}>
+            <code>{dep.wallet}</code><span>копировать</span>
+          </button>
+          <label className="dw-send-field-label">Комментарий (memo)</label>
+          <button className="dw-send-copy dw-send-copy--memo" onClick={() => copy(dep.memo)}>
+            <code style={{ fontSize: 20, letterSpacing: '0.2em' }}>{dep.memo}</code><span>копировать</span>
+          </button>
+          <p style={{ color: 'var(--danger, #c0556a)', fontSize: 12, marginTop: 12 }}>
+            ⚠️ Без комментария платёж не зачислится автоматически.
+          </p>
+        </>
+      )}
+      {status === 'confirmed' && (
+        <div className="dw-round-my-result win" style={{ marginTop: 8 }}>
+          <span className="dw-round-result-emoji">✅</span>
+          <div><strong>Оплата получена!</strong><p>+{formatCoins(dep.coins)} монет зачислено</p></div>
+        </div>
+      )}
+      {status === 'expired' && (
+        <div className="dw-round-my-result lose" style={{ marginTop: 8 }}>
+          <span className="dw-round-result-emoji">⌛</span>
+          <div><strong>Время истекло</strong><p>Заявка больше не активна. Создай новую.</p></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Deposit sheet — монеты / карты ─────────────────────── */
 
-function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, tonPacks, onStarsPay, onTonPay, payPending, tonWallet, tonIntent, onConnectTon, onClose, ticketPacks, onBuyTickets, player }) {
+function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, tonPacks, onStarsPay, onTonPay, payPending, tonWallet, tonIntent, onConnectTon, onClose, ticketPacks, onBuyTickets, player, onSendPaid, notify }) {
   const [coins, setCoins] = React.useState('');
   const coinsNum = Math.max(0, parseInt(coins) || 0);
   const starsForCoins = coinsNum * 20;
@@ -1904,7 +2144,20 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
               </div>
               <span className="dw-deposit-choice-arrow">›</span>
             </button>
+            <button className="dw-deposit-choice" onClick={() => onViewChange('send')}>
+              <span className="dw-deposit-choice-icon">💸</span>
+              <div className="dw-deposit-choice-text">
+                <strong>Перевод TON (@send)</strong>
+                <p>Вручную на адрес с комментарием</p>
+              </div>
+              <span className="dw-deposit-choice-arrow">›</span>
+            </button>
           </div>
+        )}
+
+        {/* SEND — ручной TON-перевод с memo */}
+        {view === 'send' && (
+          <SendDeposit onPaid={onSendPaid} onNotify={notify} />
         )}
 
         {/* COINS — вводишь сколько монет хочешь */}

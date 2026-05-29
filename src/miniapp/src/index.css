@@ -2666,7 +2666,7 @@ h2, .dw-panel h2 {
   width: min(calc(100% - 16px), 440px);
   z-index: 20;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   padding: 8px;
   border-radius: 22px;
@@ -2685,7 +2685,7 @@ h2, .dw-panel h2 {
   min-height: 58px;
   border: 0;
   border-radius: 16px;
-  color: var(--bone-soft);
+  color: #6b6b6b;
   background: transparent;
   cursor: pointer;
   transition: color 200ms ease, background 200ms ease;
@@ -2697,7 +2697,7 @@ h2, .dw-panel h2 {
 }
 
 .bottom-item.active {
-  color: var(--vellum);
+  color: var(--gold);
   background: var(--surface-2);
   box-shadow: inset 0 0 0 1px var(--gold-faint);
 }
@@ -2708,7 +2708,7 @@ h2, .dw-panel h2 {
   place-items: center;
   font-family: var(--font-display);
   font-size: 13px;
-  color: var(--bone-soft);
+  color: currentColor;
 }
 
 .bottom-item.active .bottom-icon { color: var(--gold); text-shadow: 0 0 10px rgba(212,175,55,0.4); }
@@ -3153,6 +3153,40 @@ html, body { font-size: 16px; }
 .dw-round-row-name { flex: 1; font-size: 14px; }
 .dw-round-row-prize { font-size: 15px; font-weight: 800; font-family: var(--font-display); }
 .dw-round-row--mine { background: rgba(212,175,55,0.07); border-radius: 8px; padding: 4px 6px; margin: -4px -6px; }
+
+/* ─── Leaderboard ──────────────────────────────────────────── */
+.dw-lb-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+.dw-lb-row:last-child { border-bottom: none; }
+.dw-lb-row--mine { background: rgba(212,175,55,0.1); border-radius: 10px; padding: 9px 8px; margin: 0 -8px; box-shadow: inset 0 0 0 1px var(--gold-faint); }
+.dw-lb-rank { width: 24px; text-align: center; font-family: var(--font-display); font-weight: 800; font-size: 14px; color: var(--bone-soft); flex-shrink: 0; }
+.dw-lb-name { flex: 1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dw-lb-stats { display: flex; flex-direction: column; align-items: flex-end; }
+.dw-lb-stats strong { font-size: 15px; font-family: var(--font-display); }
+.dw-lb-stats small { font-size: 11px; color: var(--bone-soft); }
+
+/* ─── @send deposit ────────────────────────────────────────── */
+.dw-send-wait { padding: 4px 0; }
+.dw-send-status {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-display); font-size: 15px; font-weight: 700; color: var(--gold);
+}
+.dw-send-timer { margin-left: auto; font-size: 20px; color: var(--vellum); letter-spacing: 0.05em; }
+.dw-send-field-label { display: block; font-size: 11px; color: var(--bone-soft); text-transform: uppercase; letter-spacing: 0.14em; margin: 12px 0 6px; }
+.dw-send-copy {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 12px 14px; border-radius: 12px; border: 1px solid var(--gold-line);
+  background: var(--surface-2); color: var(--vellum); cursor: pointer; text-align: left;
+}
+.dw-send-copy code { flex: 1; font-size: 12px; word-break: break-all; font-family: monospace; }
+.dw-send-copy span { font-size: 11px; color: var(--gold); flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.1em; }
+.dw-send-copy--memo { justify-content: center; }
+.dw-send-copy--memo code { flex: 0; color: var(--gold-bright); }
 
 /* ─── PvP 36-card live round ────────────────────────────────── */
 
