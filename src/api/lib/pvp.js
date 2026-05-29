@@ -226,24 +226,24 @@ export async function buyCard(userId, mode, cardIndex, idempotencyKey) {
     const player = await trx('players').where({ user_id: userId }).first();
     if (!player) throw new PvpError('player not found', 404);
 
-    // Приоритет оплаты: welcome → free spin → cheap-билет → монеты
-    let cost = Number(lobby.entry_coins);
+    // PvP играется ТОЛЬКО картами (не монетами): welcome → free spin → cheap-карта.
+    // Нет карты → 'need_card' (фронт перекинет в покупку карт).
     let welcomeApplied = false;
     let usedTicket = false;
     let wasFree = false;
     const freeReveal = isFreeReveal(player);
 
     if (!player.welcome_used && WELCOME_CHEAP_DISCOUNT >= 1) {
-      cost = 0;
       welcomeApplied = true;
       wasFree = true;
     } else if (freeReveal) {
-      cost = 0;
       wasFree = true;
     } else if (await consumeTicket(trx, userId, 'cheap')) {
-      cost = 0;
       usedTicket = true;
+    } else {
+      throw new PvpError('need_card', 402);
     }
+    const cost = 0; // монетами PvP больше не оплачивается
 
     // Применяем loss protection перед атомарным занятием
     await applyLossProtection(trx, lobby.id, idx, player);

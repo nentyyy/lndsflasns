@@ -132,8 +132,8 @@ export const getTicketPack = (type, id) => {
 
 // ─── PvP режим live-round на 36 карт ───
 // Таймер 30–40 сек после первой покупки. Server-side RNG, outcome скрыт до settle.
-// Выплаты (gross): 19×0, 5×3, 5×7, 2×12, 1×14, 1×15, 1×20, 1×25, 1×40 = 188.
-// При entry=5 и полном раунде pool=180, payout=188 → house регулируется loss-protection+RTP.
+// Вход = 1 карта (стоит 5 монет). Пул при полном раунде = 180.
+// Выплаты: 25×0, 4×3, 3×7, 2×12, 1×20, 1×40 = 117 → RTP ≈ 65% (понижен).
 export const PVP_LOBBY_TTL_MS = 35_000; // base; actual = random 30–40s в createLobby
 
 export const PVP_MODES = {
@@ -143,49 +143,16 @@ export const PVP_MODES = {
     cardCount: 36,
     entryCoins: 5,
     outcomesPool: [
-      // 19 карт — 0 монет
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      { key: 'empty', type: 'empty', credit: 0,  stamp: 'Пусто' },
-      // 5 карт — 3 монеты
-      { key: 'win_3',  type: 'coins', credit: 3,  stamp: '+3'  },
-      { key: 'win_3',  type: 'coins', credit: 3,  stamp: '+3'  },
-      { key: 'win_3',  type: 'coins', credit: 3,  stamp: '+3'  },
-      { key: 'win_3',  type: 'coins', credit: 3,  stamp: '+3'  },
-      { key: 'win_3',  type: 'coins', credit: 3,  stamp: '+3'  },
-      // 5 карт — 7 монет
-      { key: 'win_7',  type: 'coins', credit: 7,  stamp: '+7'  },
-      { key: 'win_7',  type: 'coins', credit: 7,  stamp: '+7'  },
-      { key: 'win_7',  type: 'coins', credit: 7,  stamp: '+7'  },
-      { key: 'win_7',  type: 'coins', credit: 7,  stamp: '+7'  },
-      { key: 'win_7',  type: 'coins', credit: 7,  stamp: '+7'  },
+      // 25 карт — 0 монет
+      ...Array.from({ length: 25 }, () => ({ key: 'empty', type: 'empty', credit: 0, stamp: 'Пусто' })),
+      // 4 карты — 3 монеты
+      ...Array.from({ length: 4 }, () => ({ key: 'win_3', type: 'coins', credit: 3, stamp: '+3' })),
+      // 3 карты — 7 монет
+      ...Array.from({ length: 3 }, () => ({ key: 'win_7', type: 'coins', credit: 7, stamp: '+7' })),
       // 2 карты — 12 монет
-      { key: 'win_12', type: 'coins', credit: 12, stamp: '+12' },
-      { key: 'win_12', type: 'coins', credit: 12, stamp: '+12' },
-      // 1 карта — 14 монет
-      { key: 'win_14', type: 'coins', credit: 14, stamp: '+14' },
-      // 1 карта — 15 монет
-      { key: 'win_15', type: 'coins', credit: 15, stamp: '+15' },
+      ...Array.from({ length: 2 }, () => ({ key: 'win_12', type: 'coins', credit: 12, stamp: '+12' })),
       // 1 карта — 20 монет
       { key: 'win_20', type: 'coins', credit: 20, stamp: '+20' },
-      // 1 карта — 25 монет
-      { key: 'win_25', type: 'coins', credit: 25, stamp: '+25' },
       // 1 карта — 40 монет
       { key: 'win_40', type: 'coins', credit: 40, stamp: '+40' }
     ]

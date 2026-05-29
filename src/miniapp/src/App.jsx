@@ -182,8 +182,14 @@ function App() {
         if (!cancelled) {
           // Раунд только что завершился — авто-показ итогов через 1с
           // (только если игрок участвовал — иначе модал не нужен).
-          if (prevStatus === 'open' && s?.lobby?.status === 'settled' && (s.cards || []).some((c) => c.mine)) {
-            setTimeout(() => { if (!cancelled) setPvpRoundResult(s); }, 1000);
+          if (prevStatus === 'open' && s?.lobby?.status === 'settled') {
+            // Динамическое обновление баланса сразу по завершении раунда.
+            api.me().then((m) => {
+              if (!cancelled && m?.player) setState((c) => ({ ...c, player: { ...c.player, ...m.player } }));
+            }).catch(() => {});
+            if ((s.cards || []).some((c) => c.mine)) {
+              setTimeout(() => { if (!cancelled) setPvpRoundResult(s); }, 1000);
+            }
           }
           prevStatus = s?.lobby?.status || prevStatus;
           setPvpState(s);
@@ -264,8 +270,12 @@ function App() {
       window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('medium');
     } catch (e) {
       console.error('pvp buy failed', e);
-      if (e.message === 'card already taken') notify('Карту уже забрали', 'danger');
-      else if (e.message === 'insufficient_balance') notify('Недостаточно монет', 'danger');
+      if (e.message === 'need_card') {
+        // PvP только за карты — перекидываем в покупку карт.
+        notify('Нужна карта — купи карты, чтобы играть', 'violet');
+        setDepositOpen(true); setDepositView('cards'); setTonIntent(null);
+      }
+      else if (e.message === 'card already taken') notify('Карту уже забрали', 'danger');
       else if (e.status === 401) notify('Сессия истекла — открой игру заново через бота', 'danger');
       else if (!e.status) notify('Бэкенд не отвечает (порт 3000?)', 'danger');
       else notify(`Ошибка ${e.status}: ${e.message}`, 'danger');
@@ -1132,7 +1142,7 @@ function PvpCard({ card, idx, settled, pvpBuying, lowBalance, onBuyPvpCard, onOp
   return (
     <motion.button
       className={cls}
-      disabled={pvpBuying || card.taken || settled || lowBalance}
+      disabled={pvpBuying || card.taken || settled}
       onClick={() => onBuyPvpCard(idx)}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
@@ -1185,19 +1195,19 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   const idle = !lobby?.openedAt && lobby?.status === 'open';
 
   const cardCount = lobby?.cardCount ?? 36;
-  const entry = lobby?.entryCoins ?? 5;
   const hasTicket = (tickets?.cheap || 0) > 0;
   const welcomeFree = welcomeAvailable && cards.every((c) => !c.mine);
-  const cost = welcomeFree || hasTicket ? 0 : entry;
-  const lowBalance = balance < cost;
   const myCards = cards.filter((c) => c.mine);
-  const priceLabel = welcomeFree ? 'free' : hasTicket ? '1 карта' : `${entry}`;
 
   // Free spin counter
   const FREE_EVERY = 10;
   const reveals = pvpTotalReveals || 0;
   const tillFree = reveals === 0 ? FREE_EVERY : FREE_EVERY - (reveals % FREE_EVERY);
   const isFreeNext = reveals > 0 && reveals % FREE_EVERY === FREE_EVERY - 1;
+
+  // PvP только за карты. Нет карты/бесплатного → надо купить карты.
+  const canPlay = welcomeFree || hasTicket || isFreeNext;
+  const priceLabel = welcomeFree ? 'бесплатно' : hasTicket ? `${tickets.cheap} карт` : 'нужна карта';
 
   const rows = buildPvpRows(cardCount);
 
@@ -1231,7 +1241,6 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
                 idx={i}
                 settled={settled}
                 pvpBuying={pvpBuying}
-                lowBalance={lowBalance}
                 onBuyPvpCard={onBuyPvpCard}
                 onOpenPlayerProfile={onOpenPlayerProfile}
                 shuffling={shuffling}
@@ -1268,9 +1277,9 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
         </div>
       )}
 
-      {!settled && lowBalance && (
-        <button className="dw-btn ghost full" onClick={onOpenDeposit}>
-          пополнить · мало монет
+      {!settled && !canPlay && (
+        <button className="dw-btn primary full" onClick={onOpenDeposit}>
+          Купить карты для игры
         </button>
       )}
     </>
