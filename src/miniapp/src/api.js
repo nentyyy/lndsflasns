@@ -118,6 +118,7 @@ export const api = {
   pvpState: (mode = 'cheap') => request(`/api/pvp/state?mode=${encodeURIComponent(mode)}`),
   pvpBuy: (mode, cardIndex) => request('/api/pvp/buy', { method: 'POST', body: { mode, cardIndex, idempotencyKey: uuid() } }),
   buyTickets: (type, packId) => request('/api/tickets/buy', { method: 'POST', body: { type, packId } }),
+  buyTicketsCustom: (type, count) => request('/api/tickets/buy-custom', { method: 'POST', body: { type, count } }),
   arm: (modeId) => request('/api/rounds/arm', { method: 'POST', body: { modeId, clientSeed: uuid(), idempotencyKey: uuid() } }),
   reveal: (roundId, clauseIndex) => request('/api/rounds/reveal', { method: 'POST', body: { roundId, clauseIndex } }),
   createDeposit: (method, packId) => request('/api/deposits', { method: 'POST', body: { method, packId } }),

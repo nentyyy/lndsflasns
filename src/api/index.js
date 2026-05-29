@@ -16,7 +16,7 @@ import { createCryptobotDeposit } from './lib/payments/cryptobot.js';
 import { getReferralView, bindReferrer, makeRefCode, claimReferralPending } from './lib/referral.js';
 import { getTournamentView, ensureActiveTournament } from './lib/tournaments.js';
 import { getPvpState, buyCard, PvpError, getLiveFeed, sweepExpiredLobbies } from './lib/pvp.js';
-import { buyTicketPack, TicketError } from './lib/tickets.js';
+import { buyTicketPack, buyTicketsCustom, TicketError } from './lib/tickets.js';
 import { getLeaderboard, getPersonalStats } from './lib/leaderboard.js';
 import { notifyAdminsPurchase } from './lib/admin-notify.js';
 import { listRounds, getRoundDetail } from './lib/rounds.js';
@@ -239,6 +239,24 @@ app.post('/api/tickets/buy',
       const type = String(req.body?.type || '');
       const packId = String(req.body?.packId || '');
       const out = await buyTicketPack(req.user.id, type, packId);
+      const player = await db('players').where({ user_id: req.user.id }).first();
+      res.json({ ...out, player: playerView(player) });
+    } catch (e) {
+      if (e instanceof TicketError) return res.status(e.status).json({ error: e.message });
+      if (e instanceof InsufficientFunds) return res.status(400).json({ error: 'insufficient_balance' });
+      next(e);
+    }
+  }
+);
+
+// Покупка карт по введённому числу (без наборов), оплата монетами.
+app.post('/api/tickets/buy-custom',
+  rateLimit({ bucket: 'tickets_buy', max: 30, windowMs: 60_000 }),
+  async (req, res, next) => {
+    try {
+      const type = String(req.body?.type || '');
+      const count = Number(req.body?.count);
+      const out = await buyTicketsCustom(req.user.id, type, count);
       const player = await db('players').where({ user_id: req.user.id }).first();
       res.json({ ...out, player: playerView(player) });
     } catch (e) {

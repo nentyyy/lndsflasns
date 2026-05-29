@@ -3185,6 +3185,12 @@ html, body { font-size: 16px; }
 .dw-lb-stats strong { font-size: 15px; font-family: var(--font-display); }
 .dw-lb-stats small { font-size: 11px; color: var(--bone-soft); }
 
+/* ─── Покупка карт по числу ───────────────────────────────── */
+.dw-card-buy-row { display: flex; gap: 8px; align-items: stretch; }
+.dw-card-buy-row .dw-coins-input { flex: 1; }
+.dw-card-buy-row .dw-btn { white-space: nowrap; }
+.dw-card-buy-block { }
+
 /* ─── Shop sort arrows ─────────────────────────────────────── */
 .dw-sort-row {
   display: flex; align-items: center; gap: 6px;

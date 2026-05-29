@@ -215,6 +215,25 @@ function App() {
     }
   };
 
+  // Покупка карт по введённому числу (оплата монетами).
+  const buyCardsCount = async (type, count) => {
+    const n = parseInt(count, 10);
+    if (!n || n < 1) { notify('Введи число карт', 'danger'); return; }
+    try {
+      const res = await api.buyTicketsCustom(type, n);
+      setState((current) => ({
+        ...current,
+        player: { ...current.player, coins: res.balance, tickets: res.player.tickets }
+      }));
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
+      notify(`+${n} ${type === 'cheap' ? 'PvP' : 'премиум'} карт`, 'success');
+    } catch (e) {
+      if (e.message === 'insufficient_balance') notify('Недостаточно монет', 'danger');
+      else if (e.message === 'bad count') notify('1–500 карт', 'danger');
+      else notify('Не удалось купить', 'danger');
+    }
+  };
+
   const buyPvpCard = async (cardIndex) => {
     if (pvpBuying) return;
     setPvpBuying(true);
@@ -770,6 +789,7 @@ function App() {
           onStarsCustom={handleStarsCustom}
           onTonPay={handleTonPay}
           onTonCustom={handleTonCustom}
+          onBuyCardsCount={buyCardsCount}
           payPending={payPending}
           tonWallet={tonWallet}
           tonIntent={tonIntent}
@@ -2281,11 +2301,15 @@ function SendDeposit({ onPaid, onNotify }) {
 
 /* ─── Deposit sheet — монеты / карты ─────────────────────── */
 
-function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, tonPacks, onStarsPay, onStarsCustom, onTonPay, onTonCustom, payPending, tonWallet, tonIntent, onConnectTon, onClose, ticketPacks, onBuyTickets, player, onSendPaid, notify }) {
+function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, tonPacks, onStarsPay, onStarsCustom, onTonPay, onTonCustom, onBuyCardsCount, payPending, tonWallet, tonIntent, onConnectTon, onClose, ticketPacks, onBuyTickets, player, onSendPaid, notify }) {
   const [coins, setCoins] = React.useState('');
   const coinsNum = Math.max(0, parseInt(coins) || 0);
   const starsForCoins = coinsNum * 20;
   const tonForCoins = (coinsNum * 0.1).toFixed(2);
+  const [cheapCards, setCheapCards] = React.useState('');
+  const [premCards, setPremCards] = React.useState('');
+  const cheapN = Math.max(0, parseInt(cheapCards) || 0);
+  const premN = Math.max(0, parseInt(premCards) || 0);
 
   const handleBuyCoinsStars = () => {
     if (!coinsNum) return;
@@ -2368,56 +2392,51 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
                 {coinsNum > 0 && <span className="dw-coins-pay-amt">{tonForCoins} TON</span>}
               </button>
             </div>
+
+            {/* Плашка карт рядом с монетами — ввод числа, оплата монетами */}
+            <div className="dw-deposit-divider"><span>PvP карты · 5 монет/шт</span></div>
+            <div className="dw-card-buy-row">
+              <input className="dw-coins-input" type="number" min="1" placeholder="Сколько карт?"
+                value={cheapCards} onChange={(e) => setCheapCards(e.target.value)} />
+              <button className="dw-btn primary" disabled={!cheapN || (player?.coins || 0) < cheapN * 5}
+                onClick={() => onBuyCardsCount('cheap', cheapN)}>
+                {cheapN ? `Купить · ${formatCoins(cheapN * 5)}` : 'Купить'}
+              </button>
+            </div>
           </div>
         )}
 
-        {/* CARDS — PvP карты и Премиум */}
+        {/* CARDS — ввод числа карт, оплата монетами (без наборов) */}
         {view === 'cards' && !payPending && (
           <div className="dw-cards-shop">
-            {cheapPacks.length > 0 && (
-              <div className="dw-cards-section">
-                <div className="dw-cards-section-head">
-                  <span style={{ fontSize: 15, fontWeight: 700 }}>PvP карты</span>
-                  <span className="dw-kicker" style={{ marginLeft: 8 }}>5 монет / штука</span>
-                </div>
-                {cheapPacks.map(pack => {
-                  const cant = (player?.coins || 0) < pack.priceCoins;
-                  return (
-                    <button key={pack.id} className="dw-pack-row" disabled={cant}
-                      onClick={() => !cant && onBuyTickets('cheap', pack)}>
-                      <span className="dw-pack-icon">🎴</span>
-                      <span className="dw-pack-copy">
-                        <strong>{pack.count} карт{pack.count > 1 ? '' : 'а'}</strong>
-                        <span>{(pack.priceCoins / pack.count).toFixed(1)} монет/карта</span>
-                      </span>
-                      <span className="dw-pack-price">{formatCoins(pack.priceCoins)}</span>
-                    </button>
-                  );
-                })}
+            <div className="dw-card-buy-block">
+              <div className="dw-cards-section-head">
+                <span style={{ fontSize: 15, fontWeight: 700 }}>🎴 PvP карты</span>
+                <span className="dw-kicker" style={{ marginLeft: 8 }}>5 монет / карта</span>
               </div>
-            )}
-            {premPacks.length > 0 && (
-              <div className="dw-cards-section" style={{ marginTop: 16 }}>
-                <div className="dw-cards-section-head">
-                  <span style={{ fontSize: 15, fontWeight: 700 }}>Премиум завещания</span>
-                  <span className="dw-kicker" style={{ marginLeft: 8 }}>Соло режим</span>
-                </div>
-                {premPacks.map(pack => {
-                  const cant = (player?.coins || 0) < pack.priceCoins;
-                  return (
-                    <button key={pack.id} className="dw-pack-row" disabled={cant}
-                      onClick={() => !cant && onBuyTickets('premium', pack)}>
-                      <span className="dw-pack-icon">📜</span>
-                      <span className="dw-pack-copy">
-                        <strong>{pack.count} завещани{pack.count === 1 ? 'е' : 'й'}</strong>
-                        <span>{Math.round(pack.priceCoins / pack.count)} монет/шт{pack.count >= 5 ? ' · скидка' : ''}</span>
-                      </span>
-                      <span className="dw-pack-price">{formatCoins(pack.priceCoins)}</span>
-                    </button>
-                  );
-                })}
+              <div className="dw-card-buy-row">
+                <input className="dw-coins-input" type="number" min="1" placeholder="Сколько карт?"
+                  value={cheapCards} onChange={(e) => setCheapCards(e.target.value)} />
+                <button className="dw-btn primary" disabled={!cheapN || (player?.coins || 0) < cheapN * 5}
+                  onClick={() => onBuyCardsCount('cheap', cheapN)}>
+                  {cheapN ? `Купить · ${formatCoins(cheapN * 5)}` : 'Купить'}
+                </button>
               </div>
-            )}
+            </div>
+            <div className="dw-card-buy-block" style={{ marginTop: 16 }}>
+              <div className="dw-cards-section-head">
+                <span style={{ fontSize: 15, fontWeight: 700 }}>📜 Премиум завещания</span>
+                <span className="dw-kicker" style={{ marginLeft: 8 }}>150 монет / карта</span>
+              </div>
+              <div className="dw-card-buy-row">
+                <input className="dw-coins-input" type="number" min="1" placeholder="Сколько карт?"
+                  value={premCards} onChange={(e) => setPremCards(e.target.value)} />
+                <button className="dw-btn primary" disabled={!premN || (player?.coins || 0) < premN * 150}
+                  onClick={() => onBuyCardsCount('premium', premN)}>
+                  {premN ? `Купить · ${formatCoins(premN * 150)}` : 'Купить'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

@@ -8,6 +8,26 @@ export class TicketError extends Error {
 }
 
 const COLUMN = { cheap: 'cheap_tickets', premium: 'premium_tickets' };
+// Цена за 1 карту: PvP = 5 монет, Премиум = 150 монет.
+const UNIT_PRICE = { cheap: 5, premium: 150 };
+
+// Покупка произвольного числа карт за монеты (без наборов).
+export async function buyTicketsCustom(userId, type, countRaw) {
+  const col = COLUMN[type];
+  if (!col) throw new TicketError('unknown ticket type', 404);
+  const count = Math.floor(Number(countRaw));
+  if (!Number.isInteger(count) || count < 1 || count > 500) throw new TicketError('bad count');
+  const price = count * UNIT_PRICE[type];
+  return db.transaction(async (trx) => {
+    const balance = await debit(trx, userId, price, 'tickets_buy', `tickets:${randomUUID()}`);
+    await trx('players').where({ user_id: userId }).update({
+      [col]: trx.raw(`${col} + ?`, [count]),
+      coins_spent: trx.raw('coins_spent + ?', [price])
+    });
+    const row = await trx('players').where({ user_id: userId }).first(col);
+    return { balance, ticketCount: Number(row[col]), added: count, price, type };
+  });
+}
 
 export async function buyTicketPack(userId, type, packId) {
   const col = COLUMN[type];
