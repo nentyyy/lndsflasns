@@ -1,11 +1,11 @@
 import { Bot } from 'grammy';
 import { config } from 'dotenv';
+import { writeFileSync } from 'node:fs';
 import { startCommand } from './commands/start.js';
 import { depositCommand } from './commands/deposit.js';
 import { profileCommand } from './commands/profile.js';
 import { handleError } from './middleware/error.js';
 import { MINI_APP_URL, BOT_USERNAME } from './lib/config.js';
-import { migrate } from '../api/lib/migrate.js';
 import { db } from '../api/lib/db.js';
 import { settleStarsPayment } from '../api/lib/payments/stars.js';
 import { makeRefCode } from '../api/lib/referral.js';
@@ -22,7 +22,8 @@ if (!process.env.BOT_TOKEN) {
   process.exit(0);
 }
 
-await migrate();
+// Миграции выполняет ТОЛЬКО API-процесс (избегаем конкуренции записи в SQLite
+// при одновременном старте). Бот лишь читает/пишет уже готовую схему.
 
 const bot = new Bot(process.env.BOT_TOKEN);
 
@@ -93,15 +94,14 @@ bot.command('give', async (ctx) => {
   });
 
   const updatedPlayer = await db('players').where({ user_id: player.user_id }).first();
-  const name = player.first_name || `@${player.username}` || `ID ${player.user_id}`;
+  const name = player.username ? `@${player.username}` : (player.first_name || `ID ${player.user_id}`);
 
   // Уведомляем получателя
   const giftMsg = [
-    '🪙 Ого! Тебе начислили монеты!',
+    `🪙 Тебе начислено +${amount} монет!`,
     '',
-    `+${amount} монет уже ждут на балансе. Раздача, бонус или внимание админов — неважно, главное тратить с удовольствием! ✨`,
-    '',
-    'Погнали в игру!'
+    `Баланс: ${Number(updatedPlayer.balance)} монет.`,
+    'Удачи в раунде — жми «Играть»!'
   ].join('\n');
 
   try {
@@ -144,6 +144,56 @@ bot.on('pre_checkout_query', async (ctx) => {
     console.error('pre_checkout error', e);
     await ctx.answerPreCheckoutQuery(false, 'Ошибка проверки платежа');
   }
+});
+
+// ─── Одобрение/отклонение заявок на вывод подарка ───
+bot.on('callback_query:data', async (ctx) => {
+  const data = ctx.callbackQuery.data || '';
+  const m = data.match(/^(approve|reject):(.+)$/);
+  if (!m) return ctx.answerCallbackQuery();
+  if (!isAdmin(ctx)) return ctx.answerCallbackQuery({ text: 'Нет доступа', show_alert: true });
+
+  const [, action, purchaseId] = m;
+  const purchase = await db('portals_purchases').where({ id: purchaseId }).first();
+  if (!purchase) return ctx.answerCallbackQuery({ text: 'Заявка не найдена', show_alert: true });
+  if (purchase.status !== 'pending') {
+    return ctx.answerCallbackQuery({ text: `Уже обработана: ${purchase.status}`, show_alert: true });
+  }
+
+  const baseText = ctx.callbackQuery.message?.text || 'Заявка';
+  const by = ctx.from?.username ? `@${ctx.from.username}` : `ID ${ctx.from?.id}`;
+
+  if (action === 'approve') {
+    await db('portals_purchases').where({ id: purchaseId }).update({ status: 'sent', sent_at: db.fn.now() });
+    // Триггерим выдачу через userbot (Portals).
+    try {
+      const orderPath = new URL('../userbot/pending_order.json', import.meta.url).pathname;
+      writeFileSync(orderPath, JSON.stringify({ purchaseId, giftId: purchase.gift_id, userId: String(purchase.user_id) }));
+    } catch (e) { console.warn('order file err', e.message); }
+
+    await ctx.editMessageText(`${baseText}\n\n✅ ОДОБРЕНО (${by})`).catch(() => {});
+    try {
+      await ctx.api.sendMessage(purchase.user_id,
+        `🎁 Ваш подарок «${purchase.gift_name}» уже у вас!\n\nСпасибо, что играете в DEADWILL — надеемся, вы вернётесь к нам снова ✨`,
+        { reply_markup: { inline_keyboard: [[{ text: '🎴 Играть', web_app: { url: MINI_APP_URL } }]] } });
+    } catch (e) { console.warn('notify buyer err', e.message); }
+    return ctx.answerCallbackQuery({ text: 'Одобрено' });
+  }
+
+  // reject → возврат монет покупателю
+  try {
+    await db.transaction(async (trx) => {
+      await credit(trx, purchase.user_id, Number(purchase.price_coins), 'portals_refund', `refund:${purchaseId}`);
+    });
+  } catch (e) { console.error('refund err', e.message); }
+  await db('portals_purchases').where({ id: purchaseId }).update({ status: 'rejected' });
+
+  await ctx.editMessageText(`${baseText}\n\n❌ ОТКЛОНЕНО (${by}) — монеты возвращены`).catch(() => {});
+  try {
+    await ctx.api.sendMessage(purchase.user_id,
+      `Заявка на подарок «${purchase.gift_name}» отклонена. ${purchase.price_coins} монет возвращены на баланс.`);
+  } catch (e) { console.warn('notify buyer err', e.message); }
+  return ctx.answerCallbackQuery({ text: 'Отклонено, возврат сделан' });
 });
 
 bot.on('message:successful_payment', async (ctx) => {

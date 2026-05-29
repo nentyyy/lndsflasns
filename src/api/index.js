@@ -18,6 +18,7 @@ import { getTournamentView, ensureActiveTournament } from './lib/tournaments.js'
 import { getPvpState, buyCard, PvpError, getLiveFeed, sweepExpiredLobbies } from './lib/pvp.js';
 import { buyTicketPack, TicketError } from './lib/tickets.js';
 import { getLeaderboard, getPersonalStats } from './lib/leaderboard.js';
+import { notifyAdminsPurchase } from './lib/admin-notify.js';
 
 const app = express();
 app.use(cors({
@@ -641,12 +642,10 @@ app.post('/api/portals/buy',
         });
       });
 
-      // Триггерим userbot через файл-флаг (после успешного commit).
-      try {
-        const orderPath = new URL('../../userbot/pending_order.json', import.meta.url).pathname;
-        const { writeFileSync } = await import('node:fs');
-        writeFileSync(orderPath, JSON.stringify({ purchaseId, giftId: gift.id, userId: String(req.user.id) }));
-      } catch {}
+      // Заявка на вывод → уведомляем админов с кнопками Одобрить/Отклонить.
+      // Подарок выдаётся только после одобрения (см. bot callback_query).
+      const purchaseRow = { id: purchaseId, user_id: String(req.user.id), gift_id: gift.id, gift_name: gift.name, price_coins: price };
+      notifyAdminsPurchase(purchaseRow).catch((e) => console.error('admin notify err', e.message));
 
       const player = await db('players').where({ user_id: req.user.id }).first();
       res.json({ purchaseId, status: 'pending', priceCoins: price, player: playerView(player) });
@@ -742,7 +741,7 @@ migrate()
     // Restart-safety: доплачиваем по лобби, истёкшим пока сервис был down.
     try { const n = await sweepExpiredLobbies(); if (n) console.log(`recovered ${n} expired lobbies`); } catch (e) { console.error('lobby sweep failed', e.message); }
     // Idle-safety: периодически завершаем истёкшие лобби даже без трафика.
-    setInterval(() => sweepExpiredLobbies().catch(() => {}), 10_000);
+    setInterval(() => sweepExpiredLobbies().catch(() => {}), 30_000);
     // Bind to loopback only — API must be reachable solely via the nginx HTTPS proxy.
     app.listen(env.PORT, '127.0.0.1', () => console.log(`API on 127.0.0.1:${env.PORT} (db: ${env.DATABASE_URL ? 'pg' : 'sqlite'})`));
   })

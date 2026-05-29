@@ -19,19 +19,18 @@ export const db = usePg
       client: 'sqlite3',
       connection: { filename: env.SQLITE_PATH },
       useNullAsDefault: true,
-      // SQLite — один писатель. Пул из многих соединений конкурирует сам с
-      // собой за write-lock и исчерпывается («pool is full» KnexTimeout, что
-      // вешало clans/history/leaderboard/депозиты). Единственное соединение
-      // сериализует запросы в процессе; WAL + busy_timeout разруливают
-      // конкуренцию между процессами (api ↔ bot).
+      // WAL даёт конкурентные чтения + одного писателя. Несколько соединений
+      // для конкурентных запросов; busy_timeout заставляет SQLite сам ждать
+      // освобождения write-lock (а не падать BUSY) при конкуренции api↔bot.
+      // (max:1 приводил к acquire-timeout под нагрузкой, max+15s — к pile-up.)
       pool: {
         min: 1,
-        max: 1,
-        acquireTimeoutMillis: 30000,
+        max: 8,
+        acquireTimeoutMillis: 20000,
         afterCreate: (conn, done) => {
           conn.run('PRAGMA journal_mode = WAL;', () =>
             conn.run('PRAGMA foreign_keys = ON;', () =>
-              conn.run('PRAGMA busy_timeout = 8000;', () =>
+              conn.run('PRAGMA busy_timeout = 5000;', () =>
                 conn.run('PRAGMA synchronous = NORMAL;', done)
               )
             )

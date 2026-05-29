@@ -6,6 +6,20 @@ import { FOUNDER_IDS } from '../../api/lib/config.js';
 import { randomBytes } from 'node:crypto';
 const TOKEN_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1 год (бессрочный для релиза)
 
+// Ретрай на случай кратковременного SQLITE_BUSY (две записи api↔bot).
+async function withRetry(fn, attempts = 4) {
+  for (let i = 0; i < attempts; i++) {
+    try { return await fn(); }
+    catch (e) {
+      if (e.code === 'SQLITE_BUSY' && i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, 200 * (i + 1)));
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
 // Генерируем auth token для пользователя
 async function generateAuthToken(userId) {
   const token = randomBytes(32).toString('hex');
@@ -44,8 +58,8 @@ export async function startCommand(ctx) {
   // Получаем аватарку
   const avatarFileId = await getAvatarFileId(ctx);
 
-  // Создаём/обновляем игрока с полными данными
-  await db('players').insert({
+  // Создаём/обновляем игрока с полными данными (с ретраем на BUSY)
+  await withRetry(() => db('players').insert({
     user_id: userId,
     username: u.username || null,
     first_name: u.first_name || null,
@@ -58,7 +72,7 @@ export async function startCommand(ctx) {
     last_name: u.last_name || null,
     ...(avatarFileId ? { avatar_file_id: avatarFileId } : {}),
     ...(role === 'Owner' ? { role } : {})
-  });
+  }));
 
   // Создаём ref_code если нет
   const player = await db('players').where({ user_id: userId }).first();

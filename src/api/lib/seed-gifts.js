@@ -86,9 +86,11 @@ function rarityFor(coins) {
 // И картинки уже привязаны к реальным файлам (self-healing: переседит один
 // раз после правки file-маппинга, потом скипает — без write-burst на каждый старт).
 export async function seedGifts() {
+  const ids = GIFTS.map(([name]) => slugify(name));
   const { n } = await db('portals_cache').count('* as n').first().catch(() => ({ n: 0 }));
   const probe = await db('portals_cache').where({ id: 'plush-pepe' }).first().catch(() => null);
-  if (Number(n) >= GIFTS.length && probe && probe.file === FILE_BY_NAME['Plush Pepe']) return 0;
+  // Skip только если ровно нужный набор и картинки уже привязаны (без write-burst).
+  if (Number(n) === GIFTS.length && probe && probe.file === FILE_BY_NAME['Plush Pepe']) return 0;
 
   for (const [name, priceCoins] of GIFTS) {
     const id = slugify(name);
@@ -102,6 +104,8 @@ export async function seedGifts() {
       await db('portals_cache').insert({ id, name, file, rarity, priceCoins, priceTon, stock: 999, available: true, updated_at: db.fn.now() });
     }
   }
+  // Удаляем подарки, которых нет в md-каталоге (чистим лишнее из магазина).
+  await db('portals_cache').whereNotIn('id', ids).del();
   return GIFTS.length;
 }
 

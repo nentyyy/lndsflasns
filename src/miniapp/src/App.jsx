@@ -15,7 +15,7 @@ import {
   XP_PER_LEVEL,
   XP_PER_ROUND
 } from './data/mock.js';
-import { GIFTS_CATALOG, NFT_RARITIES, RARITY_COLOR } from './data/gifts-catalog.js';
+import { NFT_RARITIES, RARITY_COLOR } from './data/gifts-catalog.js';
 
 const toneByType = { coins: 'gold', bonus: 'gold', multiplier: 'violet', empty: 'muted', debt: 'danger' };
 const titleByType = {
@@ -1553,8 +1553,9 @@ function ReferralTab({ referral, player, onCopy, onShare, onClaimReward, onBack,
 function ShopTab({ shop, player, onBuyNft, portalsGifts }) {
   const [nftRarity, setNftRarity] = useState('all');
 
-  // Используем реальные данные Portals если есть, иначе GIFTS_CATALOG
-  const catalog = (portalsGifts && portalsGifts.length > 0) ? portalsGifts : GIFTS_CATALOG;
+  // ТОЛЬКО серверный каталог (цены и список — из БД). Никакого статичного
+  // fallback: иначе при сбое bootstrap показались бы чужие подарки/цены.
+  const catalog = portalsGifts || [];
   const filteredGifts = nftRarity === 'all'
     ? catalog
     : catalog.filter((g) => g.rarity === nftRarity);
@@ -1575,6 +1576,11 @@ function ShopTab({ shop, player, onBuyNft, portalsGifts }) {
           </button>
         ))}
       </div>
+      {catalog.length === 0 && (
+        <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: '24px 0', fontSize: 14 }}>
+          Загрузка каталога…
+        </p>
+      )}
       <div className="dw-nft-grid">
         {filteredGifts.map((item, i) => {
           const canBuy = (player?.coins || 0) >= item.priceCoins;
