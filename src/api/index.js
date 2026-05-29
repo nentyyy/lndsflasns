@@ -77,6 +77,23 @@ app.get('/api/feed', async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// ─── Debug auth (только dev) ───
+app.get('/api/debug-auth', async (req, res) => {
+  const botToken = req.get('x-bot-token') || null;
+  const initData = req.get('authorization') || null;
+  const devUser = req.get('x-dev-user') || null;
+  let tokenRecord = null;
+  if (botToken) {
+    tokenRecord = await db('auth_tokens').where({ token: botToken }).first().catch(() => null);
+  }
+  res.json({
+    headers: { 'x-bot-token': botToken ? botToken.slice(0,8)+'...' : null, authorization: initData ? 'present' : null, 'x-dev-user': devUser },
+    tokenFound: !!tokenRecord,
+    tokenUserId: tokenRecord?.user_id || null,
+    tokenExpires: tokenRecord?.expires_at || null
+  });
+});
+
 // ─── Auth required ───
 app.use('/api', authMiddleware());
 

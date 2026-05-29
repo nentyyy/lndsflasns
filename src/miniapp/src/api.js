@@ -3,21 +3,50 @@ const BASE = import.meta.env.VITE_API_BASE || '';
 const BOT_TOKEN_KEY = 'dw_bot_token';
 const BOT_TOKEN_EXP_KEY = 'dw_bot_token_exp';
 
-// Пытаемся получить token из URL (?startapp=token:XXX) или startParam
+function saveToken(t) {
+  const exp = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  try { localStorage.setItem(BOT_TOKEN_KEY, t); localStorage.setItem(BOT_TOKEN_EXP_KEY, String(exp)); } catch {}
+}
+
+// Ищем токен в URL query, hash, start_param и localStorage
 function extractBotToken() {
   try {
-    // 1. Из initDataUnsafe.start_param (когда открыто через бота)
+    // 1. URL query string: ?startapp=token:XXX (web_app кнопки передают так)
+    const urlParams = new URLSearchParams(window.location.search);
+    const qStartapp = urlParams.get('startapp') || urlParams.get('token') || '';
+    if (qStartapp.startsWith('token:')) {
+      const t = qStartapp.slice(6);
+      if (t) { saveToken(t); return t; }
+    }
+
+    // 2. URL hash: #tgWebAppStartParam=token:XXX
+    const hash = window.location.hash || '';
+    const hashParams = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
+    const hashStart = hashParams.get('tgWebAppStartParam') || '';
+    if (hashStart.startsWith('token:')) {
+      const t = hashStart.slice(6);
+      if (t) { saveToken(t); return t; }
+    }
+
+    // 3. initDataUnsafe.start_param (deeplinks t.me/bot?start=token:XXX)
     const sp = window.Telegram?.WebApp?.initDataUnsafe?.start_param || '';
     if (sp.startsWith('token:')) {
       const t = sp.slice(6);
-      if (t) {
-        // Сохраняем на 7 дней
-        const exp = Date.now() + 7 * 24 * 60 * 60 * 1000;
-        try { localStorage.setItem(BOT_TOKEN_KEY, t); localStorage.setItem(BOT_TOKEN_EXP_KEY, String(exp)); } catch {}
-        return t;
+      if (t) { saveToken(t); return t; }
+    }
+
+    // 4. tgWebAppData в initData (Telegram иногда передаёт параметры здесь)
+    const initDataRaw = window.Telegram?.WebApp?.initData || '';
+    if (initDataRaw) {
+      const p = new URLSearchParams(initDataRaw);
+      const startParam = p.get('start_param') || '';
+      if (startParam.startsWith('token:')) {
+        const t = startParam.slice(6);
+        if (t) { saveToken(t); return t; }
       }
     }
-    // 2. Из localStorage (если уже авторизован через бота)
+
+    // 5. localStorage (уже авторизован)
     const saved = localStorage.getItem(BOT_TOKEN_KEY);
     const exp = Number(localStorage.getItem(BOT_TOKEN_EXP_KEY) || 0);
     if (saved && exp > Date.now()) return saved;
