@@ -54,7 +54,7 @@ if (isProd && (process.env.ALLOW_DEV_AUTH || process.env.ALLOW_DEV_USER || proce
 // ─── Solo Game modes ───
 // Cheap режим теперь только PvP (см. PVP_MODES). Здесь только премиум-соло.
 // Економика: 1 монета = 0.1 TON = 20 звёзд. Премиум: 150 монет за вход.
-export const PREMIUM_CARD_COUNT = 10;
+export const PREMIUM_CARD_COUNT = 7;
 
 export const MODES = {
   premium: {

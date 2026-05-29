@@ -36,7 +36,7 @@ function mapResult(r) {
 
 const tabs = ['play', 'shop', 'profile'];
 const shopTabs = ['nft'];
-const PREMIUM_CARDS = 5;
+const PREMIUM_CARDS = 7;
 
 // Единый helper для отображения пользователя — используется везде
 function userDisplay(p) {
@@ -1041,7 +1041,7 @@ function WillTab(props) {
           onClick={() => onViewChange('solo')}
         >
           Соло · Премиум
-          <small>150 монет · 10 печатей</small>
+          <small>150 монет · 7 печатей</small>
         </button>
       </div>
 
