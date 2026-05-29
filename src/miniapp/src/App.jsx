@@ -1633,6 +1633,25 @@ function ProfileTab({ player, filters, activeFilter, onFilterChange, history, to
         </button>
       </div>
 
+      <article className="dw-panel" style={{ marginBottom: 12 }}>
+        <div className="dw-panel-head" style={{ marginBottom: 10 }}>
+          <h2>TON-кошелёк</h2>
+        </div>
+        {tonWallet ? (
+          <div className="dw-history-row">
+            <div className="dw-history-copy">
+              <strong style={{ fontSize: 14, color: 'var(--gold)' }}>Подключён</strong>
+              <p style={{ fontSize: 12 }}>{tonWallet.address.slice(0, 6)}…{tonWallet.address.slice(-6)}</p>
+            </div>
+            <button className="dw-btn ghost small" onClick={onDisconnectTon}>Отключить</button>
+          </div>
+        ) : (
+          <button className="dw-btn primary" style={{ width: '100%' }} onClick={onConnectTon}>
+            Подключить TON-кошелёк
+          </button>
+        )}
+      </article>
+
       <article className="dw-panel">
         <div className="dw-panel-head" style={{ marginBottom: 12 }}>
           <h2>История операций</h2>
