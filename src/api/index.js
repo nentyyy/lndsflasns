@@ -68,7 +68,10 @@ app.get('/api/avatar/:fileId', async (req, res) => {
     const filePath = fileData.result.file_path;
     const imgRes = await fetch(`https://api.telegram.org/file/bot${env.BOT_TOKEN}/${filePath}`);
     const buf = Buffer.from(await imgRes.arrayBuffer()); // fetch().body — web-stream, .pipe нет
-    res.setHeader('Content-Type', imgRes.headers.get('content-type') || 'image/jpeg');
+    // Telegram отдаёт octet-stream; с nosniff браузер не отрендерит <img>.
+    // Принудительно ставим image-тип по расширению file_path.
+    const ct = /\.png$/i.test(filePath) ? 'image/png' : /\.webp$/i.test(filePath) ? 'image/webp' : 'image/jpeg';
+    res.setHeader('Content-Type', ct);
     res.setHeader('Cache-Control', 'public, max-age=86400');
     res.end(buf);
   } catch (e) { res.status(500).send('error'); }
