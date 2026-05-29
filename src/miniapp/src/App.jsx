@@ -715,8 +715,7 @@ function App() {
               pvpTotalReveals={state.player.pvpTotalReveals || 0}
               pvpState={pvpState}
               pvpBuying={pvpBuying}
-              bestWin={state.player.bestWin || 0}
-              lastRoundWin={liveWins[0]?.amount || 0}
+              lastWinner={liveWins[0] || null}
               onOpenRounds={() => setRoundsOpen(true)}
               onArmRound={armRound}
               onPickClause={playRound}
@@ -770,15 +769,6 @@ function App() {
               onOpenAdmin={() => setAdminOpen(true)}
               onOpenClans={() => setTab('clans')}
               onOpenRef={() => setTab('referral')}
-              onOpenLeaderboard={() => setTab('leaderboard')}
-            />
-          )}
-
-          {tab === 'leaderboard' && (
-            <LeaderboardTab
-              myId={state.player.id}
-              liveWins={liveWins}
-              onBack={() => setTab('profile')}
             />
           )}
         </main>
@@ -1166,10 +1156,34 @@ function PvpCard({ card, idx, settled, pvpBuying, lowBalance, onBuyPvpCard, onOp
   );
 }
 
-function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvpTotalReveals, bestWin = 0, lastRoundWin = 0, onOpenRounds, onBuyPvpCard, onOpenDeposit, onOpenPlayerProfile }) {
+function PvpWinnerStat({ label, winner, amount, right, onClick }) {
+  const u = winner ? userDisplay(winner) : null;
+  return (
+    <button className={`dw-pvp-stat${right ? ' dw-pvp-stat--right' : ''}`} onClick={onClick}>
+      <span>{label}</span>
+      <div className="dw-pvp-stat-winner">
+        {u && (
+          <span className="dw-pvp-stat-ava" style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+            {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : u.initial}
+          </span>
+        )}
+        <strong>{amount ? `+${formatCoins(amount)}` : '—'}</strong>
+      </div>
+      {u && <small className="dw-pvp-stat-name">{u.displayName}</small>}
+    </button>
+  );
+}
+
+function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvpTotalReveals, lastWinner = null, onOpenRounds, onBuyPvpCard, onOpenDeposit, onOpenPlayerProfile }) {
   const [tick, setTick] = useState(0);
   const [shuffling, setShuffling] = useState(false);
+  const [bestRound, setBestRound] = useState(null);
   const prevStatus = React.useRef(null);
+
+  // Лучший раунд (по призу) — для левой плашки шапки.
+  useEffect(() => {
+    api.rounds('best', 0, 1).then((d) => setBestRound(d.rounds?.[0] || null)).catch(() => {});
+  }, [pvpState?.lobby?.status]);
 
   useEffect(() => {
     const t = setInterval(() => setTick((v) => v + 1), 500);
@@ -1218,17 +1232,11 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   return (
     <>
       <div className="dw-pvp-header dw-pvp-header--3col">
-        <button className="dw-pvp-stat" onClick={onOpenRounds}>
-          <span>Лучший ›</span>
-          <strong>{formatCoins(bestWin)}</strong>
-        </button>
+        <PvpWinnerStat label="Лучший ›" winner={bestRound?.winner} amount={bestRound?.topPrize} onClick={onOpenRounds} />
         <div className={`dw-pvp-timer ${urgent ? 'urgent' : idle || settled ? 'idle' : ''}`}>
           {settled ? '00' : timer ?? '35'}<span style={{ fontSize: 11, marginLeft: 4, opacity: 0.7 }}>с</span>
         </div>
-        <button className="dw-pvp-stat dw-pvp-stat--right" onClick={onOpenRounds}>
-          <span>Прошлый раунд ›</span>
-          <strong>{formatCoins(lastRoundWin)}</strong>
-        </button>
+        <PvpWinnerStat label="‹ Прошлый" winner={lastWinner} amount={lastWinner?.amount} right onClick={onOpenRounds} />
       </div>
 
       <div className="dw-pvp-grid-36">
@@ -1696,7 +1704,7 @@ function ShopTab({ shop, player, onBuyNft, portalsGifts }) {
 
 /* ─── Profile tab ─────────────────────────────────────────── */
 
-function ProfileTab({ player, filters, activeFilter, onFilterChange, history, tonWallet, onConnectTon, onDisconnectTon, onOpenAdmin, onOpenClans, onOpenRef, onOpenLeaderboard }) {
+function ProfileTab({ player, filters, activeFilter, onFilterChange, history, tonWallet, onConnectTon, onDisconnectTon, onOpenAdmin, onOpenClans, onOpenRef }) {
   const u = userDisplay(player);
   return (
     <section className="dw-page dw-profile-page">
@@ -1714,32 +1722,7 @@ function ProfileTab({ player, filters, activeFilter, onFilterChange, history, to
         </div>
       </div>
 
-      <div className="dw-stats-row">
-        <div className="dw-stat-cell">
-          <span>игр</span>
-          <strong>{player.gamesPlayed || 0}</strong>
-        </div>
-        <div className="dw-stat-cell">
-          <span>выиграно</span>
-          <strong>{formatCompact(player.coinsWon || 0)}</strong>
-        </div>
-        <div className="dw-stat-cell">
-          <span>потрачено</span>
-          <strong>{formatCompact(player.coinsSpent || 0)}</strong>
-        </div>
-        <div className="dw-stat-cell accent">
-          <span>рекорд</span>
-          <strong>{formatCompact(player.bestWin || 0)}</strong>
-        </div>
-      </div>
-
-      <PersonalStats />
-
-      <button className="dw-panel dw-nav-card" style={{ width: '100%', marginBottom: 12 }} onClick={onOpenLeaderboard}>
-        <span className="dw-kicker">рейтинг</span>
-        <strong>🏆 Топ игроков</strong>
-        <p>лучшие за всё время и сегодня</p>
-      </button>
+      <PersonalStats player={player} />
 
       <div className="dw-home-strip">
         <button className="dw-panel dw-nav-card" onClick={onOpenClans}>
@@ -2013,23 +1996,32 @@ function PlayerProfileModal({ userId, data, onClose }) {
 
 /* ─── Личная статистика ───────────────────────────────────── */
 
-function PersonalStats() {
+function PersonalStats({ player }) {
   const [s, setS] = useState(null);
   useEffect(() => { api.stats().then(setS).catch(() => {}); }, []);
-  if (!s) return null;
-  const winRate = s.roundsPlayed > 0 ? Math.round((s.wins / s.roundsPlayed) * 100) : 0;
+  // Фолбэк из player пока грузится /api/stats.
+  const roundsPlayed = s ? s.roundsPlayed : (player?.gamesPlayed || 0);
+  const wins = s?.wins ?? 0;
+  const losses = s?.losses ?? 0;
+  const bestWin = s ? s.bestWin : (player?.bestWin || 0);
+  const totalWon = s ? s.totalWon : (player?.coinsWon || 0);
+  const totalSpent = s ? s.totalSpent : (player?.coinsSpent || 0);
+  const favoriteGift = s?.favoriteGift || null;
+  const winRate = roundsPlayed > 0 ? Math.round((wins / roundsPlayed) * 100) : 0;
   return (
     <article className="dw-panel" style={{ marginBottom: 12 }}>
       <div className="dw-panel-head" style={{ marginBottom: 12 }}><h2>Статистика</h2></div>
       <div className="dw-stats-row" style={{ marginBottom: 10 }}>
-        <div className="dw-stat-cell"><span>раундов</span><strong>{formatCoins(s.roundsPlayed)}</strong></div>
-        <div className="dw-stat-cell"><span>побед</span><strong>{formatCoins(s.wins)}</strong></div>
-        <div className="dw-stat-cell"><span>поражений</span><strong>{formatCoins(s.losses)}</strong></div>
+        <div className="dw-stat-cell"><span>раундов</span><strong>{formatCoins(roundsPlayed)}</strong></div>
+        <div className="dw-stat-cell"><span>побед</span><strong>{formatCoins(wins)}</strong></div>
+        <div className="dw-stat-cell"><span>поражений</span><strong>{formatCoins(losses)}</strong></div>
         <div className="dw-stat-cell accent"><span>winrate</span><strong>{winRate}%</strong></div>
       </div>
       <div className="dw-stats-row">
-        <div className="dw-stat-cell"><span>лучший выигрыш</span><strong>{formatCoins(s.bestWin)}</strong></div>
-        <div className="dw-stat-cell"><span>любимый подарок</span><strong style={{ fontSize: 13 }}>{s.favoriteGift || '—'}</strong></div>
+        <div className="dw-stat-cell"><span>выиграно</span><strong>{formatCompact(totalWon)}</strong></div>
+        <div className="dw-stat-cell"><span>потрачено</span><strong>{formatCompact(totalSpent)}</strong></div>
+        <div className="dw-stat-cell accent"><span>рекорд</span><strong>{formatCompact(bestWin)}</strong></div>
+        <div className="dw-stat-cell"><span>любимый</span><strong style={{ fontSize: 12 }}>{favoriteGift || '—'}</strong></div>
       </div>
     </article>
   );

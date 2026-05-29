@@ -1014,6 +1014,17 @@ h2, .dw-panel h2 {
 .dw-pvp-stat strong {
   font-family: var(--font-display); font-size: 16px; color: var(--gold);
 }
+.dw-pvp-stat-winner { display: flex; align-items: center; gap: 6px; }
+.dw-pvp-stat--right .dw-pvp-stat-winner { flex-direction: row-reverse; }
+.dw-pvp-stat-ava {
+  width: 20px; height: 20px; border-radius: 50%; background: var(--surface-3);
+  display: grid; place-items: center; font-size: 10px; font-weight: 700;
+  color: var(--gold); flex-shrink: 0; font-family: var(--font-display);
+}
+.dw-pvp-stat-name {
+  font-size: 10px; color: var(--bone-soft); max-width: 84px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;
+}
 
 .dw-pvp-header-left { display: flex; flex-direction: column; gap: 2px; }
 .dw-pvp-header-left strong {
