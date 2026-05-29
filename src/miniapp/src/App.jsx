@@ -338,6 +338,39 @@ function App() {
     }
   };
 
+  // Динамический Stars-платёж: любая сумма монет (>=1), цена с сервера.
+  const handleStarsCustom = async (coins) => {
+    const webApp = window.Telegram?.WebApp;
+    if (!coins || coins < 1) { notify('Минимум 1 монета (20 ⭐)', 'danger'); return; }
+    setPayPending(true);
+    try {
+      const res = await api.createStarsCustom(coins);
+      setPayPending(false);
+      if (!res.invoiceLink) { notify('Stars не настроены на сервере', 'danger'); return; }
+      const credited = (res.coins || coins) + (res.bonus || 0);
+      if (webApp && webApp.openInvoice) {
+        webApp.openInvoice(res.invoiceLink, async (status) => {
+          if (status === 'paid') {
+            webApp.HapticFeedback?.notificationOccurred?.('success');
+            try {
+              const data = await api.bootstrap();
+              setState((c) => ({ ...c, player: { ...c.player, ...data.player } }));
+              setDepositOpen(false);
+              notify(`+${formatCoins(credited)} монет зачислено`, 'success');
+            } catch { notify('Баланс обновится через секунду', 'default'); }
+          } else if (status === 'cancelled') notify('Оплата отменена', 'default');
+          else if (status === 'failed') notify('Платёж не прошёл', 'danger');
+        });
+      } else {
+        window.open(res.invoiceLink, '_blank', 'noopener,noreferrer');
+        notify('Открыли счёт в новой вкладке', 'default');
+      }
+    } catch (e) {
+      setPayPending(false);
+      notify(e.status === 401 ? 'Открой в Telegram' : 'Ошибка соединения', 'danger');
+    }
+  };
+
   const handleTonPay = async (pack) => {
     setPayPending(true);
     try {
@@ -698,6 +731,7 @@ function App() {
           starsPacks={starsPacks}
           tonPacks={tonPacks}
           onStarsPay={handleStarsPay}
+          onStarsCustom={handleStarsCustom}
           onTonPay={handleTonPay}
           payPending={payPending}
           tonWallet={tonWallet}
@@ -2103,7 +2137,7 @@ function SendDeposit({ onPaid, onNotify }) {
 
 /* ─── Deposit sheet — монеты / карты ─────────────────────── */
 
-function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, tonPacks, onStarsPay, onTonPay, payPending, tonWallet, tonIntent, onConnectTon, onClose, ticketPacks, onBuyTickets, player, onSendPaid, notify }) {
+function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, tonPacks, onStarsPay, onStarsCustom, onTonPay, payPending, tonWallet, tonIntent, onConnectTon, onClose, ticketPacks, onBuyTickets, player, onSendPaid, notify }) {
   const [coins, setCoins] = React.useState('');
   const coinsNum = Math.max(0, parseInt(coins) || 0);
   const starsForCoins = coinsNum * 20;
@@ -2111,8 +2145,7 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
 
   const handleBuyCoinsStars = () => {
     if (!coinsNum) return;
-    const pack = [...starsPacks].sort((a,b)=>a.stars-b.stars).find(p=>p.coins>=coinsNum) || starsPacks[starsPacks.length-1];
-    if (pack) onStarsPay(pack);
+    onStarsCustom(coinsNum); // динамическая сумма: coinsNum монет = coinsNum*20 ⭐
   };
   const handleBuyCoinsTon = () => {
     if (!coinsNum) return;

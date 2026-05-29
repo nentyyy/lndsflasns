@@ -1,8 +1,46 @@
 import { randomUUID } from 'node:crypto';
 import { db } from '../db.js';
-import { env, getStarsPack, FIRST_DEPOSIT_BONUS_PCT } from '../config.js';
+import { env, getStarsPack, FIRST_DEPOSIT_BONUS_PCT, STARS_PER_COIN, MAX_OP_COINS } from '../config.js';
 import { creditOnce } from '../wallet.js';
 import { rewardReferralForDeposit } from '../referral.js';
+
+// Динамический Stars-депозит: любая сумма, кратная 20 Stars (= целые монеты).
+// Цена считается на сервере: coins монет = coins*20 Stars. Никаких хардкодов.
+export async function createStarsDepositCustom(userId, coinsRaw) {
+  const coins = Math.floor(Number(coinsRaw));
+  if (!Number.isInteger(coins) || coins < 1) throw new Error('min 1 coin (20 Stars)');
+  if (coins > MAX_OP_COINS) throw new Error('amount exceeds limit');
+  const stars = coins * STARS_PER_COIN;
+
+  const depositId = randomUUID();
+  const player = await db('players').where({ user_id: userId }).first();
+  const isFirst = !player?.first_deposit_done;
+  const firstBonus = isFirst ? Math.floor(coins * FIRST_DEPOSIT_BONUS_PCT) : 0;
+
+  await db('deposits').insert({
+    id: depositId, user_id: userId, method: 'stars', pack_id: 'custom',
+    status: 'pending', coins, bonus: firstBonus, currency: 'XTR', expected_amount: stars
+  });
+
+  let invoiceLink = null;
+  if (env.BOT_TOKEN) {
+    const res = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/createInvoiceLink`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: 'DEADWILL — монеты',
+        description: `${coins + firstBonus} монет${firstBonus > 0 ? ` (+${firstBonus} бонус первого деп)` : ''} на игру`,
+        payload: depositId,
+        currency: 'XTR',
+        prices: [{ label: `${coins} монет`, amount: stars }]
+      })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(`createInvoiceLink failed: ${data.description}`);
+    invoiceLink = data.result;
+  }
+  return { depositId, invoiceLink, coins, stars, bonus: firstBonus };
+}
 
 // Create a Telegram Stars invoice. Coins are credited ONLY after the
 // successful_payment update is verified by the bot (see settleStarsPayment).

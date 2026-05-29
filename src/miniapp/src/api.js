@@ -121,6 +121,7 @@ export const api = {
   arm: (modeId) => request('/api/rounds/arm', { method: 'POST', body: { modeId, clientSeed: uuid(), idempotencyKey: uuid() } }),
   reveal: (roundId, clauseIndex) => request('/api/rounds/reveal', { method: 'POST', body: { roundId, clauseIndex } }),
   createDeposit: (method, packId) => request('/api/deposits', { method: 'POST', body: { method, packId } }),
+  createStarsCustom: (coins) => request('/api/deposits/stars', { method: 'POST', body: { coins } }),
   createSendDeposit: (amountTon) => request('/api/deposits/create', { method: 'POST', body: { amountTon } }),
   depositStatus: (id) => request(`/api/deposits/${id}`),
   history: () => request('/api/history'),

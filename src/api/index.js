@@ -10,7 +10,7 @@ import { getGiftFromCache } from './lib/portals.js';
 import { validate, armSchema, revealSchema, depositSchema, pvpBuySchema } from './lib/validators.js';
 import { armRound, revealRound, GameError } from './lib/game.js';
 import { InsufficientFunds } from './lib/wallet.js';
-import { createStarsDeposit } from './lib/payments/stars.js';
+import { createStarsDeposit, createStarsDepositCustom } from './lib/payments/stars.js';
 import { createTonDeposit, createSendDeposit, startTonPoller } from './lib/payments/ton.js';
 import { createCryptobotDeposit } from './lib/payments/cryptobot.js';
 import { getReferralView, bindReferrer, makeRefCode, claimReferralPending } from './lib/referral.js';
@@ -295,6 +295,22 @@ app.post('/api/rounds/reveal',
 );
 
 // ─── Deposits ───
+// Динамический Stars-депозит: { coins } (>=1), цена считается на сервере.
+app.post('/api/deposits/stars',
+  rateLimit({ bucket: 'deposit', max: 20, windowMs: 60_000 }),
+  async (req, res, next) => {
+    try {
+      const coins = Number(req.body?.coins);
+      if (!Number.isInteger(coins) || coins < 1) return res.status(400).json({ error: 'min_1_coin' });
+      const out = await createStarsDepositCustom(req.user.id, coins);
+      res.json({ method: 'stars', ...out });
+    } catch (e) {
+      if (/limit|min/.test(e.message)) return res.status(400).json({ error: e.message });
+      next(e);
+    }
+  }
+);
+
 app.post('/api/deposits',
   rateLimit({ bucket: 'deposit', max: 20, windowMs: 60_000 }),
   validate(depositSchema),
