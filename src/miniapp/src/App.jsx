@@ -128,6 +128,7 @@ function App() {
   const [liveWins, setLiveWins] = useState([]);
   const [pvpShuffling, setPvpShuffling] = useState(false);
   const [portalsGifts, setPortalsGifts] = useState([]);
+  const [authError, setAuthError] = useState(false);
 
   // Real TON Connect
   const [tonConnectUI] = useTonConnectUI();
@@ -163,11 +164,7 @@ function App() {
       })
       .catch((e) => {
         console.error('bootstrap failed:', e.status, e.message);
-        // Если 401 — пробуем повторно через X-Dev-User как последний шанс
-        if (e.status === 401) {
-          const userId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
-          if (userId) console.warn('bootstrap 401, userId from unsafe:', userId);
-        }
+        if (e.status === 401) setAuthError(true);
       })
       .finally(() => setBootReady(true));
   }, []);
@@ -429,7 +426,7 @@ function App() {
       return;
     }
     try {
-      const res = await api.portalsBuy(item.id, item.name, item.priceCoins);
+      const res = await api.portalsBuy(item.id);
       setState((c) => ({ ...c, player: { ...c.player, coins: res.player.coins } }));
       notify('Заявка создана — подарок придёт через Portals', 'success');
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
@@ -570,6 +567,24 @@ function App() {
     }));
     notify(`Transfer ${id} отклонен`, 'danger');
   };
+
+  if (authError && !splashActive) {
+    return (
+      <div className="dw-shell screen-play">
+        <div className="dw-global-backdrop" />
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24, textAlign: 'center', position: 'relative', zIndex: 2 }}>
+          <div style={{ fontSize: 44 }}>🔒</div>
+          <h1 style={{ fontFamily: 'var(--font-display)', color: 'var(--gold-bright)', fontSize: 24, letterSpacing: '0.1em' }}>DEADWILL</h1>
+          <p style={{ color: 'var(--bone)', fontSize: 15, maxWidth: 280, lineHeight: 1.5 }}>
+            Открой игру через бота, чтобы войти в свой аккаунт.
+          </p>
+          <a href="https://t.me/DeadwillGame_bot" className="dw-btn-play" style={{ textDecoration: 'none', maxWidth: 280 }}>
+            Открыть @DeadwillGame_bot
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`dw-shell screen-${tab}`}>
@@ -1624,7 +1639,7 @@ function ProfileTab({ player, filters, activeFilter, onFilterChange, history, to
         )}
       </article>
 
-      {(player.username === 'kuckd' || player.username === 'oslems' || player.role === 'Owner' || player.role === 'Admin') && (
+      {(player.role === 'Owner' || player.role === 'Admin') && (
         <button className="dw-panel dw-admin-entry" onClick={onOpenAdmin}>
           <div className="dw-admin-entry-inner">
             <div>

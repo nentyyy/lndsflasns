@@ -59,22 +59,15 @@ function clearBotToken() {
 }
 
 function authHeaders() {
-  // Приоритет 1: Bot token (самый надёжный)
+  // Только два доверенных способа: bot-token (выдаёт бот на /start) и
+  // подписанный Telegram initData. Никаких dev-заголовков.
   const botToken = extractBotToken();
   if (botToken) return { 'X-Bot-Token': botToken };
 
-  const webApp = window.Telegram?.WebApp;
-  const initData = webApp?.initData;
-
-  // Приоритет 2: полный initData (открыто через кнопку бота)
+  const initData = window.Telegram?.WebApp?.initData;
   if (initData) return { Authorization: `tma ${initData}` };
 
-  // Приоритет 3: initDataUnsafe.user.id (открыто ссылкой в Telegram)
-  const userId = webApp?.initDataUnsafe?.user?.id;
-  if (userId) return { 'X-Dev-User': String(userId) };
-
-  // Fallback: dev
-  return { 'X-Dev-User': '1' };
+  return {}; // нет доверенных кредов → сервер вернёт 401
 }
 
 async function request(path, { method = 'GET', body } = {}) {
@@ -126,7 +119,7 @@ export const api = {
   history: () => request('/api/history'),
   playerProfile: (userId) => request(`/api/players/${userId}`),
   liveFeed: () => request('/api/feed'),
-  portalsBuy: (giftId, giftName, priceCoins) => request('/api/portals/buy', { method: 'POST', body: { giftId, giftName, priceCoins } }),
+  portalsBuy: (giftId) => request('/api/portals/buy', { method: 'POST', body: { giftId, idempotencyKey: uuid() } }),
   adminUsers: (limit = 50, offset = 0) => request(`/api/admin/users?limit=${limit}&offset=${offset}`),
   adminDeposits: (limit = 50, offset = 0) => request(`/api/admin/deposits?limit=${limit}&offset=${offset}`),
   adminRounds: (limit = 50, offset = 0) => request(`/api/admin/rounds?limit=${limit}&offset=${offset}`),

@@ -1,9 +1,12 @@
 import cors from 'cors';
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 import { env, MODES, STARS_PACKS, TON_PACKS, TICKET_PACKS } from './lib/config.js';
 import { db } from './lib/db.js';
 import { migrate } from './lib/migrate.js';
-import { authMiddleware, rateLimit } from './lib/security.js';
+import { authMiddleware, rateLimit, requireAdmin, requireOwner } from './lib/security.js';
+import { credit as walletCredit, debit as walletDebit } from './lib/wallet.js';
+import { getGiftFromCache } from './lib/portals.js';
 import { validate, armSchema, revealSchema, depositSchema, pvpBuySchema } from './lib/validators.js';
 import { armRound, revealRound, GameError } from './lib/game.js';
 import { InsufficientFunds } from './lib/wallet.js';
@@ -22,7 +25,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: [
     'Content-Type', 'Authorization',
-    'X-Dev-User', 'X-Telegram-Init-Data', 'X-Ref-Code'
+    'X-Bot-Token', 'X-Telegram-Init-Data', 'X-Ref-Code'
   ]
 }));
 app.options('*', cors());
@@ -75,23 +78,6 @@ app.get('/api/feed', async (_req, res, next) => {
     const feed = await getLiveFeed(20);
     res.json({ feed });
   } catch (e) { next(e); }
-});
-
-// ─── Debug auth (только dev) ───
-app.get('/api/debug-auth', async (req, res) => {
-  const botToken = req.get('x-bot-token') || null;
-  const initData = req.get('authorization') || null;
-  const devUser = req.get('x-dev-user') || null;
-  let tokenRecord = null;
-  if (botToken) {
-    tokenRecord = await db('auth_tokens').where({ token: botToken }).first().catch(() => null);
-  }
-  res.json({
-    headers: { 'x-bot-token': botToken ? botToken.slice(0,8)+'...' : null, authorization: initData ? 'present' : null, 'x-dev-user': devUser },
-    tokenFound: !!tokenRecord,
-    tokenUserId: tokenRecord?.user_id || null,
-    tokenExpires: tokenRecord?.expires_at || null
-  });
 });
 
 // ─── Auth required ───
@@ -354,15 +340,28 @@ app.get('/api/players/:userId', async (req, res, next) => {
 });
 
 // ─── Admin ───
-const ADMIN_USERS = ['kuckd', 'oslems'];
+// requireAdmin / requireOwner imported from security.js — read role strictly from DB.
 
-function requireAdmin(req, res, next) {
-  const username = req.player?.username || req.user?.username;
-  const role = req.player?.role;
-  if (!ADMIN_USERS.includes(username) && role !== 'Owner' && role !== 'Admin') {
-    return res.status(403).json({ error: 'forbidden' });
-  }
-  next();
+// Audit log for every admin/owner action (who, when, what, before/after).
+async function adminLog(req, action, target, meta = {}) {
+  try {
+    const entry = {
+      ts: new Date().toISOString(),
+      actor: String(req.user?.id),
+      actorRole: req.player?.role,
+      action,
+      target: String(target ?? ''),
+      meta
+    };
+    console.warn('[ADMIN_AUDIT]', JSON.stringify(entry));
+    await db('admin_log').insert({
+      actor_id: entry.actor,
+      action: entry.action,
+      target: entry.target,
+      meta: JSON.stringify(meta),
+      created_at: entry.ts
+    }).catch(() => {}); // table optional; console log is the backstop
+  } catch {}
 }
 
 app.get('/api/admin/users', requireAdmin, async (req, res, next) => {
@@ -483,58 +482,92 @@ app.get('/api/admin/economy', requireAdmin, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// Изменить баланс пользователя (admin)
-app.post('/api/admin/users/:userId/adjust', requireAdmin, async (req, res, next) => {
+// Изменить баланс пользователя — ТОЛЬКО owner.
+const MAX_ADJUST = 1_000_000;        // верхний предел одной операции
+const ALERT_THRESHOLD = 10_000;      // алерт при крупном начислении
+app.post('/api/admin/users/:userId/adjust', requireOwner, async (req, res, next) => {
   try {
-    const { amount, reason } = req.body;
-    if (!amount || !reason) return res.status(400).json({ error: 'amount and reason required' });
-    const { credit, debit } = await import('./lib/wallet.js');
-    const amt = Number(amount);
+    const reason = String(req.body?.reason || '').slice(0, 200);
+    const amt = Number(req.body?.amount);
+    if (!reason) return res.status(400).json({ error: 'reason_required' });
+    if (!Number.isInteger(amt) || amt === 0) return res.status(400).json({ error: 'amount_must_be_nonzero_integer' });
+    if (Math.abs(amt) > MAX_ADJUST) return res.status(400).json({ error: 'amount_out_of_bounds' });
+
+    const target = await db('players').where({ user_id: req.params.userId }).first();
+    if (!target) return res.status(404).json({ error: 'not_found' });
+    const before = Number(target.balance);
+
     await db.transaction(async (trx) => {
-      if (amt > 0) {
-        await credit(trx, req.params.userId, amt, 'admin_adjust', `admin:${Date.now()}`);
-      } else {
-        await debit(trx, req.params.userId, Math.abs(amt), 'admin_adjust', `admin:${Date.now()}`);
-      }
+      if (amt > 0) await walletCredit(trx, req.params.userId, amt, 'admin_adjust', `admin:${randomUUID()}`);
+      else await walletDebit(trx, req.params.userId, Math.abs(amt), 'admin_adjust', `admin:${randomUUID()}`);
     });
+
     const player = await db('players').where({ user_id: req.params.userId }).first();
+    const after = Number(player.balance);
+    await adminLog(req, 'balance_adjust', req.params.userId, { amount: amt, reason, before, after });
+    if (amt >= ALERT_THRESHOLD) {
+      console.warn('[ALERT] large balance grant', JSON.stringify({ actor: req.user.id, target: req.params.userId, amount: amt, before, after }));
+    }
     res.json({ ok: true, player: playerView(player) });
-  } catch (e) { next(e); }
+  } catch (e) {
+    if (e instanceof InsufficientFunds) return res.status(400).json({ error: 'insufficient_balance' });
+    next(e);
+  }
 });
 
-// Portals purchase — создать заявку
+// Portals purchase — цена и название берутся ТОЛЬКО из server-side каталога.
+// Клиент присылает лишь giftId + idempotencyKey. priceCoins/giftName из body игнорируются.
 app.post('/api/portals/buy',
   rateLimit({ bucket: 'portals_buy', max: 10, windowMs: 60_000 }),
   async (req, res, next) => {
     try {
-      const { giftId, giftName, priceCoins } = req.body;
-      if (!giftId || !giftName || !priceCoins) return res.status(400).json({ error: 'invalid_request' });
-      const { randomUUID } = await import('node:crypto');
-      const { debit: dbDebit } = await import('./lib/wallet.js');
+      const giftId = String(req.body?.giftId || '');
+      const idemKey = String(req.body?.idempotencyKey || '').slice(0, 64);
+      if (!giftId) return res.status(400).json({ error: 'giftId_required' });
+      if (!idemKey || idemKey.length < 8) return res.status(400).json({ error: 'idempotencyKey_required' });
+
+      // Цена — из каталога (whitelist). Несуществующий подарок → 404.
+      const gift = await getGiftFromCache(giftId);
+      if (!gift) return res.status(404).json({ error: 'gift_not_found' });
+      if (gift.available === 0) return res.status(409).json({ error: 'gift_unavailable' });
+
+      const price = Number(gift.priceCoins);
+      if (!Number.isInteger(price) || price <= 0 || price > Number.MAX_SAFE_INTEGER) {
+        return res.status(409).json({ error: 'invalid_catalog_price' });
+      }
+
+      // Идемпотентность: повтор того же ключа возвращает оригинал, без двойного списания.
+      const dup = await db('portals_purchases').where({ idempotency_key: idemKey }).first();
+      if (dup) {
+        const player = await db('players').where({ user_id: req.user.id }).first();
+        return res.json({ purchaseId: dup.id, status: dup.status, replayed: true, player: playerView(player) });
+      }
+
       const purchaseId = randomUUID();
 
+      // Одна транзакция: проверка баланса (FOR UPDATE внутри debit) → списание → запись покупки.
       await db.transaction(async (trx) => {
-        await dbDebit(trx, req.user.id, Number(priceCoins), 'portals_buy', `portals:${purchaseId}`);
+        await walletDebit(trx, req.user.id, price, 'portals_buy', `portals:${purchaseId}`);
+        await trx('portals_purchases').insert({
+          id: purchaseId,
+          user_id: req.user.id,
+          gift_id: gift.id,
+          gift_name: gift.name,
+          price_coins: price,
+          idempotency_key: idemKey,
+          status: 'pending'
+        });
       });
 
-      // Триггерим userbot через файл-флаг
-      const orderPath = new URL('../../userbot/pending_order.json', import.meta.url).pathname;
+      // Триггерим userbot через файл-флаг (после успешного commit).
       try {
+        const orderPath = new URL('../../userbot/pending_order.json', import.meta.url).pathname;
         const { writeFileSync } = await import('node:fs');
-        writeFileSync(orderPath, JSON.stringify({ purchaseId, giftId: String(giftId), userId: String(req.user.id) }));
+        writeFileSync(orderPath, JSON.stringify({ purchaseId, giftId: gift.id, userId: String(req.user.id) }));
       } catch {}
 
-      await db('portals_purchases').insert({
-        id: purchaseId,
-        user_id: req.user.id,
-        gift_id: String(giftId),
-        gift_name: String(giftName),
-        price_coins: Number(priceCoins),
-        status: 'pending'
-      });
-
       const player = await db('players').where({ user_id: req.user.id }).first();
-      res.json({ purchaseId, status: 'pending', player: playerView(player) });
+      res.json({ purchaseId, status: 'pending', priceCoins: price, player: playerView(player) });
     } catch (e) {
       if (e instanceof InsufficientFunds) return res.status(400).json({ error: 'insufficient_balance' });
       next(e);
@@ -622,7 +655,8 @@ app.use((err, _req, res, _next) => {
 migrate()
   .then(() => {
     startTonPoller();
-    app.listen(env.PORT, () => console.log(`API server running on port ${env.PORT} (db: ${env.DATABASE_URL ? 'pg' : 'sqlite'})`));
+    // Bind to loopback only — API must be reachable solely via the nginx HTTPS proxy.
+    app.listen(env.PORT, '127.0.0.1', () => console.log(`API on 127.0.0.1:${env.PORT} (db: ${env.DATABASE_URL ? 'pg' : 'sqlite'})`));
   })
   .catch((e) => {
     console.error('migration failed', e);

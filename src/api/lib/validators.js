@@ -4,7 +4,7 @@ import { z } from 'zod';
 export const armSchema = z.object({
   modeId: z.enum(['cheap', 'premium']),
   clientSeed: z.string().min(1).max(64).optional(),
-  idempotencyKey: z.string().min(8).max(64).optional()
+  idempotencyKey: z.string().min(8).max(64) // required — anti double-spend
 }).strict(); // reject unknown keys (prize, reward, chance, multiplier, amount, finalBalance)
 
 // Solo game — reveal (SECURITY: frontend sends only roundId + clauseIndex)
@@ -17,7 +17,7 @@ export const revealSchema = z.object({
 export const pvpBuySchema = z.object({
   mode: z.string().min(1).max(32),
   cardIndex: z.number().int().min(0).max(35),
-  idempotencyKey: z.string().min(8).max(64).optional()
+  idempotencyKey: z.string().min(8).max(64) // required — anti double-spend
 }).strict();
 
 // Deposits — only method + packId

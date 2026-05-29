@@ -27,3 +27,19 @@ export async function getAvailableGiftIds() {
   cache = { items: null, ts: Date.now() };
   return null; // null = all available
 }
+
+// Authoritative server-side lookup: цена и название подарка ТОЛЬКО отсюда.
+// Возвращает null если подарок не существует в каталоге (whitelist).
+export async function getGiftFromCache(giftId) {
+  if (!giftId) return null;
+  const row = await db('portals_cache').where({ id: String(giftId) }).first();
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    priceCoins: Number(row.priceCoins),
+    priceTon: Number(row.priceTon),
+    stock: Number(row.stock),
+    available: Number(row.available)
+  };
+}

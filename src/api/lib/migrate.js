@@ -260,6 +260,23 @@ export async function migrate() {
       t.timestamp('sent_at').nullable();
     });
   }
+  // idempotency для portals_purchases (anti double-charge)
+  const ppCols = await db('portals_purchases').columnInfo().catch(() => ({}));
+  if (ppCols && !ppCols.idempotency_key) {
+    await db.schema.alterTable('portals_purchases', (t) => t.string('idempotency_key').nullable().unique());
+  }
+
+  // Аудит админских действий
+  if (!(await db.schema.hasTable('admin_log'))) {
+    await db.schema.createTable('admin_log', (t) => {
+      t.increments('id').primary();
+      t.bigInteger('actor_id').notNullable().index();
+      t.string('action').notNullable();
+      t.string('target').nullable();
+      t.text('meta').nullable();
+      t.timestamp('created_at').defaultTo(db.fn.now());
+    });
+  }
 
   // Реферальные начисления (логи для прозрачности).
   if (!(await db.schema.hasTable('ref_payouts'))) {

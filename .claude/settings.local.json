@@ -37,7 +37,10 @@
       "Bash(git push *)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\pypsi\\\\Downloads\\\\dead wiil\\\\src\\\\miniapp\\\\src\" -Recurse -Filter \"*.jsx\" -ErrorAction SilentlyContinue)",
       "Bash(Select-Object FullName)",
-      "Bash(node --input-type=commonjs -e ' *)"
+      "Bash(node --input-type=commonjs -e ' *)",
+      "Bash(node --check src/api/lib/security.js)",
+      "Bash(node --check src/api/lib/portals.js)",
+      "Bash(node --check src/api/lib/validators.js)"
     ]
   }
 }
