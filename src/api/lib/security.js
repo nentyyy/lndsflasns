@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { env } from './config.js';
+import { env, FOUNDER_IDS } from './config.js';
 import { db } from './db.js';
 
 // ─── Telegram WebApp initData verification ───
@@ -48,14 +48,13 @@ function extractInitData(req) {
   return req.get('x-telegram-init-data') || '';
 }
 
-const ADMIN_USERNAMES = ['kuckd', 'oslems'];
-
 // Ensure the player row exists and return it. `user` always comes from a
 // verified source (HMAC initData or a DB-backed bot token) — never from a header.
 async function ensurePlayer(user) {
   const id = String(user.id);
   const username = user.username || null;
-  const isFounder = username && ADMIN_USERNAMES.includes(username);
+  // Founder = совпадение по telegram_id (immutable). username НЕ участвует.
+  const isFounder = FOUNDER_IDS.includes(id);
 
   const existing = await db('players').where({ user_id: id }).first();
   if (existing) {

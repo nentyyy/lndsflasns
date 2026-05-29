@@ -1,5 +1,11 @@
-// DEADWILL API client — auth priority: bot-token > initData > dev fallback
-const BASE = import.meta.env.VITE_API_BASE || '';
+// DEADWILL API client — auth priority: bot-token > initData
+let BASE = import.meta.env.VITE_API_BASE || '';
+// Prod safety: никогда не ходить на localhost API со страницы не-localhost
+// (защита от случайно запечённого VITE_API_BASE=http://localhost:3000).
+if (BASE && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(BASE) &&
+    typeof location !== 'undefined' && !/^(localhost|127\.0\.0\.1)$/i.test(location.hostname)) {
+  BASE = '';
+}
 const BOT_TOKEN_KEY = 'dw_bot_token';
 const BOT_TOKEN_EXP_KEY = 'dw_bot_token_exp';
 

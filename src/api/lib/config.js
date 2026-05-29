@@ -24,14 +24,24 @@ export const env = {
   TON_POLL_MS: Number(process.env.TON_POLL_MS || 20000),
 
   // initData freshness window (seconds)
-  INITDATA_TTL: Number(process.env.INITDATA_TTL || 3600),
-
-  // Local-only auth escape hatch. NEVER enable in production.
-  // Only honored when there is no BOT_TOKEN (i.e. clearly a dev box).
-  ALLOW_DEV_AUTH: process.env.ALLOW_DEV_AUTH === '1'
+  INITDATA_TTL: Number(process.env.INITDATA_TTL || 3600)
 };
 
 export const isProd = process.env.NODE_ENV === 'production';
+
+// Founder bootstrap привязан к telegram_id (НЕ к username — username можно
+// освободить/занять и захватить роль). Список из env FOUNDER_IDS (csv),
+// дефолт — текущие владельцы. Это единственный путь авто-выдачи роли Owner.
+export const FOUNDER_IDS = (process.env.FOUNDER_IDS || '5794472585,7832148159')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+// Defensive: в production процесс ДОЛЖЕН падать, если кто-то выставил
+// dev-фоллбэк через env (его больше нет в коде, но флаг = красный флаг).
+if (isProd && (process.env.ALLOW_DEV_AUTH || process.env.ALLOW_DEV_USER || process.env.DEV_USER)) {
+  throw new Error('dev auth env set in production — refusing to start');
+}
 
 // ─── Solo Game modes ───
 // Cheap режим теперь только PvP (см. PVP_MODES). Здесь только премиум-соло.

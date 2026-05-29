@@ -1,7 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { env, MODES, STARS_PACKS, TON_PACKS, TICKET_PACKS } from './lib/config.js';
+import { env, MODES, STARS_PACKS, TON_PACKS, TICKET_PACKS, FOUNDER_IDS } from './lib/config.js';
 import { db } from './lib/db.js';
 import { migrate } from './lib/migrate.js';
 import { authMiddleware, rateLimit, requireAdmin, requireOwner } from './lib/security.js';
@@ -29,13 +29,26 @@ app.use(cors({
   ]
 }));
 app.options('*', cors());
+
+// ─── Security headers (defense-in-depth; фронт-HTML заголовки ставит nginx) ───
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY'); // API нельзя встраивать в iframe
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+  res.removeHeader('X-Powered-By');
+  next();
+});
+
 app.use(express.json());
 
 const publicModes = Object.values(MODES).map((m) => ({ id: m.id, entryCoins: m.entryCoins, title: m.title }));
 
 // ─── Public ───
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, app: 'DEADWILL', db: env.DATABASE_URL ? 'pg' : 'sqlite' });
+  // Минимум информации — никакого раскрытия движка БД/стека (CWE-200).
+  res.json({ ok: true });
 });
 
 // Аватарка через бот (проксируем файл из Telegram).
@@ -79,6 +92,7 @@ function playerView(p) {
     firstName: p.first_name || null,
     lastName: p.last_name || null,
     avatarUrl: p.avatar_file_id ? `/api/avatar/${p.avatar_file_id}` : null,
+    founder: FOUNDER_IDS.includes(String(p.user_id)),
     coins: Number(p.balance),
     multiplier: Number(p.multiplier),
     gamesPlayed: Number(p.games_played),

@@ -37,7 +37,6 @@ function mapResult(r) {
 const tabs = ['play', 'shop', 'profile'];
 const shopTabs = ['nft'];
 const PREMIUM_CARDS = 5;
-const FOUNDERS = ['kuckd', 'oslems'];
 
 // Единый helper для отображения пользователя — используется везде
 function userDisplay(p) {
@@ -53,7 +52,8 @@ function userDisplay(p) {
         .trim() || `Player #${String(id).slice(-4)}`;
   const initial = displayName.replace(/^@/, '').slice(0, 1).toUpperCase() || 'P';
   const avatarUrl = p.avatarUrl || p.photoUrl || null;
-  const badge = FOUNDERS.includes(u) ? 'Founder'
+  // badge решает СЕРВЕР (p.founder). Никаких хардкод-username на фронте.
+  const badge = p.founder ? 'Founder'
     : (p.role === 'Owner' || p.role === 'Admin') ? 'Admin' : null;
   return { displayName, initial, avatarUrl, badge };
 }
@@ -246,7 +246,7 @@ function App() {
       console.error('pvp buy failed', e);
       if (e.message === 'card already taken') notify('Карту уже забрали', 'danger');
       else if (e.message === 'insufficient_balance') notify('Недостаточно монет', 'danger');
-      else if (e.status === 401) notify('Авторизация: запусти бэк с ALLOW_DEV_AUTH=1', 'danger');
+      else if (e.status === 401) notify('Сессия истекла — открой игру заново через бота', 'danger');
       else if (!e.status) notify('Бэкенд не отвечает (порт 3000?)', 'danger');
       else notify(`Ошибка ${e.status}: ${e.message}`, 'danger');
     } finally {

@@ -24,14 +24,15 @@ cat > .env << 'ENVEOF'
 NODE_ENV=production
 PORT=3000
 BOT_TOKEN=
-MINI_APP_URL=http://194.31.223.100
+MINI_APP_URL=https://194-31-223-100.sslip.io
 DATABASE_URL=
 INITDATA_TTL=86400
+# Founder telegram_id (csv). Только эти id авто-получают роль Owner.
+FOUNDER_IDS=5794472585,7832148159
 PROJECT_TON_WALLET=UQClkZbsM0SBs3nU6BlPwixHiRBm04lcRCoNClmxkz7YWeHD
 TONCENTER_BASE=https://toncenter.com/api/v2
 TON_API_KEY=
 TON_POLL_MS=20000
-ALLOW_DEV_AUTH=1
 ENVEOF
 
 echo "=== [5/6] Running DB migrations ==="
@@ -49,12 +50,28 @@ server {
     listen 80 default_server;
     server_name _;
 
+    # Security headers (CWE-693). HSTS реально работает только на 443 —
+    # после установки certbot этот блок наследуется HTTPS-сервером.
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+    # Mini app встраивается только в клиенты Telegram (не DENY, а frame-ancestors).
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://t.me; connect-src 'self'; frame-ancestors https://web.telegram.org https://*.telegram.org;" always;
+
     # Mini App (static)
     location / {
         root /opt/deadwill/src/miniapp/dist;
         index index.html;
         try_files $uri $uri/ /index.html;
         add_header Cache-Control "no-cache";
+        # nginx НЕ наследует серверные add_header при наличии локального —
+        # поэтому security-заголовки повторяем здесь (иначе HTML без защиты).
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://t.me; connect-src 'self'; frame-ancestors https://web.telegram.org https://*.telegram.org;" always;
     }
 
     # API
