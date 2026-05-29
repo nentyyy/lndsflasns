@@ -11,7 +11,7 @@ import { validate, armSchema, revealSchema, depositSchema, pvpBuySchema } from '
 import { armRound, revealRound, GameError } from './lib/game.js';
 import { InsufficientFunds } from './lib/wallet.js';
 import { createStarsDeposit, createStarsDepositCustom } from './lib/payments/stars.js';
-import { createTonDeposit, createSendDeposit, startTonPoller } from './lib/payments/ton.js';
+import { createTonDeposit, createTonDepositCustom, createSendDeposit, startTonPoller } from './lib/payments/ton.js';
 import { createCryptobotDeposit } from './lib/payments/cryptobot.js';
 import { getReferralView, bindReferrer, makeRefCode, claimReferralPending } from './lib/referral.js';
 import { getTournamentView, ensureActiveTournament } from './lib/tournaments.js';
@@ -311,6 +311,22 @@ app.post('/api/deposits/stars',
       res.json({ method: 'stars', ...out });
     } catch (e) {
       if (/limit|min/.test(e.message)) return res.status(400).json({ error: e.message });
+      next(e);
+    }
+  }
+);
+
+// Динамический TON-депозит: { coins } (>=1), через TonConnect.
+app.post('/api/deposits/ton',
+  rateLimit({ bucket: 'deposit', max: 20, windowMs: 60_000 }),
+  async (req, res, next) => {
+    try {
+      const coins = Number(req.body?.coins);
+      if (!Number.isInteger(coins) || coins < 1) return res.status(400).json({ error: 'min_1_coin' });
+      const out = await createTonDepositCustom(req.user.id, coins);
+      res.json({ method: 'ton', ...out });
+    } catch (e) {
+      if (e.userMessage) return res.status(400).json({ error: e.message, detail: e.userMessage });
       next(e);
     }
   }

@@ -234,12 +234,11 @@ function App() {
           }
         };
       });
-      const freeMsg = s.freeTillNext > 0 ? ` · ещё ${s.freeTillNext} до бесплатного` : '';
       notify(
-        s.wasFree && !s.welcomeApplied ? `Бесплатная карта!${freeMsg}` :
-        s.welcomeApplied ? `Приветственная карта${freeMsg}` :
-        s.usedTicket    ? `Сжёг билет${freeMsg}` :
-        `Карта ${cardIndex + 1} запечатана${freeMsg}`,
+        s.wasFree && !s.welcomeApplied ? 'Бесплатно!' :
+        s.welcomeApplied ? 'Приветственная' :
+        s.usedTicket    ? 'Билет сожжён' :
+        `Карта ${cardIndex + 1}`,
         s.wasFree ? 'success' : 'violet'
       );
       window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('medium');
@@ -408,6 +407,36 @@ function App() {
     } catch (e) {
       setPayPending(false);
       notify('Ошибка соединения', 'danger');
+    }
+  };
+
+  // Динамический TON-платёж на произвольное число монет (через TonConnect).
+  const handleTonCustom = async (coins) => {
+    if (!coins || coins < 1) { notify('Минимум 1 монета (0.1 TON)', 'danger'); return; }
+    setPayPending(true);
+    try {
+      const res = await api.createTonCustom(coins);
+      setPayPending(false);
+      if (!res.depositId) { notify('TON-кошелёк проекта не настроен', 'danger'); return; }
+      setTonIntent(res);
+      const pack = { coins: res.coins, bonus: res.bonus || 0 };
+      if (tonConnectUI && wallet) {
+        try {
+          await tonConnectUI.sendTransaction({
+            validUntil: Math.floor(Date.now() / 1000) + 600,
+            messages: [{ address: res.wallet, amount: String(res.amountNanoton), payload: encodeTonComment(res.comment) }]
+          });
+          notify('Транзакция отправлена · ждём подтверждения', 'violet');
+          pollDepositUntilPaid(res.depositId, pack);
+        } catch (e) {
+          notify('Подпись отменена. Используй реквизиты ниже', 'default');
+        }
+      } else {
+        notify('Подключи TON-кошелёк или используй реквизиты', 'default');
+      }
+    } catch (e) {
+      setPayPending(false);
+      notify(e.data?.detail || 'Ошибка соединения', 'danger');
     }
   };
 
@@ -654,6 +683,8 @@ function App() {
               pvpTotalReveals={state.player.pvpTotalReveals || 0}
               pvpState={pvpState}
               pvpBuying={pvpBuying}
+              bestWin={state.player.bestWin || 0}
+              lastRoundWin={liveWins[0]?.amount || 0}
               onArmRound={armRound}
               onPickClause={playRound}
               onResetRound={resetRound}
@@ -734,6 +765,7 @@ function App() {
           onStarsPay={handleStarsPay}
           onStarsCustom={handleStarsCustom}
           onTonPay={handleTonPay}
+          onTonCustom={handleTonCustom}
           payPending={payPending}
           tonWallet={tonWallet}
           tonIntent={tonIntent}
@@ -1096,7 +1128,7 @@ function PvpCard({ card, idx, settled, pvpBuying, lowBalance, onBuyPvpCard, onOp
   );
 }
 
-function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvpTotalReveals, onBuyPvpCard, onOpenDeposit, onOpenPlayerProfile }) {
+function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvpTotalReveals, bestWin = 0, lastRoundWin = 0, onBuyPvpCard, onOpenDeposit, onOpenPlayerProfile }) {
   const [tick, setTick] = useState(0);
   const [shuffling, setShuffling] = useState(false);
   const prevStatus = React.useRef(null);
@@ -1147,13 +1179,17 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
 
   return (
     <>
-      <div className="dw-pvp-header">
-        <div className="dw-pvp-header-left">
-          <strong>ПВП</strong>
-          <span>{settled ? 'Раунд завершён' : idle ? 'Ожидание игроков' : 'Раунд идёт'}</span>
+      <div className="dw-pvp-header dw-pvp-header--3col">
+        <div className="dw-pvp-stat">
+          <span>Лучший</span>
+          <strong>{formatCoins(bestWin)}</strong>
         </div>
         <div className={`dw-pvp-timer ${urgent ? 'urgent' : idle || settled ? 'idle' : ''}`}>
           {settled ? '00' : timer ?? '35'}<span style={{ fontSize: 11, marginLeft: 4, opacity: 0.7 }}>с</span>
+        </div>
+        <div className="dw-pvp-stat dw-pvp-stat--right">
+          <span>Прошлый раунд</span>
+          <strong>{formatCoins(lastRoundWin)}</strong>
         </div>
       </div>
 
@@ -1553,13 +1589,16 @@ function ReferralTab({ referral, player, onCopy, onShare, onClaimReward, onBack,
 
 function ShopTab({ shop, player, onBuyNft, portalsGifts }) {
   const [nftRarity, setNftRarity] = useState('all');
+  const [sortDir, setSortDir] = useState('asc'); // по возрастанию по умолчанию
 
   // ТОЛЬКО серверный каталог (цены и список — из БД). Никакого статичного
   // fallback: иначе при сбое bootstrap показались бы чужие подарки/цены.
   const catalog = portalsGifts || [];
-  const filteredGifts = nftRarity === 'all'
+  const filtered = nftRarity === 'all'
     ? catalog
     : catalog.filter((g) => g.rarity === nftRarity);
+  const filteredGifts = [...filtered].sort((a, b) =>
+    sortDir === 'asc' ? a.priceCoins - b.priceCoins : b.priceCoins - a.priceCoins);
 
   return (
     <section className="dw-page dw-shop-page">
@@ -1576,6 +1615,11 @@ function ShopTab({ shop, player, onBuyNft, portalsGifts }) {
             {r === 'all' ? 'Все' : r}
           </button>
         ))}
+      </div>
+      <div className="dw-sort-row">
+        <span>Цена</span>
+        <button className={`dw-sort-arrow ${sortDir === 'asc' ? 'active' : ''}`} onClick={() => setSortDir('asc')} title="по возрастанию">↑</button>
+        <button className={`dw-sort-arrow ${sortDir === 'desc' ? 'active' : ''}`} onClick={() => setSortDir('desc')} title="по убыванию">↓</button>
       </div>
       {catalog.length === 0 && (
         <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: '24px 0', fontSize: 14 }}>
@@ -2144,7 +2188,7 @@ function SendDeposit({ onPaid, onNotify }) {
 
 /* ─── Deposit sheet — монеты / карты ─────────────────────── */
 
-function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, tonPacks, onStarsPay, onStarsCustom, onTonPay, payPending, tonWallet, tonIntent, onConnectTon, onClose, ticketPacks, onBuyTickets, player, onSendPaid, notify }) {
+function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, tonPacks, onStarsPay, onStarsCustom, onTonPay, onTonCustom, payPending, tonWallet, tonIntent, onConnectTon, onClose, ticketPacks, onBuyTickets, player, onSendPaid, notify }) {
   const [coins, setCoins] = React.useState('');
   const coinsNum = Math.max(0, parseInt(coins) || 0);
   const starsForCoins = coinsNum * 20;
@@ -2156,7 +2200,7 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
   };
   const handleBuyCoinsTon = () => {
     if (!coinsNum) return;
-    onTonPay({ id:'custom', nanoton:Math.round(coinsNum*0.1*1e9), coins:coinsNum, bonus:0, title:coinsNum+' монет' });
+    onTonCustom(coinsNum); // динамическая сумма TON через TonConnect
   };
 
   const cheapPacks = ticketPacks?.cheap || [];
@@ -2330,7 +2374,7 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
         transition={{ duration: 0.35, ease: [0.32, 0, 0, 1] }}>
 
         <div className="dw-round-result-header">
-          <h2>Раунд завершён</h2>
+          <h2>{result?.lobby?.gameNum ? `Раунд #${result.lobby.gameNum} завершён` : 'Раунд завершён'}</h2>
           <button className="dw-icon-btn" onClick={onClose}>×</button>
         </div>
 

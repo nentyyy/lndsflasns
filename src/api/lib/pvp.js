@@ -39,6 +39,8 @@ async function createLobby(mode) {
   const ttlMs = 30_000 + Math.floor(rng() * 10_001);
 
   await db.transaction(async (trx) => {
+    const maxRow = await trx('pvp_lobbies').max('round_number as m').first();
+    const roundNumber = (Number(maxRow?.m) || 0) + 1;
     await trx('pvp_lobbies').insert({
       id: lobbyId,
       mode,
@@ -47,7 +49,8 @@ async function createLobby(mode) {
       status: 'open',
       server_seed: serverSeed,
       server_seed_hash: serverSeedHash,
-      ttl_ms: ttlMs
+      ttl_ms: ttlMs,
+      round_number: roundNumber
     });
     const rows = shuffled.map((o, i) => ({
       lobby_id: lobbyId,
@@ -348,8 +351,8 @@ async function viewLobby(lobby, userId, allRevealed) {
     };
   });
 
-  // Порядковый номер лобби (последние 4 символа uuid в hex → число)
-  const gameNum = parseInt(lobby.id.replace(/-/g, '').slice(-6), 16) % 100000;
+  // Сквозной порядковый номер раунда (глобальный счётчик, не сбрасывается).
+  const gameNum = lobby.round_number || null;
 
   return {
     lobby: {

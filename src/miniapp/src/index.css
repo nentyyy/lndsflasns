@@ -1000,6 +1000,18 @@ h2, .dw-panel h2 {
     linear-gradient(180deg, var(--surface) 0%, var(--ink-2) 100%);
 }
 
+/* 3-колоночная шапка: лучший | таймер | прошлый раунд */
+.dw-pvp-header--3col { justify-content: space-between; }
+.dw-pvp-stat { display: flex; flex-direction: column; gap: 2px; min-width: 76px; }
+.dw-pvp-stat--right { align-items: flex-end; text-align: right; }
+.dw-pvp-stat span {
+  font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--bone-soft);
+}
+.dw-pvp-stat strong {
+  font-family: var(--font-display); font-size: 16px; color: var(--gold);
+}
+
 .dw-pvp-header-left { display: flex; flex-direction: column; gap: 2px; }
 .dw-pvp-header-left strong {
   font-family: var(--font-display);
@@ -3169,6 +3181,18 @@ html, body { font-size: 16px; }
 .dw-lb-stats { display: flex; flex-direction: column; align-items: flex-end; }
 .dw-lb-stats strong { font-size: 15px; font-family: var(--font-display); }
 .dw-lb-stats small { font-size: 11px; color: var(--bone-soft); }
+
+/* ─── Shop sort arrows ─────────────────────────────────────── */
+.dw-sort-row {
+  display: flex; align-items: center; gap: 6px;
+  margin: 0 0 10px; font-size: 12px; color: var(--bone-soft);
+}
+.dw-sort-arrow {
+  width: 26px; height: 26px; border-radius: 8px;
+  border: 1px solid var(--gold-line); background: var(--surface-2);
+  color: var(--bone-soft); cursor: pointer; font-size: 14px; line-height: 1;
+}
+.dw-sort-arrow.active { color: var(--gold); border-color: var(--gold); }
 
 /* ─── @send deposit ────────────────────────────────────────── */
 .dw-send-wait { padding: 4px 0; }

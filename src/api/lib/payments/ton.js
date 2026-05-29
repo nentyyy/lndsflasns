@@ -48,6 +48,42 @@ export async function createTonDeposit(userId, packId) {
 const SEND_TTL_MS = 30 * 60 * 1000; // 30 минут
 const MIN_TON = 0.5;                 // минимум 0.5 TON = 5 монет
 
+// Динамический TON-депозит произвольной суммы монет (через TonConnect).
+// comment = depositId; poller матчит по нему. Цена считается на сервере.
+export async function createTonDepositCustom(userId, coinsRaw) {
+  if (!env.PROJECT_TON_WALLET) {
+    const err = new Error('ton_wallet_not_configured');
+    err.userMessage = 'TON-кошелёк проекта не настроен';
+    throw err;
+  }
+  const coins = Math.floor(Number(coinsRaw));
+  if (!Number.isInteger(coins) || coins < 1) {
+    const err = new Error('min_1_coin');
+    err.userMessage = 'Минимум 1 монета (0.1 TON)';
+    throw err;
+  }
+  const nanoton = coins * 100_000_000; // 1 монета = 0.1 TON = 1e8 нанотон
+  const depositId = randomUUID();
+  const player = await db('players').where({ user_id: userId }).first();
+  const isFirst = !player?.first_deposit_done;
+  const firstBonus = isFirst ? Math.floor(coins * FIRST_DEPOSIT_BONUS_PCT) : 0;
+
+  await db('deposits').insert({
+    id: depositId, user_id: userId, method: 'ton', pack_id: 'custom',
+    status: 'pending', coins, bonus: firstBonus, currency: 'TON',
+    expected_amount: nanoton, ton_comment: depositId
+  });
+
+  return {
+    depositId,
+    wallet: env.PROJECT_TON_WALLET,
+    amountNanoton: nanoton,
+    amountTon: coins * 0.1,
+    comment: depositId,
+    coins, bonus: firstBonus
+  };
+}
+
 // @send-депозит произвольной суммой: 6-значный memo + таймер 30 мин.
 // Монеты = TON / 0.1. Цена/конвертация считаются на сервере.
 export async function createSendDeposit(userId, amountTonRaw) {

@@ -165,6 +165,7 @@ export async function migrate() {
       t.string('server_seed').notNullable();
       t.string('server_seed_hash').notNullable();
       t.integer('ttl_ms').notNullable().defaultTo(35000);
+      t.integer('round_number').nullable();
       t.timestamp('opened_at').nullable();
       t.timestamp('ends_at').nullable();
       t.timestamp('settled_at').nullable();
@@ -173,6 +174,7 @@ export async function migrate() {
   } else {
     const lobbyCols = await db('pvp_lobbies').columnInfo();
     if (!lobbyCols.ttl_ms) await db.schema.alterTable('pvp_lobbies', (t) => t.integer('ttl_ms').notNullable().defaultTo(35000));
+    if (!lobbyCols.round_number) await db.schema.alterTable('pvp_lobbies', (t) => t.integer('round_number').nullable());
   }
 
   if (!(await db.schema.hasTable('pvp_cards'))) {

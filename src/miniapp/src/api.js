@@ -122,6 +122,7 @@ export const api = {
   reveal: (roundId, clauseIndex) => request('/api/rounds/reveal', { method: 'POST', body: { roundId, clauseIndex } }),
   createDeposit: (method, packId) => request('/api/deposits', { method: 'POST', body: { method, packId } }),
   createStarsCustom: (coins) => request('/api/deposits/stars', { method: 'POST', body: { coins } }),
+  createTonCustom: (coins) => request('/api/deposits/ton', { method: 'POST', body: { coins } }),
   createSendDeposit: (amountTon) => request('/api/deposits/create', { method: 'POST', body: { amountTon } }),
   depositStatus: (id) => request(`/api/deposits/${id}`),
   history: () => request('/api/history'),
