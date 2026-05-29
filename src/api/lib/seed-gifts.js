@@ -50,7 +50,11 @@ function rarityFor(coins) {
 }
 
 // Идемпотентный upsert: обновляет цены, не трогает stock/available вручную.
+// Пропускаем, если каталог уже полностью засижен — чтобы не устраивать
+// write-burst при каждом старте (API и bot оба зовут migrate()).
 export async function seedGifts() {
+  const { n } = await db('portals_cache').count('* as n').first().catch(() => ({ n: 0 }));
+  if (Number(n) >= GIFTS.length) return 0;
   for (const [name, priceCoins] of GIFTS) {
     const id = slugify(name);
     const priceTon = Math.round(priceCoins * 0.1 * 1000) / 1000;

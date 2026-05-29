@@ -22,9 +22,12 @@ export const db = usePg
       pool: {
         // SQLite is single-writer; serialize and wait instead of failing on lock.
         afterCreate: (conn, done) => {
+          // WAL + щедрый busy_timeout: API и bot — два процесса на одном файле.
           conn.run('PRAGMA journal_mode = WAL;', () =>
             conn.run('PRAGMA foreign_keys = ON;', () =>
-              conn.run('PRAGMA busy_timeout = 5000;', done)
+              conn.run('PRAGMA busy_timeout = 15000;', () =>
+                conn.run('PRAGMA synchronous = NORMAL;', done)
+              )
             )
           );
         }
