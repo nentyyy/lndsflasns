@@ -41,7 +41,12 @@ export async function listRounds({ limit = 20, offset = 0, sort = 'all' } = {}) 
     };
   });
 
-  rounds.sort((x, y) => (sort === 'best' ? y.topPrize - x.topPrize : y.roundNumber - x.roundNumber));
+  // ALL — по убыванию номера (свежие сверху). BEST — по убыванию приза,
+  // при равном призе свежие выше.
+  rounds.sort((x, y) =>
+    sort === 'best'
+      ? (y.topPrize - x.topPrize) || (y.roundNumber - x.roundNumber)
+      : (y.roundNumber - x.roundNumber));
   const total = rounds.length;
   const page = rounds.slice(offset, offset + limit);
 
