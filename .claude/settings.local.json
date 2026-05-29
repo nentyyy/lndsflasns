@@ -34,7 +34,10 @@
       "Bash(node -e ' *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\pypsi\\\\Downloads\\\\dead wiil\\\\src\\\\miniapp\\\\src\" -Recurse -Filter \"*.jsx\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object FullName)",
+      "Bash(node --input-type=commonjs -e ' *)"
     ]
   }
 }

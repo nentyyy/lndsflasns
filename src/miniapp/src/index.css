@@ -2997,6 +2997,162 @@ html, body { font-size: 16px; }
 .dw-manual-input:focus { border-color: var(--gold-line); }
 .dw-manual-input::placeholder { color: var(--ash); font-size: 16px; font-weight: 400; }
 
+/* ─── Deposit: монеты / курс ─────────────────────────────────── */
+.dw-deposit-choice--gold { border-color: var(--gold-line); }
+.dw-deposit-choice--gold .dw-deposit-choice-icon { font-size: 28px; }
+
+.dw-rate-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--gold);
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--gold-faint);
+}
+.dw-rate-eq { color: var(--bone-soft); font-size: 12px; }
+
+.dw-coins-input-wrap { margin-bottom: 16px; }
+.dw-coins-input {
+  width: 100%;
+  padding: 18px;
+  font-size: 24px;
+  font-weight: 800;
+  font-family: var(--font-display);
+  color: var(--gold-bright);
+  background: var(--surface-2);
+  border: 1px solid var(--gold-line);
+  border-radius: 14px;
+  outline: none;
+  text-align: center;
+  box-sizing: border-box;
+  letter-spacing: 0.08em;
+}
+.dw-coins-input::placeholder { color: var(--ash); font-size: 16px; font-weight: 400; font-family: var(--font-sans); letter-spacing: 0; }
+.dw-coins-input:focus { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold-faint); }
+
+.dw-coins-preview {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--bone-soft);
+}
+
+.dw-coins-pay-btns { display: flex; gap: 10px; margin-bottom: 16px; }
+.dw-coins-pay-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vellum);
+  transition: border-color 0.15s, background 0.15s;
+}
+.dw-coins-pay-btn:disabled { opacity: 0.4; cursor: default; }
+.dw-coins-pay-btn--stars:not(:disabled):active { background: rgba(212,175,55,0.1); border-color: var(--gold-line); }
+.dw-coins-pay-btn--ton:not(:disabled):active { background: rgba(141,118,214,0.1); border-color: rgba(141,118,214,0.4); }
+.dw-coins-pay-amt { font-size: 13px; color: var(--gold); font-weight: 800; font-family: var(--font-display); }
+
+.dw-deposit-divider {
+  position: relative;
+  text-align: center;
+  margin: 12px 0;
+}
+.dw-deposit-divider::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; top: 50%;
+  height: 1px;
+  background: var(--border);
+}
+.dw-deposit-divider span {
+  position: relative;
+  background: var(--surface);
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--bone-soft);
+  letter-spacing: 0.08em;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+}
+
+.dw-cards-section-head {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+/* ─── PvP Round Result Modal ─────────────────────────────────── */
+.dw-round-result {
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  padding: 20px 16px calc(24px + env(safe-area-inset-bottom));
+  max-height: 85vh;
+  overflow-y: auto;
+  border-top: 1px solid var(--gold-line);
+}
+
+.dw-round-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.dw-round-result-header h2 { font-size: 20px; font-family: var(--font-display); color: var(--gold-bright); letter-spacing: 0.1em; }
+
+.dw-round-my-result {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 14px;
+  margin-bottom: 16px;
+}
+.dw-round-my-result.win { background: rgba(74,138,94,0.15); border: 1px solid rgba(109,190,136,0.3); }
+.dw-round-my-result.lose { background: var(--surface-2); border: 1px solid var(--border); }
+.dw-round-my-result strong { font-size: 17px; display: block; }
+.dw-round-my-result p { font-size: 13px; color: var(--bone-soft); margin: 3px 0 0; }
+.dw-round-result-emoji { font-size: 32px; flex-shrink: 0; }
+
+.dw-round-section { margin-bottom: 14px; }
+.dw-round-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.dw-round-row:last-child { border-bottom: none; }
+.dw-round-row-avatar {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gold);
+  flex-shrink: 0;
+  font-family: var(--font-display);
+}
+.dw-round-row-name { flex: 1; font-size: 14px; }
+.dw-round-row-prize { font-size: 15px; font-weight: 800; font-family: var(--font-display); }
+
 /* ─── PvP 36-card live round ────────────────────────────────── */
 
 .dw-pvp-grid-36 {
