@@ -128,6 +128,7 @@ function App() {
   const [pvpShuffling, setPvpShuffling] = useState(false);
   const [portalsGifts, setPortalsGifts] = useState([]);
   const [roundsOpen, setRoundsOpen] = useState(false);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
   const [authError, setAuthError] = useState(false);
 
   // Real TON Connect
@@ -170,6 +171,17 @@ function App() {
       .finally(() => setBootReady(true));
   }, []);
 
+  // Автопоказ туториала новичку — один раз.
+  useEffect(() => {
+    if (!bootReady) return;
+    let seen = false;
+    try { seen = localStorage.getItem('dw_tut_seen') === '1'; } catch {}
+    if (state.player?.welcomeAvailable && !seen) {
+      setTutorialOpen(true);
+      try { localStorage.setItem('dw_tut_seen', '1'); } catch {}
+    }
+  }, [bootReady, state.player?.welcomeAvailable]);
+
   // Polling PvP лобби пока пользователь на Will/pvp.
   useEffect(() => {
     let cancelled = false;
@@ -183,10 +195,11 @@ function App() {
           // Раунд только что завершился — авто-показ итогов через 1с
           // (только если игрок участвовал — иначе модал не нужен).
           if (prevStatus === 'open' && s?.lobby?.status === 'settled') {
-            // Динамическое обновление баланса сразу по завершении раунда.
+            // Динамика по завершении раунда: баланс + лента победителей (для «Прошлый раунд»).
             api.me().then((m) => {
               if (!cancelled && m?.player) setState((c) => ({ ...c, player: { ...c.player, ...m.player } }));
             }).catch(() => {});
+            api.liveFeed().then((f) => { if (!cancelled && Array.isArray(f?.feed || f)) setLiveWins(f.feed || f); }).catch(() => {});
             if ((s.cards || []).some((c) => c.mine)) {
               setTimeout(() => { if (!cancelled) setPvpRoundResult(s); }, 1000);
             }
@@ -543,9 +556,13 @@ function App() {
       });
       setRoundId(out.roundId);
       setRoundArmed(true);
-      notify(out.usedTicket ? 'Сжёг премиум-карту' : 'Завещание запечатано', 'violet');
+      notify('Премиум-карта сожжена', 'violet');
     } catch (e) {
-      if (e.message === 'insufficient_balance') notify('Недостаточно монет для входа', 'danger');
+      if (e.message === 'need_card') {
+        notify('Нужна премиум-карта — купи карты', 'violet');
+        setDepositOpen(true); setDepositView('cards'); setTonIntent(null);
+      }
+      else if (e.message === 'insufficient_balance') notify('Недостаточно монет', 'danger');
       else notify('Ошибка сети', 'danger');
     }
   };
@@ -697,7 +714,7 @@ function App() {
 
       <div className="dw-phone-shell">
         <main className="dw-app">
-          <TopBar player={state.player} tonWallet={tonWallet} onOpenDeposit={() => { setDepositOpen(true); setDepositView('main'); setTonIntent(null); }} />
+          <TopBar player={state.player} tonWallet={tonWallet} onOpenDeposit={() => { setDepositOpen(true); setDepositView('main'); setTonIntent(null); }} onOpenTutorial={() => setTutorialOpen(true)} />
 
           {tab === 'play' && (
             <WillTab
@@ -822,6 +839,15 @@ function App() {
         <RoundsHistory myId={state.player.id} onClose={() => setRoundsOpen(false)} />
       )}
 
+      {tutorialOpen && (
+        <Tutorial
+          isNew={Boolean(state.player.welcomeAvailable)}
+          onNavigate={(t) => { setTab(t); setWillView('pvp'); }}
+          onPlayFree={() => { setTutorialOpen(false); setTab('play'); setWillView('pvp'); notify('Открой любую карту — первая бесплатно!', 'success'); }}
+          onClose={() => setTutorialOpen(false)}
+        />
+      )}
+
       {pvpRoundResult && (
         <PvpRoundResultModal
           result={pvpRoundResult}
@@ -857,9 +883,64 @@ function App() {
   );
 }
 
+/* ─── Туториал для новичков ───────────────────────────────── */
+
+const TUTORIAL_STEPS = [
+  { tab: 'play', icon: '🎴', title: 'ИГРА', text: 'Выбирай карту в живом PvP-раунде или премиум-завещании. Каждые 10 открытий — одно бесплатное!' },
+  { tab: 'shop', icon: '🏦', title: 'СЕЙФ', text: 'Пополняй баланс через Stars или TON и покупай карты — без них в раундах не сыграть.' },
+  { tab: 'profile', icon: '👤', title: 'ПРОФИЛЬ', text: 'Тут твоя статистика, кланы и рефералка — зови друзей и получай 10% с их пополнений.' }
+];
+
+function Tutorial({ isNew, onNavigate, onPlayFree, onClose }) {
+  const [step, setStep] = useState(0);
+  const total = TUTORIAL_STEPS.length;
+  const last = step >= total;
+
+  useEffect(() => {
+    if (!last) onNavigate(TUTORIAL_STEPS[step].tab);
+  }, [step]);
+
+  const s = TUTORIAL_STEPS[step];
+
+  return (
+    <motion.div className="dw-sheet-backdrop dw-tut-backdrop" onClick={onClose}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
+      <motion.div className="dw-tut-card" onClick={(e) => e.stopPropagation()}
+        initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.3 }}>
+        <button className="dw-icon-btn dw-tut-close" onClick={onClose}>×</button>
+
+        {!last ? (
+          <>
+            <div className="dw-tut-icon">{s.icon}</div>
+            <h2 className="dw-tut-title">{s.title}</h2>
+            <p className="dw-tut-text">{s.text}</p>
+            <div className="dw-tut-dots">
+              {TUTORIAL_STEPS.map((_, i) => <span key={i} className={`dw-tut-dot ${i === step ? 'active' : ''}`} />)}
+            </div>
+            <button className="dw-btn primary full" onClick={() => setStep(step + 1)}>Далее ›</button>
+          </>
+        ) : (
+          <>
+            <div className="dw-tut-icon">{isNew ? '🎁' : '✨'}</div>
+            <h2 className="dw-tut-title">{isNew ? 'Первая ставка — бесплатно!' : 'Готово!'}</h2>
+            <p className="dw-tut-text">
+              {isNew
+                ? 'Открой любую карту в PvP-раунде — первая попытка ничего не стоит. Удачи!'
+                : 'Теперь ты знаешь, как играть. Удачи в раундах!'}
+            </p>
+            {isNew
+              ? <button className="dw-btn primary full" onClick={onPlayFree}>Сделать бесплатную ставку</button>
+              : <button className="dw-btn primary full" onClick={onClose}>Понятно</button>}
+          </>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
 /* ─── Top bar ─────────────────────────────────────────────── */
 
-function TopBar({ player, tonWallet, onOpenDeposit }) {
+function TopBar({ player, tonWallet, onOpenDeposit, onOpenTutorial }) {
   const u = userDisplay(player);
   return (
     <motion.header className="dw-topbar"
@@ -885,6 +966,7 @@ function TopBar({ player, tonWallet, onOpenDeposit }) {
           )}
         </div>
       </div>
+      <button className="dw-help-btn" onClick={onOpenTutorial} aria-label="Как играть">?</button>
       <button className="dw-balance-pill" onClick={onOpenDeposit}>
         <span className="dw-coin-dot" />
         <strong className="dw-balance-num">{formatCoins(player.coins)}</strong>
@@ -1299,9 +1381,6 @@ function SoloPanel({
   onArmRound, onPickClause, onResetRound, onOpenDeposit
 }) {
   const hasTicket = (tickets?.premium || 0) > 0;
-  const entry = mode?.entryCoins ?? 150;
-  const cost = hasTicket ? 0 : entry;
-  const lowBalance = balance < cost;
 
   return (
     <>
@@ -1334,18 +1413,16 @@ function SoloPanel({
 
       <div className="dw-play-action">
         <p className="dw-play-meta-line">
-          {formatCoins(balance)} монет · вход {hasTicket
-            ? <span className="gold">1 карта</span>
-            : <span className="gold">{formatCoins(entry)}</span>}
+          вход · <span className="gold">премиум-карта</span>
           {hasTicket && <span className="dw-ticket-pill" style={{ marginLeft: 8 }}>{tickets.premium} в инвентаре</span>}
         </p>
         {roundArmed ? (
           <p className="dw-play-hint">выбери одну из пяти</p>
-        ) : lowBalance ? (
-          <button className="dw-btn ghost full" onClick={onOpenDeposit}>пополнить · недостаточно монет</button>
+        ) : !hasTicket ? (
+          <button className="dw-btn primary full" onClick={onOpenDeposit}>Купить премиум-карты</button>
         ) : (
           <button className="dw-btn primary full" onClick={onArmRound} disabled={revealing || Boolean(result)}>
-            запечатать · {hasTicket ? 'сжечь карту' : formatCoins(entry)}
+            запечатать · сжечь карту
           </button>
         )}
         {(result || roundArmed) && (
@@ -2010,18 +2087,11 @@ function PersonalStats({ player }) {
   const winRate = roundsPlayed > 0 ? Math.round((wins / roundsPlayed) * 100) : 0;
   return (
     <article className="dw-panel" style={{ marginBottom: 12 }}>
-      <div className="dw-panel-head" style={{ marginBottom: 12 }}><h2>Статистика</h2></div>
-      <div className="dw-stats-row" style={{ marginBottom: 10 }}>
+      <div className="dw-stats-row">
         <div className="dw-stat-cell"><span>раундов</span><strong>{formatCoins(roundsPlayed)}</strong></div>
         <div className="dw-stat-cell"><span>побед</span><strong>{formatCoins(wins)}</strong></div>
-        <div className="dw-stat-cell"><span>поражений</span><strong>{formatCoins(losses)}</strong></div>
         <div className="dw-stat-cell accent"><span>winrate</span><strong>{winRate}%</strong></div>
-      </div>
-      <div className="dw-stats-row">
-        <div className="dw-stat-cell"><span>выиграно</span><strong>{formatCompact(totalWon)}</strong></div>
-        <div className="dw-stat-cell"><span>потрачено</span><strong>{formatCompact(totalSpent)}</strong></div>
         <div className="dw-stat-cell accent"><span>рекорд</span><strong>{formatCompact(bestWin)}</strong></div>
-        <div className="dw-stat-cell"><span>любимый</span><strong style={{ fontSize: 12 }}>{favoriteGift || '—'}</strong></div>
       </div>
     </article>
   );
@@ -2394,21 +2464,6 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
               </button>
             </div>
 
-            {/* Отдельная плашка карт рядом с монетами */}
-            <div className="dw-card-panel">
-              <div className="dw-card-panel-head">
-                <span>🎴 PvP карты</span>
-                <span className="dw-kicker">5 монет / шт</span>
-              </div>
-              <div className="dw-card-buy-row">
-                <input className="dw-coins-input" type="number" min="1" placeholder="Сколько карт?"
-                  value={cheapCards} onChange={(e) => setCheapCards(e.target.value)} />
-                <button className="dw-btn primary" disabled={!cheapN || (player?.coins || 0) < cheapN * 5}
-                  onClick={() => onBuyCardsCount('cheap', cheapN)}>
-                  {cheapN ? `Купить · ${formatCoins(cheapN * 5)}` : 'Купить'}
-                </button>
-              </div>
-            </div>
           </div>
         )}
 

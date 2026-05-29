@@ -30,23 +30,16 @@ export async function armRound(userId, modeId, clientSeed, idempotencyKey) {
       }
     }
 
-    // Сначала пробуем потратить premium-билет, если есть.
-    let entryCost = 0;
+    // Премиум играется ТОЛЬКО премиум-картами (не монетами).
+    // Нет карты → 'need_card' (фронт перекинет в покупку карт).
+    const entryCost = 0;
     let usedTicket = false;
-    if (mode.id === 'premium' && await consumeTicket(trx, userId, 'premium')) {
+    if (await consumeTicket(trx, userId, 'premium')) {
       usedTicket = true;
     } else {
-      entryCost = mode.entryCoins;
+      throw new GameError('need_card', 402);
     }
-
-    let balance;
-    if (entryCost > 0) {
-      balance = await debit(trx, userId, entryCost, 'bet', `bet:${idempotencyKey || randomUUID()}`);
-      await trx('players').where({ user_id: userId }).update({ coins_spent: trx.raw('coins_spent + ?', [entryCost]) });
-    } else {
-      const row = await trx('players').where({ user_id: userId }).first('balance');
-      balance = row.balance;
-    }
+    const { balance } = await trx('players').where({ user_id: userId }).first('balance');
 
     const { serverSeed, serverSeedHash } = createServerSeed();
     await trx('players').where({ user_id: userId }).update({ nonce: trx.raw('nonce + 1') });
