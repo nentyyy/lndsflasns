@@ -33,6 +33,39 @@ const GIFTS = [
   ['Witch Hat', 36], ['Xmas Stocking', 21]
 ];
 
+// Имя → реальный файл картинки (ассеты называются gift-NNN.png, не slug.png).
+// Маппинг взят из gifts-catalog.js (где имена уже привязаны к файлам).
+const FILE_BY_NAME = {
+  'Cookie Heart': 'gift-144.png', 'Crystal Ball': 'gift-046.png', 'Cupid Charm': 'gift-168.png',
+  'Diamond Ring': 'gift-169.png', "Durov's Cap": 'gift-089.png', 'Easter Egg': 'gift-249.png',
+  'Electric Skull': 'gift-067.png', 'Eternal Candle': 'gift-030.png', 'Eternal Rose': 'gift-085.png',
+  'Evil Eye': 'gift-063.png', 'Faith Amulet': 'gift-228.png', 'Flying Broom': 'gift-045.png',
+  'Fresh Socks': 'gift-190.png', 'Gem Signet': 'gift-083.png', 'Genie Lamp': 'gift-107.png',
+  'Ginger Cookie': 'gift-129.png', 'Hanging Star': 'gift-090.png', 'Happy Brownie': 'gift-230.png',
+  'Heart Locket': 'gift-164.png', 'Hex Pot': 'gift-064.png', 'Holiday Drink': 'gift-131.png',
+  'Homemade Cake': 'gift-005.png', 'Hypno Lollipop': 'gift-065.png', 'Ice Cream': 'gift-265.png',
+  'Input Key': 'gift-188.png', 'Instant Ramen': 'gift-229.png', 'Ion Gem': 'gift-051.png',
+  'Ionic Dryer': 'gift-223.png', 'Jack-in-the-Box': 'gift-243.png', 'Jelly Bunny': 'gift-091.png',
+  'Jester Hat': 'gift-123.png', 'Jolly Chimp': 'gift-231.png', 'Joyful Bundle': 'gift-185.png',
+  "Khabib's Papakha": 'gift-326.png', 'Kissed Frog': 'gift-066.png', 'Light Sword': 'gift-191.png',
+  'Lol Pop': 'gift-026.png', 'Loot Bag': 'gift-166.png', 'Love Candle': 'gift-088.png',
+  'Mousse Cake': 'gift-209.png', 'Nail Bracelet': 'gift-184.png', 'Neko Helmet': 'gift-224.png',
+  'Party Sparkler': 'gift-143.png', 'Perfume Bottle': 'gift-087.png', 'Pet Snake': 'gift-149.png',
+  'Plush Pepe': 'gift-104.png', 'Pool Float': 'gift-291.png', 'Precious Peach': 'gift-105.png',
+  'Pretty Posy': 'gift-208.png', 'Record Player': 'gift-069.png', 'Restless Jar': 'gift-167.png',
+  'Santa Hat': 'gift-127.png', 'Scared Cat': 'gift-043.png', 'Sharp Tongue': 'gift-001.png',
+  'Signet Ring': 'gift-108.png', 'Skull Flower': 'gift-002.png', 'Sky Stilettos': 'gift-165.png',
+  'Sleigh Bell': 'gift-124.png', 'Snake Box': 'gift-148.png', 'Snoop Cigar': 'gift-284.png',
+  'Snoop Dogg': 'gift-271.png', 'Snow Globe': 'gift-126.png', 'Snow Mittens': 'gift-125.png',
+  'Spiced Wine': 'gift-103.png', 'Spy Agaric': 'gift-029.png', 'Star Notepad': 'gift-111.png',
+  'Stellar Rocket': 'gift-245.png', 'Swag Bag': 'gift-283.png', 'Tama Gadget': 'gift-147.png',
+  'Timeless Book': 'gift-305.png', 'Top Hat': 'gift-204.png', 'Toy Bear': 'gift-170.png',
+  'Trapped Heart': 'gift-006.png', 'UFC Strike': 'gift-327.png', 'Valentine Box': 'gift-183.png',
+  'Vice Cream': 'gift-264.png', 'Vintage Cigar': 'gift-070.png', 'Voodoo Doll': 'gift-044.png',
+  'Westside Sign': 'gift-286.png', 'Whip Cupcake': 'gift-210.png', 'Winter Wreath': 'gift-128.png',
+  'Witch Hat': 'gift-031.png', 'Xmas Stocking': 'gift-145.png'
+};
+
 export function slugify(name) {
   return name
     .toLowerCase()
@@ -49,33 +82,24 @@ function rarityFor(coins) {
   return 'Common';
 }
 
-// Идемпотентный upsert: обновляет цены, не трогает stock/available вручную.
-// Пропускаем, если каталог уже полностью засижен — чтобы не устраивать
-// write-burst при каждом старте (API и bot оба зовут migrate()).
+// Идемпотентный upsert. Пропускаем, если каталог уже полностью засижен
+// И картинки уже привязаны к реальным файлам (self-healing: переседит один
+// раз после правки file-маппинга, потом скипает — без write-burst на каждый старт).
 export async function seedGifts() {
   const { n } = await db('portals_cache').count('* as n').first().catch(() => ({ n: 0 }));
-  if (Number(n) >= GIFTS.length) return 0;
+  const probe = await db('portals_cache').where({ id: 'plush-pepe' }).first().catch(() => null);
+  if (Number(n) >= GIFTS.length && probe && probe.file === FILE_BY_NAME['Plush Pepe']) return 0;
+
   for (const [name, priceCoins] of GIFTS) {
     const id = slugify(name);
     const priceTon = Math.round(priceCoins * 0.1 * 1000) / 1000;
-    const row = {
-      id,
-      name,
-      file: `${id}.png`,
-      rarity: rarityFor(priceCoins),
-      priceCoins,
-      priceTon,
-      stock: 999,
-      available: true,
-      updated_at: db.fn.now()
-    };
+    const file = FILE_BY_NAME[name] || 'gift-001.png';
+    const rarity = rarityFor(priceCoins);
     const exists = await db('portals_cache').where({ id }).first();
     if (exists) {
-      await db('portals_cache').where({ id }).update({
-        name, priceCoins, priceTon, rarity: row.rarity, updated_at: db.fn.now()
-      });
+      await db('portals_cache').where({ id }).update({ name, file, priceCoins, priceTon, rarity, updated_at: db.fn.now() });
     } else {
-      await db('portals_cache').insert(row);
+      await db('portals_cache').insert({ id, name, file, rarity, priceCoins, priceTon, stock: 999, available: true, updated_at: db.fn.now() });
     }
   }
   return GIFTS.length;
