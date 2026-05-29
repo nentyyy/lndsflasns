@@ -3,9 +3,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 
-dotenv.config();
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Всегда загружаем .env из корня проекта (два уровня вверх от lib/)
+dotenv.config({ path: path.join(__dirname, '..', '..', '..', '.env') });
 
 export const env = {
   PORT: Number(process.env.PORT || 3000),
