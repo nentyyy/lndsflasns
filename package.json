@@ -5,8 +5,9 @@
   "type": "module",
   "main": "src/api/index.js",
   "scripts": {
-    "dev": "concurrently \"npm run dev:bot\" \"npm run dev:miniapp\" \"npm run dev:api\"",
+    "dev": "concurrently \"npm run dev:bot\" \"npm run dev:support\" \"npm run dev:miniapp\" \"npm run dev:api\"",
     "dev:bot": "nodemon src/bot/index.js",
+    "dev:support": "nodemon src/support-bot/index.js",
     "dev:miniapp": "cd /d src\\miniapp && npm run dev",
     "dev:api": "nodemon src/api/index.js",
     "migrate": "node src/api/lib/migrate.js",

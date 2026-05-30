@@ -304,6 +304,30 @@ export async function migrate() {
     });
   }
 
+  // Поддержка: обращения игроков + переписка по обращению.
+  if (!(await db.schema.hasTable('support_tickets'))) {
+    await db.schema.createTable('support_tickets', (t) => {
+      t.increments('id').primary();
+      t.bigInteger('user_id').notNullable().index();
+      t.string('username').nullable();
+      t.string('category').notNullable();
+      t.string('priority').notNullable().defaultTo('normal'); // normal | urgent
+      t.string('status').notNullable().defaultTo('open');     // open | in_work | closed | cancelled
+      t.text('text').notNullable();
+      t.timestamp('created_at').defaultTo(db.fn.now());
+      t.timestamp('updated_at').defaultTo(db.fn.now());
+    });
+  }
+  if (!(await db.schema.hasTable('support_messages'))) {
+    await db.schema.createTable('support_messages', (t) => {
+      t.increments('id').primary();
+      t.integer('ticket_id').notNullable().index();
+      t.boolean('from_admin').notNullable().defaultTo(false);
+      t.text('text').notNullable();
+      t.timestamp('created_at').defaultTo(db.fn.now());
+    });
+  }
+
   // Каталог подарков с захардкоженными ценами (идемпотентный upsert).
   await seedGifts();
 }

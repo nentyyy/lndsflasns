@@ -1143,8 +1143,8 @@ h2, .dw-panel h2 {
 
 /* раскрытые карты */
 .dw-pvp-card.revealed { background: var(--surface-3); }
-.dw-pvp-card.revealed.win   { border-color: var(--gold); box-shadow: 0 0 14px rgba(212,175,55,0.35); }
-.dw-pvp-card.revealed.empty { border-color: var(--border-strong); opacity: 0.55; }
+.dw-pvp-card.revealed.win   { border-color: var(--gold); opacity: 1; box-shadow: 0 0 20px rgba(255,215,0,0.55); }
+.dw-pvp-card.revealed.empty { border-color: var(--border-strong); opacity: 0.15; box-shadow: none; }
 .dw-pvp-card.revealed.debt  { border-color: var(--crimson-line); box-shadow: 0 0 12px rgba(160,26,38,0.28); }
 
 .dw-pvp-card-stamp {
@@ -3148,10 +3148,23 @@ html, body { font-size: 16px; }
   border-radius: 14px;
   margin-bottom: 16px;
 }
-.dw-round-my-result.win { background: rgba(74,138,94,0.15); border: 1px solid rgba(109,190,136,0.3); }
-.dw-round-my-result.lose { background: var(--surface-2); border: 1px solid var(--border); }
+/* Выигрыш — тёмно-золотой фон, зелёный текст. Проигрыш — тёмно-красный, красный текст. */
+.dw-round-my-result.win {
+  background: linear-gradient(135deg, rgba(58,46,12,0.9), rgba(40,32,8,0.9));
+  border: 1px solid rgba(212,175,55,0.45);
+}
+.dw-round-my-result.win strong,
+.dw-round-my-result.win .dw-round-amount { color: #6dbe88; }
+.dw-round-my-result.lose {
+  background: linear-gradient(135deg, rgba(64,16,20,0.9), rgba(44,10,14,0.9));
+  border: 1px solid rgba(160,26,38,0.5);
+}
+.dw-round-my-result.lose strong,
+.dw-round-my-result.lose .dw-round-amount { color: var(--crimson-glow, #e0606c); }
 .dw-round-my-result strong { font-size: 17px; display: block; }
 .dw-round-my-result p { font-size: 13px; color: var(--bone-soft); margin: 3px 0 0; }
+.dw-round-amount { display: inline-block; font-size: 16px; font-weight: 800; font-family: var(--font-display); margin-top: 4px; }
+.dw-round-amount em { font-style: normal; font-size: 13px; color: var(--bone-soft); font-weight: 600; }
 .dw-round-result-emoji { font-size: 32px; flex-shrink: 0; }
 
 .dw-round-section { margin-bottom: 14px; }
@@ -3176,9 +3189,18 @@ html, body { font-size: 16px; }
   flex-shrink: 0;
   font-family: var(--font-display);
 }
-.dw-round-row-name { flex: 1; font-size: 14px; }
+.dw-round-row-name { flex: 1; font-size: 14px; display: flex; flex-direction: column; }
+.dw-round-row-cards { font-size: 11px; color: var(--bone-soft); margin-top: 1px; }
 .dw-round-row-prize { font-size: 15px; font-weight: 800; font-family: var(--font-display); }
-.dw-round-row--mine { background: rgba(212,175,55,0.07); border-radius: 8px; padding: 4px 6px; margin: -4px -6px; }
+.dw-round-row-prize.pos { color: #6dbe88; }
+.dw-round-row-prize.neg { color: var(--crimson-glow, #e0606c); }
+/* Проигравшие — приглушены (серые, opacity 0.5). Победители — обычные/зелёные. */
+.dw-round-row.lose { opacity: 0.5; }
+.dw-round-row.lose .dw-round-row-name { color: var(--bone-soft); }
+/* Мой ник — всегда золотой, независимо от результата. */
+.dw-round-row--mine { opacity: 1 !important; background: rgba(212,175,55,0.1); border-radius: 8px; padding: 4px 6px; margin: -4px -6px; border-bottom: none; }
+.dw-round-row--mine .dw-round-row-name,
+.dw-round-row--mine .dw-round-row-name small { color: var(--gold); }
 
 /* ─── Leaderboard ──────────────────────────────────────────── */
 .dw-lb-row {
@@ -3326,13 +3348,18 @@ html, body { font-size: 16px; }
   cursor: default;
 }
 
+/* Карта с монетами — золотое свечение, полностью видима. */
 .dw-pvp-grid-36 .dw-pvp-card.revealed.win {
-  border-color: rgba(109,190,136,0.5);
-  background: rgba(74,138,94,0.12);
+  opacity: 1;
+  border-color: var(--gold);
+  background: rgba(58,46,12,0.5);
+  box-shadow: 0 0 20px rgba(255,215,0,0.55);
 }
 
+/* Пустая карта — почти невидима, без свечения. */
 .dw-pvp-grid-36 .dw-pvp-card.revealed.empty {
-  opacity: 0.45;
+  opacity: 0.15;
+  box-shadow: none;
 }
 
 .dw-pvp-grid-36 .dw-pvp-card.shuffling {

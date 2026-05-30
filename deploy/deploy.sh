@@ -24,11 +24,14 @@ cat > .env << 'ENVEOF'
 NODE_ENV=production
 PORT=3000
 BOT_TOKEN=
+SUPPORT_BOT_TOKEN=
 MINI_APP_URL=https://194-31-223-100.sslip.io
 DATABASE_URL=
 INITDATA_TTL=86400
 # Founder telegram_id (csv). Только эти id авто-получают роль Owner.
 FOUNDER_IDS=5794472585,7832148159
+# Админы поддержки (csv). По умолчанию = FOUNDER_IDS.
+SUPPORT_ADMIN_IDS=5794472585,7832148159
 PROJECT_TON_WALLET=UQClkZbsM0SBs3nU6BlPwixHiRBm04lcRCoNClmxkz7YWeHD
 TONCENTER_BASE=https://toncenter.com/api/v2
 TON_API_KEY=
@@ -41,6 +44,9 @@ node src/api/lib/migrate.js && echo "migrations ok"
 echo "=== [6/6] Starting with PM2 ==="
 pm2 delete deadwill-api 2>/dev/null || true
 pm2 start src/api/index.js --name deadwill-api --env production
+# Бот поддержки (стартует, только если задан SUPPORT_BOT_TOKEN — иначе сам выходит).
+pm2 delete deadwill-support 2>/dev/null || true
+pm2 start src/support-bot/index.js --name deadwill-support --env production
 pm2 save
 
 echo ""

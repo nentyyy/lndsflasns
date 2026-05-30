@@ -201,7 +201,9 @@ function App() {
             }).catch(() => {});
             api.liveFeed().then((f) => { if (!cancelled && Array.isArray(f?.feed || f)) setLiveWins(f.feed || f); }).catch(() => {});
             if ((s.cards || []).some((c) => c.mine)) {
-              setTimeout(() => { if (!cancelled) setPvpRoundResult(s); }, 1000);
+              // Пауза 2.5с — поле с раскрытыми картами остаётся видимым,
+              // затем плавный переход в итоговый экран.
+              setTimeout(() => { if (!cancelled) setPvpRoundResult(s); }, 2500);
             }
           }
           prevStatus = s?.lobby?.status || prevStatus;
@@ -855,6 +857,7 @@ function App() {
           entryCoins={pvpRoundResult.lobby?.entryCoins || 5}
           onClose={() => setPvpRoundResult(null)}
           onOpenDeposit={() => { setPvpRoundResult(null); setDepositOpen(true); setDepositView('main'); }}
+          onOpenShop={() => { setPvpRoundResult(null); setTab('shop'); }}
         />
       )}
 
@@ -2544,17 +2547,61 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
 
 /* ─── PvP Round Result Modal ──────────────────────────────── */
 
-function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDeposit }) {
+function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDeposit, onOpenShop }) {
   const cards = result?.cards || [];
   const takenCards = cards.filter(c => c.taken);
-  const winners = takenCards.filter(c => c.outcome?.credit > 0)
-    .sort((a, b) => b.outcome.credit - a.outcome.credit);
-  const losers = takenCards.filter(c => !c.outcome?.credit);
-  // Игрок мог взять несколько карт — суммируем выигрыш по всем своим.
-  const myCardsAll = cards.filter(c => c.mine);
-  const myCard = myCardsAll.find(c => (c.outcome?.credit || 0) > 0) || myCardsAll[0];
-  const myWon = myCardsAll.reduce((sum, c) => sum + (c.outcome?.credit || 0), 0);
-  const isWinner = myWon > 0;
+
+  // BUG 1 — группируем по userId, чтобы один игрок с несколькими картами
+  // показывался ОДНОЙ строкой (со всеми его картами и суммарным результатом).
+  const groupMap = {};
+  for (const c of takenCards) {
+    const uid = c.owner?.userId || (c.mine ? String(myUserId) : `card-${c.index}`);
+    if (!groupMap[uid]) {
+      groupMap[uid] = { userId: uid, owner: c.owner, mine: false, totalPrize: 0, totalBet: 0, cards: [] };
+    }
+    const g = groupMap[uid];
+    g.totalPrize += c.outcome?.credit || 0;
+    g.totalBet += entryCoins;
+    g.cards.push(c.index + 1);
+    if (c.mine) g.mine = true;
+  }
+  // profit = выигрыш − ставка. Сортировка по profit по убыванию.
+  const rows = Object.values(groupMap)
+    .map(g => ({ ...g, profit: g.totalPrize - g.totalBet, cards: g.cards.sort((a, b) => a - b) }))
+    .sort((a, b) => b.profit - a.profit);
+
+  const winners = rows.filter(r => r.profit >= 0);  // окуп тоже считается «в плюсе»
+  const losers = rows.filter(r => r.profit < 0);
+
+  // BUG 2 — мой результат суммируется по всем моим картам.
+  const myRow = rows.find(r => r.mine);
+  const myProfit = myRow ? myRow.profit : 0;
+  const isWinner = Boolean(myRow) && myProfit >= 0 && myRow.totalPrize > 0;
+  const isLoser = Boolean(myRow) && myProfit < 0;
+  const myMult = (myRow && myRow.totalBet > 0) ? (myRow.totalPrize / myRow.totalBet).toFixed(1) : '0.0';
+
+  const cardLabel = (nums) => nums.length > 1 ? `карты #${nums.join(', #')}` : `карта #${nums[0]}`;
+
+  const Row = ({ r, i }) => {
+    const u = userDisplay(r.owner);
+    const cls = ['dw-round-row',
+      r.mine ? 'dw-round-row--mine' : '',
+      r.profit > 0 ? 'win' : (r.profit < 0 ? 'lose' : '')].filter(Boolean).join(' ');
+    return (
+      <div key={r.userId + i} className={cls}>
+        <span className="dw-round-row-avatar" style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+          {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : u.initial}
+        </span>
+        <span className="dw-round-row-name">
+          {u.displayName}{r.mine ? ' (ты)' : ''}
+          <small className="dw-round-row-cards">{cardLabel(r.cards)}</small>
+        </span>
+        <span className={`dw-round-row-prize ${r.profit > 0 ? 'pos' : (r.profit < 0 ? 'neg' : '')}`}>
+          {r.profit > 0 ? `+${r.profit}` : r.profit}
+        </span>
+      </div>
+    );
+  };
 
   return (
     <motion.div className="dw-sheet-backdrop" onClick={onClose}
@@ -2568,46 +2615,36 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
           <button className="dw-icon-btn" onClick={onClose}>×</button>
         </div>
 
-        {/* Мой результат */}
-        {myCard && (
-          <div className={`dw-round-my-result ${isWinner ? 'win' : 'lose'}`}>
-            {isWinner ? (
-              <>
-                <span className="dw-round-result-emoji">🏆</span>
-                <div>
-                  <strong>Ты выиграл!</strong>
-                  <p>+{myWon} монет зачислено</p>
-                </div>
-              </>
-            ) : (
-              <>
-                <span className="dw-round-result-emoji">💀</span>
-                <div>
-                  <strong>В этот раз не повезло</strong>
-                  <p>Карта оказалась пустой</p>
-                </div>
-              </>
-            )}
-          </div>
+        {/* Мой результат — суммарный по всем картам */}
+        {myRow && (
+          isLoser ? (
+            <div className="dw-round-my-result lose">
+              <span className="dw-round-result-emoji">💀</span>
+              <div>
+                <strong>В этот раз не повезло</strong>
+                <p>Удача отвернулась — попробуй ещё раз</p>
+                <span className="dw-round-amount">−{Math.abs(myProfit)} монет</span>
+              </div>
+            </div>
+          ) : (
+            <div className="dw-round-my-result win">
+              <span className="dw-round-result-emoji">🏆</span>
+              <div>
+                <strong>{myProfit > 0 ? 'Ты выиграл' : 'Ставка отыграна'}</strong>
+                <span className="dw-round-amount">
+                  {myProfit > 0 ? `+${myProfit} монет` : '±0 монет'}
+                  <em> ×{myMult} от ставки</em>
+                </span>
+              </div>
+            </div>
+          )
         )}
 
         {/* Победители */}
         {winners.length > 0 && (
           <div className="dw-round-section">
             <span className="dw-kicker" style={{ color: 'var(--gold)' }}>Победители</span>
-            {winners.map((c, i) => {
-              const u = userDisplay(c.owner);
-              const isMine = c.mine;
-              return (
-                <div key={i} className={`dw-round-row${isMine ? ' dw-round-row--mine' : ''}`}>
-                  <span className="dw-round-row-avatar" style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
-                    {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : u.initial}
-                  </span>
-                  <span className="dw-round-row-name">{u.displayName}{isMine ? ' (ты)' : ''}</span>
-                  <span className="dw-round-row-prize pos">+{c.outcome.credit}</span>
-                </div>
-              );
-            })}
+            {winners.map((r, i) => <Row r={r} i={i} key={r.userId} />)}
           </div>
         )}
 
@@ -2615,19 +2652,7 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
         {losers.length > 0 && (
           <div className="dw-round-section">
             <span className="dw-kicker" style={{ color: 'var(--bone-soft)' }}>Выбыли</span>
-            {losers.slice(0, 8).map((c, i) => {
-              const u = userDisplay(c.owner);
-              const isMine = c.mine;
-              return (
-                <div key={i} className={`dw-round-row${isMine ? ' dw-round-row--mine' : ''}`} style={{ opacity: isMine ? 1 : 0.6 }}>
-                  <span className="dw-round-row-avatar" style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
-                    {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : u.initial}
-                  </span>
-                  <span className="dw-round-row-name">{u.displayName}{isMine ? ' (ты)' : ''}</span>
-                  <span className="dw-round-row-prize neg">—{entryCoins}</span>
-                </div>
-              );
-            })}
+            {losers.slice(0, 10).map((r, i) => <Row r={r} i={i} key={r.userId} />)}
           </div>
         )}
 
@@ -2635,9 +2660,13 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
           <button className="dw-btn primary" style={{ flex: 2 }} onClick={onClose}>
             Новый раунд
           </button>
-          {!isWinner && (
+          {isLoser ? (
             <button className="dw-btn ghost" style={{ flex: 1 }} onClick={onOpenDeposit}>
               Пополнить
+            </button>
+          ) : (
+            <button className="dw-btn ghost" style={{ flex: 1 }} onClick={onOpenShop}>
+              Магазин
             </button>
           )}
         </div>

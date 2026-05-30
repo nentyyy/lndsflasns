@@ -45,6 +45,14 @@ export const FOUNDER_IDS = (process.env.FOUNDER_IDS || '5794472585,7832148159')
   .map((s) => s.trim())
   .filter(Boolean);
 
+// Бот поддержки: отдельный токен. Админы поддержки получают уведомления и
+// отвечают игрокам. По умолчанию админы поддержки = основатели.
+export const SUPPORT_BOT_TOKEN = process.env.SUPPORT_BOT_TOKEN || '';
+export const SUPPORT_ADMIN_IDS = (process.env.SUPPORT_ADMIN_IDS || process.env.FOUNDER_IDS || '5794472585,7832148159')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 // Defensive: в production процесс ДОЛЖЕН падать, если кто-то выставил
 // dev-фоллбэк через env (его больше нет в коде, но флаг = красный флаг).
 if (isProd && (process.env.ALLOW_DEV_AUTH || process.env.ALLOW_DEV_USER || process.env.DEV_USER)) {
