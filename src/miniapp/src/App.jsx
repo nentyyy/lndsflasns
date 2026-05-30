@@ -201,9 +201,9 @@ function App() {
             }).catch(() => {});
             api.liveFeed().then((f) => { if (!cancelled && Array.isArray(f?.feed || f)) setLiveWins(f.feed || f); }).catch(() => {});
             if ((s.cards || []).some((c) => c.mine)) {
-              // Пауза 2.5с — поле с раскрытыми картами остаётся видимым,
-              // затем плавный переход в итоговый экран.
-              setTimeout(() => { if (!cancelled) setPvpRoundResult(s); }, 2500);
+              // Даём доиграть последовательному открытию ячеек (~2с) + пауза,
+              // поле с раскрытыми картами остаётся видимым, затем итоговый экран.
+              setTimeout(() => { if (!cancelled) setPvpRoundResult(s); }, 3200);
             }
           }
           prevStatus = s?.lobby?.status || prevStatus;
@@ -889,10 +889,50 @@ function App() {
 /* ─── Туториал для новичков ───────────────────────────────── */
 
 const TUTORIAL_STEPS = [
-  { tab: 'play', icon: '🎴', title: 'ИГРА', text: 'Выбирай карту в живом PvP-раунде или премиум-завещании. Каждые 10 открытий — одно бесплатное!' },
-  { tab: 'shop', icon: '🏦', title: 'СЕЙФ', text: 'Пополняй баланс через Stars или TON и покупай карты — без них в раундах не сыграть.' },
-  { tab: 'profile', icon: '👤', title: 'ПРОФИЛЬ', text: 'Тут твоя статистика, кланы и рефералка — зови друзей и получай 10% с их пополнений.' }
+  { tab: 'play', demo: 'cards', icon: '🎴', title: 'ЖИВЫЕ РАУНДЫ', text: 'Открывай ячейки в PvP-раунде на 36 карт. За золотыми — монеты, пустые гаснут. Каждое 10-е открытие — бесплатное!' },
+  { tab: 'shop', demo: 'vault', icon: '🏦', title: 'СЕЙФ', text: 'Пополняй баланс через Stars или TON и покупай карты для игры — без них в раунд не зайти.' },
+  { tab: 'profile', demo: 'profile', icon: '👤', title: 'ПРОФИЛЬ', text: 'Статистика, кланы и рефералка — зови друзей и получай 10% с каждого их пополнения.' }
 ];
+
+function TutorialDemo({ kind }) {
+  if (kind === 'cards') {
+    return (
+      <div className="dw-tut-demo dw-tut-demo-cards">
+        {['+40', '', '+8', '', '+3'].map((v, i) => (
+          <motion.div key={i}
+            className={`dw-tut-mini-card ${v ? 'win' : 'empty'}`}
+            initial={{ rotateY: 90, opacity: 0 }}
+            animate={{ rotateY: 0, opacity: v ? 1 : 0.18 }}
+            transition={{ delay: 0.12 * i, duration: 0.35, ease: [0.34, 1.56, 0.64, 1] }}>
+            {v || '·'}
+          </motion.div>
+        ))}
+      </div>
+    );
+  }
+  if (kind === 'vault') {
+    return (
+      <div className="dw-tut-demo dw-tut-demo-vault">
+        {['⭐', '💎', '🪙'].map((e, i) => (
+          <motion.span key={i} className="dw-tut-vault-coin"
+            initial={{ y: 14, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.15 * i, type: 'spring', stiffness: 320 }}>{e}</motion.span>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className="dw-tut-demo dw-tut-demo-profile">
+      <motion.div className="dw-tut-prof-ava" initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 300 }}>☠️</motion.div>
+      <div className="dw-tut-prof-bars">
+        {[70, 45, 88].map((w, i) => (
+          <motion.span key={i} className="dw-tut-prof-bar"
+            initial={{ width: 0 }} animate={{ width: `${w}%` }} transition={{ delay: 0.1 * i + 0.2, duration: 0.5 }} />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function Tutorial({ isNew, onNavigate, onPlayFree, onClose }) {
   const [step, setStep] = useState(0);
@@ -904,38 +944,52 @@ function Tutorial({ isNew, onNavigate, onPlayFree, onClose }) {
   }, [step]);
 
   const s = TUTORIAL_STEPS[step];
+  const progress = Math.min(100, ((step + 1) / (total + 1)) * 100);
 
   return (
     <motion.div className="dw-sheet-backdrop dw-tut-backdrop" onClick={onClose}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
       <motion.div className="dw-tut-card" onClick={(e) => e.stopPropagation()}
-        initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.3 }}>
+        initial={{ y: 30, opacity: 0, scale: 0.96 }} animate={{ y: 0, opacity: 1, scale: 1 }} transition={{ duration: 0.32, ease: [0.2, 0, 0, 1] }}>
         <button className="dw-icon-btn dw-tut-close" onClick={onClose}>×</button>
 
-        {!last ? (
-          <>
-            <div className="dw-tut-icon">{s.icon}</div>
-            <h2 className="dw-tut-title">{s.title}</h2>
-            <p className="dw-tut-text">{s.text}</p>
-            <div className="dw-tut-dots">
-              {TUTORIAL_STEPS.map((_, i) => <span key={i} className={`dw-tut-dot ${i === step ? 'active' : ''}`} />)}
-            </div>
-            <button className="dw-btn primary full" onClick={() => setStep(step + 1)}>Далее ›</button>
-          </>
-        ) : (
-          <>
-            <div className="dw-tut-icon">{isNew ? '🎁' : '✨'}</div>
-            <h2 className="dw-tut-title">{isNew ? 'Первая ставка — бесплатно!' : 'Готово!'}</h2>
-            <p className="dw-tut-text">
+        <div className="dw-tut-progress"><span style={{ width: `${progress}%` }} /></div>
+
+        <AnimatePresence mode="wait">
+          {!last ? (
+            <motion.div key={step} className="dw-tut-step"
+              initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -40, opacity: 0 }} transition={{ duration: 0.28 }}>
+              <TutorialDemo kind={s.demo} />
+              <div className="dw-tut-icon">{s.icon}</div>
+              <h2 className="dw-tut-title">{s.title}</h2>
+              <p className="dw-tut-text">{s.text}</p>
+              <div className="dw-tut-dots">
+                {TUTORIAL_STEPS.map((_, i) => <span key={i} className={`dw-tut-dot ${i === step ? 'active' : ''}`} />)}
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button className="dw-btn ghost" style={{ flex: 1 }} onClick={onClose}>Пропустить</button>
+                <button className="dw-btn primary" style={{ flex: 2 }} onClick={() => setStep(step + 1)}>Далее ›</button>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div key="final" className="dw-tut-step"
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
+              <motion.div className="dw-tut-icon dw-tut-icon-final"
+                animate={{ scale: [1, 1.18, 1], rotate: [0, -6, 6, 0] }} transition={{ duration: 1.1, repeat: Infinity }}>
+                {isNew ? '🎁' : '✨'}
+              </motion.div>
+              <h2 className="dw-tut-title">{isNew ? 'Первая ставка — бесплатно!' : 'Готово!'}</h2>
+              <p className="dw-tut-text">
+                {isNew
+                  ? 'Открой любую ячейку в PvP-раунде — первая попытка ничего не стоит. Удачи!'
+                  : 'Теперь ты знаешь, как играть. Удачи в раундах!'}
+              </p>
               {isNew
-                ? 'Открой любую карту в PvP-раунде — первая попытка ничего не стоит. Удачи!'
-                : 'Теперь ты знаешь, как играть. Удачи в раундах!'}
-            </p>
-            {isNew
-              ? <button className="dw-btn primary full" onClick={onPlayFree}>Сделать бесплатную ставку</button>
-              : <button className="dw-btn primary full" onClick={onClose}>Понятно</button>}
-          </>
-        )}
+                ? <button className="dw-btn primary full dw-tut-cta" onClick={onPlayFree}>🎴 Сделать бесплатную ставку</button>
+                : <button className="dw-btn primary full" onClick={onClose}>Понятно</button>}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </motion.div>
   );
@@ -1202,8 +1256,10 @@ function buildPvpRows(cardCount) {
   return rows;
 }
 
-function PvpCard({ card, idx, settled, pvpBuying, lowBalance, onBuyPvpCard, onOpenPlayerProfile, shuffling }) {
-  const isRevealed = (settled || card.status === 'revealed') && card.outcome;
+function PvpCard({ card, idx, settled, revealOpen = true, pvpBuying, lowBalance, onBuyPvpCard, onOpenPlayerProfile, shuffling }) {
+  // revealOpen=false → исход ещё «закрыт» (последовательное открытие после замеса).
+  const isRevealed = revealOpen && (settled || card.status === 'revealed') && card.outcome;
+  const justOpened = isRevealed && card.outcome.type === 'coins';
   const cls = [
     'dw-pvp-card',
     card.taken && !card.mine ? 'taken' : '',
@@ -1213,6 +1269,7 @@ function PvpCard({ card, idx, settled, pvpBuying, lowBalance, onBuyPvpCard, onOp
     isRevealed && card.outcome.type === 'empty' ? 'empty' : '',
     shuffling ? 'shuffling' : ''
   ].filter(Boolean).join(' ');
+  void justOpened;
 
   return (
     <motion.button
@@ -1262,6 +1319,7 @@ function PvpWinnerStat({ label, winner, amount, right, onClick }) {
 function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvpTotalReveals, lastWinner = null, onOpenRounds, onBuyPvpCard, onOpenDeposit, onOpenPlayerProfile }) {
   const [tick, setTick] = useState(0);
   const [shuffling, setShuffling] = useState(false);
+  const [revealStep, setRevealStep] = useState(9999); // сколько ячеек уже раскрыто (9999 = все)
   const [bestRound, setBestRound] = useState(null);
   const prevStatus = React.useRef(null);
 
@@ -1276,13 +1334,29 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   }, []);
   void tick;
 
-  // Shuffle animation когда лобби переходит в settled
+  // Когда лобби переходит в settled — короткий «замес», затем ячейки
+  // открываются по очереди (монеты не показываются все разом).
   useEffect(() => {
     const status = pvpState?.lobby?.status;
+    const total = pvpState?.lobby?.cardCount ?? 36;
+    let iv;
     if (prevStatus.current === 'open' && status === 'settled') {
       setShuffling(true);
-      setTimeout(() => setShuffling(false), 1200);
+      setRevealStep(0); // прячем все исходы на время анимации
+      const shuffleT = setTimeout(() => {
+        setShuffling(false);
+        let n = 0;
+        iv = setInterval(() => {
+          n += 1;
+          setRevealStep(n);
+          if (n >= total) clearInterval(iv);
+        }, 42);
+      }, 450);
+      prevStatus.current = status;
+      return () => { clearTimeout(shuffleT); if (iv) clearInterval(iv); };
     }
+    if (status === 'open') setRevealStep(9999); // новое лобби — сбрасываем
+    else if (status === 'settled') setRevealStep(9999); // зашли в готовый раунд — всё открыто
     prevStatus.current = status;
   }, [pvpState?.lobby?.status]);
 
@@ -1333,6 +1407,7 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
                 card={getCard(i)}
                 idx={i}
                 settled={settled}
+                revealOpen={revealStep === 9999 || i < revealStep}
                 pvpBuying={pvpBuying}
                 onBuyPvpCard={onBuyPvpCard}
                 onOpenPlayerProfile={onOpenPlayerProfile}
@@ -2580,6 +2655,20 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
   const isLoser = Boolean(myRow) && myProfit < 0;
   const myMult = (myRow && myRow.totalBet > 0) ? (myRow.totalPrize / myRow.totalBet).toFixed(1) : '0.0';
 
+  // Анимированный «отсчёт» выигрыша — монеты набегают, а не появляются разом.
+  const [shownWin, setShownWin] = useState(0);
+  useEffect(() => {
+    if (!(myProfit > 0)) { setShownWin(0); return; }
+    let raf; const start = performance.now(); const dur = 850;
+    const step = (now) => {
+      const p = Math.min(1, (now - start) / dur);
+      setShownWin(Math.round(myProfit * (1 - Math.pow(1 - p, 3))));
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [myProfit]);
+
   const cardLabel = (nums) => nums.length > 1 ? `карты #${nums.join(', #')}` : `карта #${nums[0]}`;
 
   const Row = ({ r, i }) => {
@@ -2627,12 +2716,12 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
               </div>
             </div>
           ) : (
-            <div className="dw-round-my-result win">
-              <span className="dw-round-result-emoji">🏆</span>
+            <div className="dw-round-my-result win dw-win-anim">
+              <span className="dw-round-result-emoji dw-emoji-bounce">🏆</span>
               <div>
-                <strong>{myProfit > 0 ? 'Ты выиграл' : 'Ставка отыграна'}</strong>
+                <strong>{myProfit > 0 ? 'Ты выиграл!' : 'Ставка отыграна'}</strong>
                 <span className="dw-round-amount">
-                  {myProfit > 0 ? `+${myProfit} монет` : '±0 монет'}
+                  {myProfit > 0 ? `+${shownWin} монет` : '±0 монет'}
                   <em> ×{myMult} от ставки</em>
                 </span>
               </div>
