@@ -45,9 +45,10 @@
   --shadow-deep:   0 28px 80px rgba(0,0,0,0.78), 0 4px 14px rgba(0,0,0,0.6);
   --shadow-line:   inset 0 0 0 1px rgba(0,0,0,0.6);
 
-  --font-display:  'Cinzel', 'Cormorant Garamond', serif;
-  --font-serif:    'Cormorant Garamond', 'Cinzel', serif;
-  --font-sans:     'Manrope', system-ui, sans-serif;
+  /* Жирные шрифты (редизайн): Russo One для заголовков/цифр, Montserrat 800 для текста. */
+  --font-display:  'Russo One', 'Montserrat', system-ui, sans-serif;
+  --font-serif:    'Montserrat', system-ui, sans-serif;
+  --font-sans:     'Montserrat', system-ui, sans-serif;
 }
 
 /* ─── Reset ─────────────────────────────────────────────────────── */
@@ -3568,6 +3569,21 @@ html, body { font-size: 16px; }
 
 /* ─── Рандомная ставка (выбор кол-ва ячеек) ──────────────────── */
 .dw-pvp-card--locked { cursor: default; }
+.dw-pvp-card--pick { cursor: pointer; }
+.dw-bet-mode {
+  display: flex; gap: 6px; margin-top: 12px; padding: 4px;
+  border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface-2);
+}
+.dw-bet-mode button {
+  flex: 1; padding: 8px; border-radius: 9px; border: none; cursor: pointer;
+  background: transparent; color: var(--bone-soft); font-weight: 700; font-size: 13px;
+}
+.dw-bet-mode button.active { background: var(--gold); color: #1a1305; }
+.dw-bet-manual-hint {
+  margin-top: 10px; padding: 12px; text-align: center; border-radius: 12px;
+  border: 1px dashed var(--gold-line); background: var(--surface-2);
+  color: var(--bone-soft); font-size: 13px;
+}
 .dw-bet-control {
   display: flex; align-items: stretch; gap: 10px; margin-top: 12px;
 }
@@ -3623,3 +3639,42 @@ html, body { font-size: 16px; }
 .dw-wheel-result strong { color: #6dbe88; }
 .dw-wheel-hint { font-size: 13px; color: var(--bone-soft); margin-bottom: 12px; }
 .dw-wheel-spin { box-shadow: 0 0 22px rgba(212,175,55,0.5); }
+
+/* ════════ РЕДИЗАЙН UI ════════ */
+/* Жирный текст по умолчанию */
+body, .dw-app { font-weight: 700; letter-spacing: 0; }
+h1, h2, h3, h4 { letter-spacing: 0.01em; }
+
+/* Курсоры на все интерактивные элементы */
+button, a, [role="button"], .dw-pvp-card--pick { cursor: pointer; }
+button:disabled, [disabled] { cursor: not-allowed; }
+
+/* Таймер ПВП — без рамки, жирные золотые цифры */
+.dw-pvp-timer {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-family: var(--font-display);
+  font-size: 40px !important;
+  font-weight: 400;
+  color: var(--gold-bright) !important;
+  text-shadow: 0 0 16px rgba(240,213,122,0.55);
+  padding: 0 !important;
+}
+.dw-pvp-timer.urgent { color: var(--crimson-glow) !important; text-shadow: 0 0 16px rgba(160,26,38,0.6); }
+
+/* Дублон — золотая монета с градиентом */
+.dw-coin-ico, .dw-dublon {
+  display: inline-block; width: 1em; height: 1em; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff3c4 0%, #f0d57a 35%, #d4af37 65%, #8a6c1c 100%);
+  box-shadow: 0 0 6px rgba(212,175,55,0.6), inset 0 0 3px rgba(255,255,255,0.4);
+  vertical-align: -0.12em;
+}
+
+/* Сжать интерфейс */
+.dw-app { gap: 12px; }
+.dw-panel, .dw-card-panel { padding: 12px !important; }
+.dw-pvp-free-counter { margin: 6px 0 !important; font-size: 12px; }
+
+/* ПВП-шапка после удаления «Лучший»: таймер слева, прошлый раунд справа */
+.dw-pvp-header--3col { grid-template-columns: 1fr auto !important; align-items: center; }

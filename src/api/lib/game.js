@@ -5,6 +5,7 @@ import { createServerSeed, roll, pickOutcome } from './rng.js';
 import { debit, credit } from './wallet.js';
 import { addTournamentScore } from './tournaments.js';
 import { consumeTicket } from './tickets.js';
+import { addPoints } from './points.js';
 
 export class GameError extends Error {
   constructor(message, status = 400) {
@@ -39,6 +40,7 @@ export async function armRound(userId, modeId, clientSeed, idempotencyKey) {
     } else {
       throw new GameError('need_card', 402);
     }
+    await addPoints(trx, userId, mode.entryCoins); // поинты лояльности за ставку
     const { balance } = await trx('players').where({ user_id: userId }).first('balance');
 
     const { serverSeed, serverSeedHash } = createServerSeed();
@@ -80,24 +82,16 @@ export async function revealRound(userId, roundId, clauseIndexRaw) {
 
     const r = roll(round.server_seed, round.client_seed, round.nonce, clauseIndex);
     const outcome = pickOutcome(mode, r);
-    const player = await trx('players').where({ user_id: userId }).first();
-    let creditCoins = outcome.credit;
-    let usedMultiplier = false;
-    if ((outcome.type === 'coins' || outcome.type === 'bonus') && player.multiplier > 1) {
-      creditCoins = outcome.credit * player.multiplier;
-      usedMultiplier = true;
-    }
-    const nextMultiplier = outcome.type === 'multiplier'
-      ? (outcome.nextMultiplier || 2)
-      : (usedMultiplier ? 1 : player.multiplier);
+    // Каждая карта = независимый ФИКСИРОВАННЫЙ приз. Множитель НЕ применяется
+    // и НЕ переносится между раундами (фикс Задание 5).
+    const creditCoins = outcome.credit;
 
-    let balance = player.balance;
+    let balance = (await trx('players').where({ user_id: userId }).first('balance')).balance;
     if (creditCoins > 0) {
       balance = await credit(trx, userId, creditCoins, 'payout', `payout:${roundId}`);
     }
 
     await trx('players').where({ user_id: userId }).update({
-      multiplier: nextMultiplier,
       games_played: trx.raw('games_played + 1'),
       coins_won: trx.raw('coins_won + ?', [creditCoins]),
       best_win: trx.raw('CASE WHEN best_win < ? THEN ? ELSE best_win END', [creditCoins, creditCoins])
@@ -120,11 +114,11 @@ export async function revealRound(userId, roundId, clauseIndexRaw) {
       console.warn('tournament score skipped', e.message);
     }
 
-    return buildResult({ ...round, outcome_key: outcome.key, outcome_type: outcome.type, credit: creditCoins, clause_index: clauseIndex }, balance, false, { usedMultiplier, nextMultiplier });
+    return buildResult({ ...round, outcome_key: outcome.key, outcome_type: outcome.type, credit: creditCoins, clause_index: clauseIndex }, balance, false);
   });
 }
 
-function buildResult(round, balance, replayed, extra = {}) {
+function buildResult(round, balance, replayed) {
   const mode = getMode(round.mode);
   const outcome = mode.outcomes.find((o) => o.key === round.outcome_key) || {};
   return {
@@ -134,9 +128,7 @@ function buildResult(round, balance, replayed, extra = {}) {
       type: round.outcome_type,
       key: round.outcome_key,
       stamp: outcome.stamp,
-      credit: Number(round.credit) || 0,
-      usedMultiplier: extra.usedMultiplier || false,
-      nextMultiplier: extra.nextMultiplier
+      credit: Number(round.credit) || 0
     },
     fair: {
       serverSeed: round.server_seed,

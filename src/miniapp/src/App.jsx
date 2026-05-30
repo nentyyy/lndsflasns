@@ -613,7 +613,6 @@ function App() {
           player: {
             ...current.player,
             coins: out.balance,
-            multiplier: resolved.nextMultiplier ?? current.player.multiplier,
             gamesPlayed: current.player.gamesPlayed + 1,
             coinsWon: current.player.coinsWon + resolved.creditCoins,
             bestWin: Math.max(current.player.bestWin, resolved.creditCoins)
@@ -1416,12 +1415,12 @@ function buildPvpRows(cardCount) {
   return rows;
 }
 
-function PvpCard({ card, idx, settled, revealOpen = true, pvpBuying, lowBalance, onBuyPvpCard, onOpenPlayerProfile, shuffling }) {
+function PvpCard({ card, idx, settled, revealOpen = true, pickable = false, pvpBuying, lowBalance, onBuyPvpCard, onOpenPlayerProfile, shuffling }) {
   // revealOpen=false → исход ещё «закрыт» (последовательное открытие после замеса).
   const isRevealed = revealOpen && (settled || card.status === 'revealed') && card.outcome;
-  // Ячейки больше не выбираются вручную — расстановка рандомная. Карта только показывает статус.
+  const canPick = pickable && !card.taken && !settled && !pvpBuying;
   const cls = [
-    'dw-pvp-card', 'dw-pvp-card--locked',
+    'dw-pvp-card', canPick ? 'dw-pvp-card--pick' : 'dw-pvp-card--locked',
     card.taken && !card.mine ? 'taken' : '',
     card.mine ? 'mine' : '',
     isRevealed ? 'revealed' : '',
@@ -1433,9 +1432,11 @@ function PvpCard({ card, idx, settled, revealOpen = true, pvpBuying, lowBalance,
   return (
     <motion.div
       className={cls}
+      onClick={canPick ? () => onBuyPvpCard(idx) : undefined}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.18, delay: 0.008 * idx }}
+      whileTap={canPick ? { scale: 0.95 } : undefined}
     >
       {card.owner && (() => { const u = userDisplay(card.owner); return (
         <button className="dw-pvp-avatar-btn"
@@ -1478,6 +1479,7 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   const [revealStep, setRevealStep] = useState(9999); // сколько ячеек уже раскрыто (9999 = все)
   const [bestRound, setBestRound] = useState(null);
   const [bet, setBet] = useState(1); // сколько ячеек поставить (рандомно)
+  const [betMode, setBetMode] = useState('random'); // random | manual
   const prevStatus = React.useRef(null);
 
   // Лучший раунд (по призу) — для левой плашки шапки.
@@ -1556,9 +1558,8 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   return (
     <>
       <div className="dw-pvp-header dw-pvp-header--3col">
-        <PvpWinnerStat label="Лучший ›" winner={bestRound?.winner} amount={bestRound?.topPrize} onClick={onOpenRounds} />
         <div className={`dw-pvp-timer ${urgent ? 'urgent' : idle || settled ? 'idle' : ''}`}>
-          {settled ? '00' : timer ?? '35'}<span style={{ fontSize: 11, marginLeft: 4, opacity: 0.7 }}>с</span>
+          {settled ? '00' : timer ?? '30'}<span style={{ fontSize: 11, marginLeft: 4, opacity: 0.7 }}>с</span>
         </div>
         <PvpWinnerStat label="‹ Прошлый" winner={lastWinner} amount={lastWinner?.amount} right onClick={onOpenRounds} />
       </div>
@@ -1573,6 +1574,7 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
                 idx={i}
                 settled={settled}
                 revealOpen={revealStep === 9999 || i < revealStep}
+                pickable={betMode === 'manual' && canPlay}
                 pvpBuying={pvpBuying}
                 onBuyPvpCard={onBuyPvpCard}
                 onOpenPlayerProfile={onOpenPlayerProfile}
@@ -1591,24 +1593,31 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
         }
       </div>
 
-      {/* Рандомная расстановка: выбираешь кол-во ячеек, ставятся случайно */}
+      {/* Режим расстановки: рандом или вручную */}
       {!settled && (
-        <div className="dw-bet-control">
-          <div className="dw-bet-stepper">
-            <button onClick={() => setBet(Math.max(1, betClamped - 1))} disabled={pvpBuying || betClamped <= 1}>−</button>
-            <span className="dw-bet-count">{betClamped}</span>
-            <button onClick={() => setBet(Math.min(maxBet, betClamped + 1))} disabled={pvpBuying || betClamped >= maxBet}>+</button>
+        <>
+          <div className="dw-bet-mode">
+            <button className={betMode === 'random' ? 'active' : ''} onClick={() => setBetMode('random')}>🎲 Рандом</button>
+            <button className={betMode === 'manual' ? 'active' : ''} onClick={() => setBetMode('manual')}>👆 Вручную</button>
           </div>
-          {canPlay ? (
-            <button className="dw-btn primary dw-bet-go" disabled={pvpBuying} onClick={() => onBetRandom(betClamped)}>
-              🎲 Поставить {betClamped} {cellWord(betClamped)}
-            </button>
+
+          {!canPlay ? (
+            <button className="dw-btn primary full" onClick={onOpenDeposit}>Купить карты для игры</button>
+          ) : betMode === 'random' ? (
+            <div className="dw-bet-control">
+              <div className="dw-bet-stepper">
+                <button onClick={() => setBet(Math.max(1, betClamped - 1))} disabled={pvpBuying || betClamped <= 1}>−</button>
+                <span className="dw-bet-count">{betClamped}</span>
+                <button onClick={() => setBet(Math.min(maxBet, betClamped + 1))} disabled={pvpBuying || betClamped >= maxBet}>+</button>
+              </div>
+              <button className="dw-btn primary dw-bet-go" disabled={pvpBuying} onClick={() => onBetRandom(betClamped)}>
+                🎲 Поставить {betClamped} {cellWord(betClamped)}
+              </button>
+            </div>
           ) : (
-            <button className="dw-btn primary dw-bet-go" onClick={onOpenDeposit}>
-              Купить карты для игры
-            </button>
+            <div className="dw-bet-manual-hint">👆 Нажимай на свободные ячейки, чтобы занять их</div>
           )}
-        </div>
+        </>
       )}
 
       <div className="dw-pvp-footer">
@@ -1641,12 +1650,6 @@ function SoloPanel({
 
   return (
     <>
-      {multiplier > 1 && (
-        <div className="dw-play-mult-bar">
-          <span className="dw-badge">×{multiplier}</span>
-        </div>
-      )}
-
       <div className={`dw-contracts-row ${roundArmed ? 'armed' : ''}`}>
         {Array.from({ length: PREMIUM_CARDS }).map((_, index) => {
           const selected = selectedClause === index;

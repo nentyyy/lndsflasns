@@ -69,23 +69,16 @@ export const MODES = {
     id: 'premium',
     title: 'Премиум завещание',
     entryCoins: 150,
-    // Веса нормализуются в pickOutcome. Сумма ≈ 5.218.
-    // Базовая RTP: (180+380+230)/5.218/150 ≈ 1.01 + редкие крупные мульты
-    // создают «джекпот» дисперсию — но настоящая ценность даётся через
-    // следующий раунд (множитель применяется к coins/bonus).
+    // Фиксированные призы. Множителей БОЛЬШЕ НЕТ — каждая карта это
+    // независимый фикс-приз (credit), множитель между раундами не переносится.
+    // RTP ≈ 86%: EV = (150*1.7+250*0.8+450*0.35+1000*0.10)/5.55 ≈ 128 из 150.
     outcomes: [
-      { key: 'win_small', type: 'coins',     credit: 180, weight: 1.4,  stamp: '+180' },
-      { key: 'win_big',   type: 'coins',     credit: 380, weight: 0.9,  stamp: '+380' },
-      { key: 'bonus',     type: 'bonus',     credit: 230, weight: 0.7,  stamp: 'Bonus' },
-      { key: 'empty',     type: 'empty',     credit: 0,   weight: 1.1,  stamp: 'Пусто' },
-      { key: 'debt',      type: 'debt',      credit: 0,   weight: 0.6,  stamp: 'Долг' },
-      // Множители — редкие и очень редкие. x20 ≈ 0.15% шанс на одну карту.
-      { key: 'mult_x2',   type: 'multiplier', credit: 0, nextMultiplier: 2,  weight: 0.30, stamp: '×2'  },
-      { key: 'mult_x5',   type: 'multiplier', credit: 0, nextMultiplier: 5,  weight: 0.12, stamp: '×5'  },
-      { key: 'mult_x8',   type: 'multiplier', credit: 0, nextMultiplier: 8,  weight: 0.05, stamp: '×8'  },
-      { key: 'mult_x10',  type: 'multiplier', credit: 0, nextMultiplier: 10, weight: 0.025, stamp: '×10' },
-      { key: 'mult_x15',  type: 'multiplier', credit: 0, nextMultiplier: 15, weight: 0.010, stamp: '×15' },
-      { key: 'mult_x20',  type: 'multiplier', credit: 0, nextMultiplier: 20, weight: 0.004, stamp: '×20' }
+      { key: 'win_s', type: 'coins', credit: 150,  weight: 1.7, stamp: '+150'  },
+      { key: 'win_m', type: 'coins', credit: 250,  weight: 0.8, stamp: '+250'  },
+      { key: 'win_l', type: 'coins', credit: 450,  weight: 0.35, stamp: '+450' },
+      { key: 'jack',  type: 'coins', credit: 1000, weight: 0.10, stamp: '+1000' },
+      { key: 'empty', type: 'empty', credit: 0,    weight: 1.7, stamp: 'Пусто' },
+      { key: 'debt',  type: 'debt',  credit: 0,    weight: 0.9, stamp: 'Долг'  }
     ]
   }
 };

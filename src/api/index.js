@@ -17,6 +17,9 @@ import { getReferralView, bindReferrer, makeRefCode, claimReferralPending } from
 import { getTournamentView, ensureActiveTournament } from './lib/tournaments.js';
 import { getPvpState, buyCard, buyRandomCards, PvpError, getLiveFeed, sweepExpiredLobbies } from './lib/pvp.js';
 import { getWheelState, spinWheel, WheelError } from './lib/wheel.js';
+import { listArtifacts, buyArtifact, listInventory, useArtifact, getPointsShop, spendPointsShop, ArtifactError } from './lib/artifacts.js';
+import { getPoints } from './lib/points.js';
+import { playLuckyBuy, getLuckyFeed, luckyBet, luckyMultiplier, LuckyError } from './lib/lucky-buy.js';
 import { buyTicketPack, buyTicketsCustom, TicketError } from './lib/tickets.js';
 import { getLeaderboard, getPersonalStats } from './lib/leaderboard.js';
 import { notifyAdminsPurchase } from './lib/admin-notify.js';
@@ -334,6 +337,78 @@ app.post('/api/wheel/spin',
     }
   }
 );
+
+// ─── Лавка торговца (артефакты) ───
+app.get('/api/shop/artifacts', async (req, res, next) => {
+  try { res.json({ artifacts: await listArtifacts() }); } catch (e) { next(e); }
+});
+app.post('/api/shop/artifacts/buy',
+  rateLimit({ bucket: 'art_buy', max: 30, windowMs: 60_000 }),
+  async (req, res, next) => {
+    try {
+      const out = await buyArtifact(req.user.id, String(req.body?.artifactId || ''));
+      const player = await db('players').where({ user_id: req.user.id }).first();
+      res.json({ ...out, player: playerView(player) });
+    } catch (e) {
+      if (e instanceof ArtifactError) return res.status(e.status).json({ error: e.message });
+      if (e instanceof InsufficientFunds) return res.status(400).json({ error: 'insufficient_balance' });
+      next(e);
+    }
+  }
+);
+app.get('/api/player/artifacts', async (req, res, next) => {
+  try { res.json({ artifacts: await listInventory(req.user.id) }); } catch (e) { next(e); }
+});
+app.post('/api/player/artifacts/use',
+  rateLimit({ bucket: 'art_use', max: 60, windowMs: 60_000 }),
+  async (req, res, next) => {
+    try {
+      const cells = Array.isArray(req.body?.targetCells) ? req.body.targetCells.map(Number).filter(Number.isInteger) : [];
+      const out = await useArtifact(req.user.id, String(req.body?.artifactId || ''), cells);
+      res.json(out);
+    } catch (e) {
+      if (e instanceof ArtifactError) return res.status(e.status).json({ error: e.message });
+      next(e);
+    }
+  }
+);
+
+// ─── Поинты лояльности + магазин поинтов ───
+app.get('/api/shop/points', async (req, res, next) => {
+  try { res.json(await getPointsShop(req.user.id)); } catch (e) { next(e); }
+});
+app.post('/api/shop/points/spend',
+  rateLimit({ bucket: 'pts_spend', max: 20, windowMs: 60_000 }),
+  async (req, res, next) => {
+    try {
+      const out = await spendPointsShop(req.user.id, String(req.body?.itemId || ''), req.body?.targetId ? String(req.body.targetId) : null);
+      const points = await getPoints(req.user.id);
+      res.json({ ...out, points: points.points });
+    } catch (e) {
+      if (e instanceof ArtifactError) return res.status(e.status).json({ error: e.message });
+      if (e.message === 'not_enough_points') return res.status(400).json({ error: 'not_enough_points' });
+      next(e);
+    }
+  }
+);
+
+// ─── Lucky Buy (ставка в дублонах) ───
+app.post('/api/lucky-buy',
+  rateLimit({ bucket: 'lucky', max: 30, windowMs: 60_000 }),
+  async (req, res, next) => {
+    try {
+      const out = await playLuckyBuy(req.user.id, String(req.body?.giftId || ''), req.body?.chancePercent);
+      res.json(out);
+    } catch (e) {
+      if (e instanceof LuckyError) return res.status(e.status).json({ error: e.message });
+      if (e instanceof InsufficientFunds) return res.status(400).json({ error: 'insufficient_balance' });
+      next(e);
+    }
+  }
+);
+app.get('/api/lucky-buy/feed', async (req, res, next) => {
+  try { res.json({ feed: await getLuckyFeed(10) }); } catch (e) { next(e); }
+});
 
 app.get('/api/tournament', async (req, res, next) => {
   try {

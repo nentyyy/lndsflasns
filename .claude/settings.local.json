@@ -40,7 +40,22 @@
       "Bash(node --input-type=commonjs -e ' *)",
       "Bash(node --check src/api/lib/security.js)",
       "Bash(node --check src/api/lib/portals.js)",
-      "Bash(node --check src/api/lib/validators.js)"
+      "Bash(node --check src/api/lib/validators.js)",
+      "Bash(git check-ignore *)",
+      "Bash(git ls-files *)",
+      "PowerShell(Get-SSHSession *)",
+      "Bash(node src/api/lib/migrate.js)",
+      "Bash(node -e \"import\\('./src/api/lib/db.js'\\).then\\(async \\({db}\\)=>{const c=await db\\('portals_cache'\\).count\\('* as n'\\).first\\(\\);const sample=await db\\('portals_cache'\\).whereIn\\('id',['plush-pepe','durovs-cap','cookie-heart','khabibs-papakha']\\).select\\('id','priceCoins','priceTon'\\);console.log\\('gifts:',c.n\\);console.log\\(sample\\);await db.destroy\\(\\);}\\)\")",
+      "Bash(node --check src/api/lib/db.js)",
+      "Bash(node --check src/api/lib/seed-gifts.js)",
+      "Bash(git reset *)",
+      "Bash(node --check src/api/lib/payments/ton.js)",
+      "Bash(VITE_API_BASE=\"\" npm run build)",
+      "Bash(ls src/api/migrations)",
+      "Bash(ls migrations *)",
+      "Bash(node --check src/support-bot/index.js)",
+      "Bash(node --check src/api/lib/support.js)",
+      "PowerShell($m = Get-Module -ListAvailable Posh-SSH | Select-Object -First 1; if \\($m\\) { \"Posh-SSH $\\($m.Version\\)\" } else { \"no Posh-SSH\" }; \\(Get-Command ssh -ErrorAction SilentlyContinue\\).Source; \\(Get-Command scp -ErrorAction SilentlyContinue\\).Source; \\(Get-Command rsync -ErrorAction SilentlyContinue\\).Source)"
     ]
   }
 }

@@ -1,5 +1,6 @@
 import { db } from './db.js';
 import { seedGifts } from './seed-gifts.js';
+import { seedArtifacts } from './artifacts.js';
 
 export async function migrate() {
   if (!(await db.schema.hasTable('players'))) {
@@ -53,6 +54,9 @@ export async function migrate() {
     if (!cols.wheel_last_spin)        await db.schema.alterTable('players', (t) => t.timestamp('wheel_last_spin').nullable());
     if (!cols.wheel_deposit_bonus_pct) await db.schema.alterTable('players', (t) => t.integer('wheel_deposit_bonus_pct').notNullable().defaultTo(0));
     if (!cols.wheel_spins)            await db.schema.alterTable('players', (t) => t.integer('wheel_spins').notNullable().defaultTo(0));
+    if (!cols.artifact_double)        await db.schema.alterTable('players', (t) => t.integer('artifact_double').notNullable().defaultTo(0));
+    if (!cols.artifact_shield)        await db.schema.alterTable('players', (t) => t.integer('artifact_shield').notNullable().defaultTo(0));
+    if (!cols.artifact_mirror_rounds) await db.schema.alterTable('players', (t) => t.integer('artifact_mirror_rounds').notNullable().defaultTo(0));
   }
 
   // Double-entry style ledger. balance on players is derived from these.
@@ -195,6 +199,7 @@ export async function migrate() {
       t.string('stamp').nullable();
       t.string('idempotency_key').nullable();
       t.boolean('was_free').notNullable().defaultTo(false);
+      t.integer('bonus_mult').notNullable().defaultTo(1); // Книга: ×2 на ячейку
       t.timestamp('taken_at').nullable();
       t.timestamp('revealed_at').nullable();
       t.primary(['lobby_id', 'card_index']);
@@ -204,6 +209,7 @@ export async function migrate() {
     const pvpCols = await db('pvp_cards').columnInfo();
     if (!pvpCols.idempotency_key) await db.schema.alterTable('pvp_cards', (t) => t.string('idempotency_key').nullable());
     if (!pvpCols.was_free)        await db.schema.alterTable('pvp_cards', (t) => t.boolean('was_free').notNullable().defaultTo(false));
+    if (!pvpCols.bonus_mult)      await db.schema.alterTable('pvp_cards', (t) => t.integer('bonus_mult').notNullable().defaultTo(1));
     // Add unique index on idempotency_key if not exists (catch for SQLite)
     try {
       await db.schema.alterTable('pvp_cards', (t) => t.unique(['idempotency_key']));
@@ -334,8 +340,66 @@ export async function migrate() {
     });
   }
 
+  // Поинты лояльности (1 дублон ставки = 1 поинт).
+  if (!(await db.schema.hasTable('player_points'))) {
+    await db.schema.createTable('player_points', (t) => {
+      t.bigInteger('user_id').primary();
+      t.bigInteger('points').notNullable().defaultTo(0);
+      t.bigInteger('total_earned').notNullable().defaultTo(0);
+    });
+  }
+
+  // Артефакты (каталог) + инвентарь игроков.
+  if (!(await db.schema.hasTable('artifacts'))) {
+    await db.schema.createTable('artifacts', (t) => {
+      t.string('id').primary();
+      t.string('name').notNullable();
+      t.text('description').notNullable();
+      t.string('type').notNullable();
+      t.integer('level').notNullable().defaultTo(1);
+      t.integer('price').notNullable();
+      t.text('effect').notNullable(); // JSON
+    });
+  }
+  if (!(await db.schema.hasTable('player_artifacts'))) {
+    await db.schema.createTable('player_artifacts', (t) => {
+      t.string('id').primary();
+      t.bigInteger('user_id').notNullable().index();
+      t.string('artifact_id').notNullable();
+      t.integer('quantity').notNullable().defaultTo(1);
+      t.timestamp('acquired_at').defaultTo(db.fn.now());
+      t.unique(['user_id', 'artifact_id']);
+    });
+  }
+
+  // Артефакты, применённые в раунде (гард «не 2 одинаковых за раунд»).
+  if (!(await db.schema.hasTable('round_artifacts'))) {
+    await db.schema.createTable('round_artifacts', (t) => {
+      t.increments('id').primary();
+      t.string('lobby_id').notNullable().index();
+      t.bigInteger('user_id').notNullable();
+      t.string('artifact_id').notNullable();
+      t.timestamp('used_at').defaultTo(db.fn.now());
+      t.unique(['lobby_id', 'user_id', 'artifact_id']);
+    });
+  }
+
+  // Lucky Buy — попытки колеса фортуны на подарок (ставка в дублонах).
+  if (!(await db.schema.hasTable('lucky_buy_attempts'))) {
+    await db.schema.createTable('lucky_buy_attempts', (t) => {
+      t.string('id').primary();
+      t.bigInteger('user_id').notNullable().index();
+      t.string('gift_id').notNullable();
+      t.integer('chance_percent').notNullable();
+      t.bigInteger('bet_coins').notNullable();
+      t.boolean('won').notNullable().defaultTo(false);
+      t.timestamp('created_at').defaultTo(db.fn.now());
+    });
+  }
+
   // Каталог подарков с захардкоженными ценами (идемпотентный upsert).
   await seedGifts();
+  await seedArtifacts();
 }
 
 // Allow `node lib/migrate.js` direct run

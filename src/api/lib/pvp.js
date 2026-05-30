@@ -5,6 +5,7 @@ import { createServerSeed } from './rng.js';
 import { debit, credit } from './wallet.js';
 import { addTournamentScore } from './tournaments.js';
 import { consumeTicket } from './tickets.js';
+import { addPoints } from './points.js';
 
 export class PvpError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -35,8 +36,8 @@ async function createLobby(mode) {
   const rng = makeRng(serverSeed);
   const shuffled = shuffle(def.outcomesPool, rng);
   const lobbyId = randomUUID();
-  // Рандомный таймер 30–40 секунд
-  const ttlMs = 30_000 + Math.floor(rng() * 10_001);
+  // Фиксированное время ставок — 30 секунд.
+  const ttlMs = 30_000;
 
   await db.transaction(async (trx) => {
     const maxRow = await trx('pvp_lobbies').max('round_number as m').first();
@@ -91,14 +92,16 @@ async function settleIfExpired(lobby) {
 
   // Публикуем server_seed для честной игры
   for (const c of cards) {
-    if (Number(c.credit) > 0) {
+    // Книга: bonus_mult ×2 на конкретную ячейку.
+    const payout = Number(c.credit) * (Number(c.bonus_mult) || 1);
+    if (payout > 0) {
       await db.transaction(async (trx) => {
-        await credit(trx, c.user_id, Number(c.credit), 'pvp_payout', `pvp:${lobby.id}:${c.card_index}`);
+        await credit(trx, c.user_id, payout, 'pvp_payout', `pvp:${lobby.id}:${c.card_index}`);
         await trx('players').where({ user_id: c.user_id }).update({
-          coins_won: trx.raw('coins_won + ?', [c.credit]),
-          best_win: trx.raw('CASE WHEN best_win < ? THEN ? ELSE best_win END', [c.credit, c.credit]),
+          coins_won: trx.raw('coins_won + ?', [payout]),
+          best_win: trx.raw('CASE WHEN best_win < ? THEN ? ELSE best_win END', [payout, payout]),
           pvp_zero_streak: 0,
-          pvp_session_returned: trx.raw('pvp_session_returned + ?', [c.credit])
+          pvp_session_returned: trx.raw('pvp_session_returned + ?', [payout])
         });
       }).catch((e) => console.error('pvp credit err', e.message));
     } else {
@@ -116,7 +119,7 @@ async function settleIfExpired(lobby) {
 
     try {
       await db.transaction(async (trx) => {
-        await addTournamentScore(trx, c.user_id, Number(lobby.entry_coins) + Number(c.credit));
+        await addTournamentScore(trx, c.user_id, Number(lobby.entry_coins) + payout);
       });
     } catch {}
   }
@@ -284,6 +287,9 @@ export async function buyCard(userId, mode, cardIndex, idempotencyKey) {
       pvp_total_reveals: trx.raw('pvp_total_reveals + 1')
     });
 
+    // Поинты лояльности: ставка = entry дублонов.
+    await addPoints(trx, userId, Number(lobby.entry_coins));
+
     // Запустить таймер при первой покупке
     if (!lobby.opened_at) {
       const opened = new Date();
@@ -362,6 +368,7 @@ export async function buyRandomCards(userId, mode, countRaw, idempotencyKey) {
       await trx('pvp_cards').where({ lobby_id: lobby.id, card_index: idx }).update({ was_free: wasFree });
       await applyLossProtection(trx, lobby.id, idx, player);
       await trx('players').where({ user_id: userId }).update({ pvp_total_reveals: trx.raw('pvp_total_reveals + 1') });
+      await addPoints(trx, userId, Number(lobby.entry_coins));
       cells.push(idx);
     }
 
