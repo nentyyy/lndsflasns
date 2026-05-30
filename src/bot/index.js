@@ -98,9 +98,9 @@ bot.command('give', async (ctx) => {
 
   // Уведомляем получателя
   const giftMsg = [
-    `🪙 Тебе начислено +${amount} монет!`,
+    `🪙 Тебе начислено +${amount} дублонов!`,
     '',
-    `Баланс: ${Number(updatedPlayer.balance)} монет.`,
+    `Баланс: ${Number(updatedPlayer.balance)} дублонов.`,
     'Удачи в раунде — жми «Играть»!'
   ].join('\n');
 
@@ -113,7 +113,7 @@ bot.command('give', async (ctx) => {
   }
 
   await ctx.reply(
-    `✅ ${name} получил +${amount} монет\nНовый баланс: ${Number(updatedPlayer.balance)} монет`
+    `✅ ${name} получил +${amount} дублонов\nНовый баланс: ${Number(updatedPlayer.balance)} дублонов`
   );
 });
 
@@ -125,7 +125,7 @@ bot.command('help', async (ctx) => {
     '/deposit — пополнить баланс\n' +
     '/profile — мой профиль\n' +
     '/referral — реферальная программа\n' +
-    (isAdmin(ctx) ? '\n/give @username сумма — начислить монеты' : ''),
+    (isAdmin(ctx) ? '\n/give @username сумма — начислить дублоны' : ''),
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🎴  Играть', web_app: { url: MINI_APP_URL } }]] } }
   );
 });
@@ -180,7 +180,7 @@ bot.on('callback_query:data', async (ctx) => {
     return ctx.answerCallbackQuery({ text: 'Одобрено' });
   }
 
-  // reject → возврат монет покупателю
+  // reject → возврат дублонов покупателю
   try {
     await db.transaction(async (trx) => {
       await credit(trx, purchase.user_id, Number(purchase.price_coins), 'portals_refund', `refund:${purchaseId}`);
@@ -188,10 +188,10 @@ bot.on('callback_query:data', async (ctx) => {
   } catch (e) { console.error('refund err', e.message); }
   await db('portals_purchases').where({ id: purchaseId }).update({ status: 'rejected' });
 
-  await ctx.editMessageText(`${baseText}\n\n❌ ОТКЛОНЕНО (${by}) — монеты возвращены`).catch(() => {});
+  await ctx.editMessageText(`${baseText}\n\n❌ ОТКЛОНЕНО (${by}) — дублоны возвращены`).catch(() => {});
   try {
     await ctx.api.sendMessage(purchase.user_id,
-      `Заявка на подарок «${purchase.gift_name}» отклонена. ${purchase.price_coins} монет возвращены на баланс.`);
+      `Заявка на подарок «${purchase.gift_name}» отклонена. ${purchase.price_coins} дублонов возвращены на баланс.`);
   } catch (e) { console.warn('notify buyer err', e.message); }
   return ctx.answerCallbackQuery({ text: 'Отклонено, возврат сделан' });
 });
@@ -206,12 +206,12 @@ bot.on('message:successful_payment', async (ctx) => {
       currency: sp.currency
     });
     await ctx.reply(
-      `✅ *Оплачено!*\n\n+${coins} монет зачислено\nБаланс: ${balance} монет`,
+      `✅ *Оплачено!*\n\n+${coins} дублонов зачислено\nБаланс: ${balance} дублонов`,
       { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🎴  Играть', web_app: { url: MINI_APP_URL } }]] } }
     );
   } catch (e) {
     console.error('settle stars error', e);
-    await ctx.reply('Платёж получен, монеты будут зачислены в течение минуты.');
+    await ctx.reply('Платёж получен, дублоны будут зачислены в течение минуты.');
   }
 });
 

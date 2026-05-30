@@ -302,6 +302,84 @@ export async function buyCard(userId, mode, cardIndex, idempotencyKey) {
   });
 }
 
+// Купить N случайных ячеек: игрок выбирает количество, ячейки ставятся рандомно.
+// Каждая ячейка оплачивается welcome → free spin → cheap-картой. Если карт не хватает,
+// ставим столько, на сколько хватило (partial), и возвращаем placed.
+export async function buyRandomCards(userId, mode, countRaw, idempotencyKey) {
+  const count = Math.max(1, Math.min(36, Number(countRaw) || 1));
+
+  // Anti-replay: если этот батч уже выполнялся — вернём те же ячейки.
+  if (idempotencyKey) {
+    const prev = await db('pvp_cards').where('idempotency_key', 'like', `${idempotencyKey}:%`).orderBy('card_index', 'asc');
+    if (prev.length) {
+      const player = await db('players').where({ user_id: userId }).first();
+      return { lobbyId: prev[0].lobby_id, placed: prev.length, cells: prev.map((c) => c.card_index), balance: Number(player.balance), freeTillNext: freeTillNext(player), replayed: true };
+    }
+  }
+
+  const existingLobby = await getActiveLobbyRow(mode);
+  if (existingLobby) await settleIfExpired(existingLobby);
+  let lobby = await getActiveLobbyRow(mode);
+  if (!lobby) { await createLobby(mode); lobby = await getActiveLobbyRow(mode); }
+  if (!lobby) throw new PvpError('lobby unavailable', 500);
+
+  return db.transaction(async (trx) => {
+    const lock = await trx('pvp_lobbies').where({ id: lobby.id, status: 'open' }).first();
+    if (!lock) throw new PvpError('lobby closed', 409);
+
+    // Свободные ячейки в случайном порядке.
+    const freeRows = await trx('pvp_cards').where({ lobby_id: lobby.id, status: 'free' }).select('card_index');
+    const freeIdx = freeRows.map((r) => r.card_index);
+    for (let i = freeIdx.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [freeIdx[i], freeIdx[j]] = [freeIdx[j], freeIdx[i]]; }
+
+    const cells = [];
+    let welcomeApplied = false;
+    for (const idx of freeIdx) {
+      if (cells.length >= count) break;
+
+      // Атомарно занимаем ячейку.
+      const occupied = await trx('pvp_cards')
+        .where({ lobby_id: lobby.id, card_index: idx, status: 'free' })
+        .update({ user_id: userId, status: 'taken', taken_at: trx.fn.now(), idempotency_key: idempotencyKey ? `${idempotencyKey}:${idx}` : null });
+      if (!occupied) continue; // гонка — пробуем следующую
+
+      // Определяем оплату: welcome → free spin → cheap-карта.
+      const player = await trx('players').where({ user_id: userId }).first();
+      let wasFree = false;
+      if (!player.welcome_used && WELCOME_CHEAP_DISCOUNT >= 1 && !welcomeApplied) {
+        welcomeApplied = true; wasFree = true;
+        await trx('players').where({ user_id: userId }).update({ welcome_used: true });
+      } else if (isFreeReveal(player)) {
+        wasFree = true;
+      } else if (await consumeTicket(trx, userId, 'cheap')) {
+        // оплачено картой
+      } else {
+        // Нет оплаты — освобождаем ячейку и останавливаемся.
+        await trx('pvp_cards').where({ lobby_id: lobby.id, card_index: idx }).update({ user_id: null, status: 'free', taken_at: null, idempotency_key: null });
+        break;
+      }
+
+      await trx('pvp_cards').where({ lobby_id: lobby.id, card_index: idx }).update({ was_free: wasFree });
+      await applyLossProtection(trx, lobby.id, idx, player);
+      await trx('players').where({ user_id: userId }).update({ pvp_total_reveals: trx.raw('pvp_total_reveals + 1') });
+      cells.push(idx);
+    }
+
+    if (cells.length === 0) throw new PvpError('need_card', 402);
+
+    // Запускаем таймер при первой покупке в лобби.
+    const fresh = await trx('pvp_lobbies').where({ id: lobby.id }).first();
+    if (!fresh.opened_at) {
+      const opened = new Date();
+      const ends = new Date(opened.getTime() + Number(fresh.ttl_ms || 35_000));
+      await trx('pvp_lobbies').where({ id: lobby.id }).update({ opened_at: opened.toISOString(), ends_at: ends.toISOString() });
+    }
+
+    const updatedPlayer = await trx('players').where({ user_id: userId }).first();
+    return { lobbyId: lobby.id, placed: cells.length, cells, balance: Number(updatedPlayer.balance), welcomeApplied, freeTillNext: freeTillNext(updatedPlayer), replayed: false };
+  });
+}
+
 export async function getPvpState(userId, mode) {
   let active = await getActiveLobbyRow(mode);
   if (active) active = await settleIfExpired(active);

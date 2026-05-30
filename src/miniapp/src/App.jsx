@@ -129,6 +129,7 @@ function App() {
   const [portalsGifts, setPortalsGifts] = useState([]);
   const [roundsOpen, setRoundsOpen] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [wheelOpen, setWheelOpen] = useState(false);
   const [authError, setAuthError] = useState(false);
 
   // Real TON Connect
@@ -231,12 +232,12 @@ function App() {
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
       notify(`+${pack.count} карт${pack.count > 1 ? '' : 'а'} · ${type === 'cheap' ? 'дешёвых' : 'премиум'}`, 'success');
     } catch (e) {
-      if (e.message === 'insufficient_balance') notify('Недостаточно монет', 'danger');
+      if (e.message === 'insufficient_balance') notify('Недостаточно дублонов', 'danger');
       else notify('Не удалось купить', 'danger');
     }
   };
 
-  // Покупка карт по введённому числу (оплата монетами).
+  // Покупка карт по введённому числу (оплата дублонами).
   const buyCardsCount = async (type, count) => {
     const n = parseInt(count, 10);
     if (!n || n < 1) { notify('Введи число карт', 'danger'); return; }
@@ -249,7 +250,7 @@ function App() {
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
       notify(`+${n} ${type === 'cheap' ? 'PvP' : 'премиум'} карт`, 'success');
     } catch (e) {
-      if (e.message === 'insufficient_balance') notify('Недостаточно монет', 'danger');
+      if (e.message === 'insufficient_balance') notify('Недостаточно дублонов', 'danger');
       else if (e.message === 'bad count') notify('1–500 карт', 'danger');
       else notify('Не удалось купить', 'danger');
     }
@@ -299,6 +300,27 @@ function App() {
     }
   };
 
+  // Случайная расстановка: выбираешь количество ячеек, сервер ставит их рандомно.
+  const buyRandomCells = async (count) => {
+    if (pvpBuying) return;
+    setPvpBuying(true);
+    try {
+      const s = await api.pvpBuyRandom('cheap', count);
+      setPvpState({ lobby: s.lobby, cards: s.cards });
+      api.me().then((m) => { if (m?.player) setState((c) => ({ ...c, player: { ...c.player, ...m.player } })); }).catch(() => {});
+      notify(s.placed < count ? `Поставлено ${s.placed} из ${count} (не хватило карт)` : `Поставлено ${s.placed} ячеек 🎲`, 'success');
+      window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('medium');
+    } catch (e) {
+      if (e.message === 'need_card') {
+        notify('Нужны карты — купи карты, чтобы играть', 'violet');
+        setDepositOpen(true); setDepositView('cards'); setTonIntent(null);
+      } else if (e.status === 401) notify('Сессия истекла — открой игру заново через бота', 'danger');
+      else notify('Не удалось поставить', 'danger');
+    } finally {
+      setPvpBuying(false);
+    }
+  };
+
   const openPlayerProfile = useCallback(async (userId) => {
     if (!userId) return;
     setPlayerProfileOpen({ userId });
@@ -317,7 +339,7 @@ function App() {
       if (res.claimed > 0) {
         setState((c) => ({ ...c, player: { ...c.player, coins: res.balance, refPending: 0 } }));
         setRefData((r) => r ? { ...r, pending: 0 } : r);
-        notify(`+${formatCoins(res.claimed)} монет реферальных`, 'success');
+        notify(`+${formatCoins(res.claimed)} дублонов реферальных`, 'success');
       } else {
         notify('Нет начислений для вывода', 'default');
       }
@@ -361,7 +383,7 @@ function App() {
               const data = await api.bootstrap();
               setState((c) => ({ ...c, player: { ...c.player, ...data.player } }));
               setDepositOpen(false);
-              notify(`+${formatCoins(pack.coins + pack.bonus)} монет зачислено`, 'success');
+              notify(`+${formatCoins(pack.coins + pack.bonus)} дублонов зачислено`, 'success');
             } catch { notify('Баланс обновится через секунду', 'default'); }
           } else if (status === 'cancelled') {
             notify('Оплата отменена', 'default');
@@ -383,10 +405,10 @@ function App() {
     }
   };
 
-  // Динамический Stars-платёж: любая сумма монет (>=1), цена с сервера.
+  // Динамический Stars-платёж: любая сумма дублонов (>=1), цена с сервера.
   const handleStarsCustom = async (coins) => {
     const webApp = window.Telegram?.WebApp;
-    if (!coins || coins < 1) { notify('Минимум 1 монета (20 ⭐)', 'danger'); return; }
+    if (!coins || coins < 1) { notify('Минимум 1 дублон (20 ⭐)', 'danger'); return; }
     setPayPending(true);
     try {
       const res = await api.createStarsCustom(coins);
@@ -401,7 +423,7 @@ function App() {
               const data = await api.bootstrap();
               setState((c) => ({ ...c, player: { ...c.player, ...data.player } }));
               setDepositOpen(false);
-              notify(`+${formatCoins(credited)} монет зачислено`, 'success');
+              notify(`+${formatCoins(credited)} дублонов зачислено`, 'success');
             } catch { notify('Баланс обновится через секунду', 'default'); }
           } else if (status === 'cancelled') notify('Оплата отменена', 'default');
           else if (status === 'failed') notify('Платёж не прошёл', 'danger');
@@ -455,9 +477,9 @@ function App() {
     }
   };
 
-  // Динамический TON-платёж на произвольное число монет (через TonConnect).
+  // Динамический TON-платёж на произвольное число дублонов (через TonConnect).
   const handleTonCustom = async (coins) => {
-    if (!coins || coins < 1) { notify('Минимум 1 монета (0.1 TON)', 'danger'); return; }
+    if (!coins || coins < 1) { notify('Минимум 1 дублон (0.1 TON)', 'danger'); return; }
     setPayPending(true);
     try {
       const res = await api.createTonCustom(coins);
@@ -497,7 +519,7 @@ function App() {
           setState((c) => ({ ...c, player: { ...c.player, ...data.player } }));
           setDepositOpen(false);
           setTonIntent(null);
-          notify(`+${formatCoins(pack.coins + pack.bonus)} монет зачислено`, 'success');
+          notify(`+${formatCoins(pack.coins + pack.bonus)} дублонов зачислено`, 'success');
           window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
           return;
         }
@@ -532,7 +554,7 @@ function App() {
 
   const buyNft = async (item) => {
     if (state.player.coins < item.priceCoins) {
-      notify('Недостаточно монет', 'danger');
+      notify('Недостаточно дублонов', 'danger');
       return;
     }
     try {
@@ -541,7 +563,7 @@ function App() {
       notify('Заявка создана — подарок придёт через Portals', 'success');
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
     } catch (e) {
-      if (e.message === 'insufficient_balance') notify('Недостаточно монет', 'danger');
+      if (e.message === 'insufficient_balance') notify('Недостаточно дублонов', 'danger');
       else notify('Ошибка при покупке', 'danger');
     }
   };
@@ -564,7 +586,7 @@ function App() {
         notify('Нужна премиум-карта — купи карты', 'violet');
         setDepositOpen(true); setDepositView('cards'); setTonIntent(null);
       }
-      else if (e.message === 'insufficient_balance') notify('Недостаточно монет', 'danger');
+      else if (e.message === 'insufficient_balance') notify('Недостаточно дублонов', 'danger');
       else notify('Ошибка сети', 'danger');
     }
   };
@@ -663,7 +685,7 @@ function App() {
       },
       player: { ...current.player, coins: current.player.coins + credit }
     }));
-    notify(credit > 0 ? `+${formatCoins(credit)} монет — реферальная награда` : `Награда за реферала #${level} получена`, 'success');
+    notify(credit > 0 ? `+${formatCoins(credit)} дублонов — реферальная награда` : `Награда за реферала #${level} получена`, 'success');
   };
 
   const adminApproveTransfer = (id) => {
@@ -718,6 +740,10 @@ function App() {
         <main className="dw-app">
           <TopBar player={state.player} tonWallet={tonWallet} onOpenDeposit={() => { setDepositOpen(true); setDepositView('main'); setTonIntent(null); }} onOpenTutorial={() => setTutorialOpen(true)} />
 
+          {tab === 'play' && state.player.firstDepositDone && (
+            <WheelBanner bonusPct={state.player.wheelDepositBonusPct} onOpen={() => setWheelOpen(true)} />
+          )}
+
           {tab === 'play' && (
             <WillTab
               view={willView}
@@ -740,6 +766,7 @@ function App() {
               onPickClause={playRound}
               onResetRound={resetRound}
               onBuyPvpCard={buyPvpCard}
+              onBetRandom={buyRandomCells}
               onOpenDeposit={() => { setDepositOpen(true); setDepositView('main'); setTonIntent(null); }}
               onOpenShopTickets={() => { setTab('shop'); setShopTab('tickets'); }}
               onOpenPlayerProfile={openPlayerProfile}
@@ -822,7 +849,7 @@ function App() {
               const data = await api.bootstrap();
               setState((c) => ({ ...c, player: { ...c.player, ...data.player } }));
             } catch {}
-            notify(`+${formatCoins(coins)} монет зачислено`, 'success');
+            notify(`+${formatCoins(coins)} дублонов зачислено`, 'success');
             window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
             setTimeout(() => { setDepositOpen(false); setDepositView('main'); }, 1500);
           }}
@@ -847,6 +874,13 @@ function App() {
           onNavigate={(t) => { setTab(t); setWillView('pvp'); }}
           onPlayFree={() => { setTutorialOpen(false); setTab('play'); setWillView('pvp'); notify('Открой любую карту — первая бесплатно!', 'success'); }}
           onClose={() => setTutorialOpen(false)}
+        />
+      )}
+
+      {wheelOpen && (
+        <WheelModal
+          onClose={() => setWheelOpen(false)}
+          onReward={() => { api.me().then((m) => { if (m?.player) setState((c) => ({ ...c, player: { ...c.player, ...m.player } })); }).catch(() => {}); }}
         />
       )}
 
@@ -889,7 +923,7 @@ function App() {
 /* ─── Туториал для новичков ───────────────────────────────── */
 
 const TUTORIAL_STEPS = [
-  { tab: 'play', demo: 'cards', icon: '🎴', title: 'ЖИВЫЕ РАУНДЫ', text: 'Открывай ячейки в PvP-раунде на 36 карт. За золотыми — монеты, пустые гаснут. Каждое 10-е открытие — бесплатное!' },
+  { tab: 'play', demo: 'cards', icon: '🎴', title: 'ЖИВЫЕ РАУНДЫ', text: 'Открывай ячейки в PvP-раунде на 36 карт. За золотыми — дублоны, пустые гаснут. Каждое 10-е открытие — бесплатное!' },
   { tab: 'shop', demo: 'vault', icon: '🏦', title: 'СЕЙФ', text: 'Пополняй баланс через Stars или TON и покупай карты для игры — без них в раунд не зайти.' },
   { tab: 'profile', demo: 'profile', icon: '👤', title: 'ПРОФИЛЬ', text: 'Статистика, кланы и рефералка — зови друзей и получай 10% с каждого их пополнения.' }
 ];
@@ -990,6 +1024,132 @@ function Tutorial({ isNew, onNavigate, onPlayFree, onClose }) {
             </motion.div>
           )}
         </AnimatePresence>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ─── Колесо бонусов ──────────────────────────────────────── */
+
+function WheelBanner({ bonusPct, onOpen }) {
+  return (
+    <button className="dw-wheel-banner" onClick={onOpen}>
+      <span className="dw-wheel-banner-ico">🎡</span>
+      <span className="dw-wheel-banner-txt">
+        <strong>Колесо фортуны</strong>
+        <small>{bonusPct > 0 ? `Активен бонус +${bonusPct}% к депозиту` : 'Крути и забирай бонусы'}</small>
+      </span>
+      <span className="dw-wheel-banner-go">›</span>
+    </button>
+  );
+}
+
+function wheelShort(seg) {
+  if (seg.type === 'coins') return `+${seg.value}`;
+  if (seg.type === 'deposit_bonus') return `+${seg.value}%`;
+  return `+${seg.value}🎴`;
+}
+
+function WheelModal({ onClose, onReward }) {
+  const [data, setData] = useState(null);
+  const [spinning, setSpinning] = useState(false);
+  const [rotation, setRotation] = useState(0);
+  const [result, setResult] = useState(null);
+  const [now, setNow] = useState(Date.now());
+  const rotRef = React.useRef(0);
+
+  useEffect(() => { api.wheel().then(setData).catch(() => setData({ error: true })); }, []);
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+
+  const segs = data?.segments || [];
+  const N = segs.length || 8;
+  const seg = 360 / N;
+
+  const nextAt = data?.nextSpinAt ? new Date(data.nextSpinAt).getTime() : 0;
+  const onCooldown = data && !data.canSpin && data.unlocked && nextAt > now;
+  const waitLabel = () => {
+    const ms = Math.max(0, nextAt - now);
+    const h = Math.floor(ms / 3.6e6), m = Math.floor((ms % 3.6e6) / 6e4);
+    return h > 0 ? `${h}ч ${m}м` : `${m}м`;
+  };
+
+  const spin = async () => {
+    if (spinning || !data?.canSpin) return;
+    setSpinning(true); setResult(null);
+    try {
+      const out = await api.wheelSpin();
+      const target = 360 * 6 - (out.segmentIndex * seg + seg / 2);
+      const base = Math.ceil(rotRef.current / 360) * 360;
+      const next = base + target;
+      rotRef.current = next;
+      setRotation(next);
+      setTimeout(() => {
+        setResult(out.reward);
+        setSpinning(false);
+        setData((d) => ({ ...d, canSpin: false, nextSpinAt: out.nextSpinAt }));
+        onReward && onReward(out);
+        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
+      }, 4300);
+    } catch (e) {
+      setSpinning(false);
+      if (e.message === 'cooldown') setData((d) => ({ ...d, canSpin: false }));
+    }
+  };
+
+  const xy = (r, aDeg) => { const a = (aDeg * Math.PI) / 180; return [100 + r * Math.sin(a), 100 - r * Math.cos(a)]; };
+
+  return (
+    <motion.div className="dw-sheet-backdrop" onClick={onClose}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
+      <motion.div className="dw-wheel-sheet" onClick={(e) => e.stopPropagation()}
+        initial={{ y: 40, opacity: 0, scale: 0.96 }} animate={{ y: 0, opacity: 1, scale: 1 }} transition={{ duration: 0.3 }}>
+        <div className="dw-round-result-header">
+          <h2>🎡 Колесо фортуны</h2>
+          <button className="dw-icon-btn" onClick={onClose}>×</button>
+        </div>
+
+        <div className="dw-wheel-stage">
+          <div className="dw-wheel-pointer" />
+          <svg viewBox="0 0 200 200" className="dw-wheel-svg">
+            <g style={{ transition: spinning ? 'transform 4.2s cubic-bezier(0.16,1,0.3,1)' : 'none', transform: `rotate(${rotation}deg)`, transformOrigin: '100px 100px' }}>
+              {segs.map((s, i) => {
+                const a0 = i * seg, a1 = (i + 1) * seg;
+                const [x0, y0] = xy(96, a0), [x1, y1] = xy(96, a1);
+                const [lx, ly] = xy(60, a0 + seg / 2);
+                const fill = i % 2 === 0 ? '#3a2e0c' : '#1c1710';
+                const isWin = result && segs[i].key === result.key;
+                return (
+                  <g key={i}>
+                    <path d={`M100 100 L${x0} ${y0} A96 96 0 0 1 ${x1} ${y1} Z`}
+                      fill={isWin ? '#5a4410' : fill} stroke="#d4af37" strokeWidth="1" opacity={result && !isWin ? 0.5 : 1} />
+                    <text x={lx} y={ly} fill="#f0d98a" fontSize="11" fontWeight="800"
+                      textAnchor="middle" dominantBaseline="middle"
+                      transform={`rotate(${a0 + seg / 2} ${lx} ${ly})`}>{wheelShort(s)}</text>
+                  </g>
+                );
+              })}
+              <circle cx="100" cy="100" r="14" fill="#d4af37" stroke="#1c1710" strokeWidth="2" />
+            </g>
+          </svg>
+        </div>
+
+        {result ? (
+          <div className="dw-wheel-result">🎉 Выпало: <strong>{result.label}</strong></div>
+        ) : (
+          <div className="dw-wheel-hint">Один бесплатный спин раз в 24 часа</div>
+        )}
+
+        {data?.canSpin ? (
+          <button className="dw-btn primary full dw-wheel-spin" disabled={spinning} onClick={spin}>
+            {spinning ? 'Крутим…' : '🎲 Крутить'}
+          </button>
+        ) : onCooldown ? (
+          <button className="dw-btn ghost full" disabled>Следующий спин через {waitLabel()}</button>
+        ) : result ? (
+          <button className="dw-btn primary full" onClick={onClose}>Забрать</button>
+        ) : (
+          <button className="dw-btn ghost full" disabled>{data?.unlocked === false ? 'Сделай первый депозит' : 'Недоступно'}</button>
+        )}
       </motion.div>
     </motion.div>
   );
@@ -1151,12 +1311,12 @@ function HomeTab({ player, liveWins, onOpenPlay, onOpenDeposit }) {
 
       <div className="dw-home-info">
         <div className="dw-home-info-item">
-          <span className="dw-home-info-val">5 монет</span>
+          <span className="dw-home-info-val">5 дублонов</span>
           <span className="dw-home-info-lbl">вход в раунд</span>
         </div>
         <div className="dw-home-info-sep" />
         <div className="dw-home-info-item">
-          <span className="dw-home-info-val">+40 монет</span>
+          <span className="dw-home-info-val">+40 дублонов</span>
           <span className="dw-home-info-lbl">топ приз</span>
         </div>
         <div className="dw-home-info-sep" />
@@ -1172,7 +1332,7 @@ function HomeTab({ player, liveWins, onOpenPlay, onOpenDeposit }) {
           <div className="dw-live-scroll">
             {liveWins.map((w, i) => (
               <span key={i} className="dw-live-item">
-                <strong>{w.name}</strong> выиграл {w.amount} монет
+                <strong>{w.name}</strong> выиграл {w.amount} дублонов
               </span>
             ))}
           </div>
@@ -1193,14 +1353,14 @@ function WillTab(props) {
           onClick={() => onViewChange('pvp')}
         >
           ПВП
-          <small>5 монет · 36 карт</small>
+          <small>5 дублонов · 36 карт</small>
         </button>
         <button
           className={`dw-will-pager-btn ${view === 'solo' ? 'active' : ''}`}
           onClick={() => onViewChange('solo')}
         >
           Соло · Премиум
-          <small>150 монет · 5 печатей</small>
+          <small>150 дублонов · 5 печатей</small>
         </button>
       </div>
 
@@ -1259,9 +1419,9 @@ function buildPvpRows(cardCount) {
 function PvpCard({ card, idx, settled, revealOpen = true, pvpBuying, lowBalance, onBuyPvpCard, onOpenPlayerProfile, shuffling }) {
   // revealOpen=false → исход ещё «закрыт» (последовательное открытие после замеса).
   const isRevealed = revealOpen && (settled || card.status === 'revealed') && card.outcome;
-  const justOpened = isRevealed && card.outcome.type === 'coins';
+  // Ячейки больше не выбираются вручную — расстановка рандомная. Карта только показывает статус.
   const cls = [
-    'dw-pvp-card',
+    'dw-pvp-card', 'dw-pvp-card--locked',
     card.taken && !card.mine ? 'taken' : '',
     card.mine ? 'mine' : '',
     isRevealed ? 'revealed' : '',
@@ -1269,17 +1429,13 @@ function PvpCard({ card, idx, settled, revealOpen = true, pvpBuying, lowBalance,
     isRevealed && card.outcome.type === 'empty' ? 'empty' : '',
     shuffling ? 'shuffling' : ''
   ].filter(Boolean).join(' ');
-  void justOpened;
 
   return (
-    <motion.button
+    <motion.div
       className={cls}
-      disabled={pvpBuying || card.taken || settled}
-      onClick={() => onBuyPvpCard(idx)}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.18, delay: 0.008 * idx }}
-      whileTap={{ scale: 0.95 }}
     >
       {card.owner && (() => { const u = userDisplay(card.owner); return (
         <button className="dw-pvp-avatar-btn"
@@ -1294,7 +1450,7 @@ function PvpCard({ card, idx, settled, revealOpen = true, pvpBuying, lowBalance,
       <span className="dw-pvp-card-num">{idx + 1}</span>
       {!isRevealed && <span className="dw-pvp-card-seal" />}
       {isRevealed && <span className="dw-pvp-card-stamp">{card.outcome.stamp}</span>}
-    </motion.button>
+    </motion.div>
   );
 }
 
@@ -1316,11 +1472,12 @@ function PvpWinnerStat({ label, winner, amount, right, onClick }) {
   );
 }
 
-function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvpTotalReveals, lastWinner = null, onOpenRounds, onBuyPvpCard, onOpenDeposit, onOpenPlayerProfile }) {
+function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvpTotalReveals, lastWinner = null, onOpenRounds, onBuyPvpCard, onBetRandom, onOpenDeposit, onOpenPlayerProfile }) {
   const [tick, setTick] = useState(0);
   const [shuffling, setShuffling] = useState(false);
   const [revealStep, setRevealStep] = useState(9999); // сколько ячеек уже раскрыто (9999 = все)
   const [bestRound, setBestRound] = useState(null);
+  const [bet, setBet] = useState(1); // сколько ячеек поставить (рандомно)
   const prevStatus = React.useRef(null);
 
   // Лучший раунд (по призу) — для левой плашки шапки.
@@ -1335,7 +1492,7 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   void tick;
 
   // Когда лобби переходит в settled — короткий «замес», затем ячейки
-  // открываются по очереди (монеты не показываются все разом).
+  // открываются по очереди (дублоны не показываются все разом).
   useEffect(() => {
     const status = pvpState?.lobby?.status;
     const total = pvpState?.lobby?.cardCount ?? 36;
@@ -1382,6 +1539,14 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   const canPlay = welcomeFree || hasTicket || isFreeNext;
   const priceLabel = welcomeFree ? 'бесплатно' : hasTicket ? `${tickets.cheap} карт` : 'нужна карта';
 
+  // Сколько ячеек можно поставить рандомно: ограничено свободными ячейками и
+  // доступными «входами» (welcome + free spin + cheap-карты).
+  const freeCount = cards.filter((c) => !c.taken).length || cardCount;
+  const entriesAvail = (welcomeFree ? 1 : 0) + (isFreeNext ? 1 : 0) + (tickets?.cheap || 0);
+  const maxBet = Math.max(1, Math.min(freeCount, entriesAvail || 1, 15));
+  const betClamped = Math.min(Math.max(1, bet), maxBet);
+  const cellWord = (n) => { const a = n % 10, b = n % 100; if (a === 1 && b !== 11) return 'ячейку'; if (a >= 2 && a <= 4 && (b < 10 || b >= 20)) return 'ячейки'; return 'ячеек'; };
+
   const rows = buildPvpRows(cardCount);
 
   const getCard = (i) => cards.find((c) => c.index === i) || { index: i, status: 'free', mine: false, taken: false, outcome: null, owner: null };
@@ -1426,9 +1591,29 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
         }
       </div>
 
+      {/* Рандомная расстановка: выбираешь кол-во ячеек, ставятся случайно */}
+      {!settled && (
+        <div className="dw-bet-control">
+          <div className="dw-bet-stepper">
+            <button onClick={() => setBet(Math.max(1, betClamped - 1))} disabled={pvpBuying || betClamped <= 1}>−</button>
+            <span className="dw-bet-count">{betClamped}</span>
+            <button onClick={() => setBet(Math.min(maxBet, betClamped + 1))} disabled={pvpBuying || betClamped >= maxBet}>+</button>
+          </div>
+          {canPlay ? (
+            <button className="dw-btn primary dw-bet-go" disabled={pvpBuying} onClick={() => onBetRandom(betClamped)}>
+              🎲 Поставить {betClamped} {cellWord(betClamped)}
+            </button>
+          ) : (
+            <button className="dw-btn primary dw-bet-go" onClick={onOpenDeposit}>
+              Купить карты для игры
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="dw-pvp-footer">
         <span>
-          {formatCoins(balance)} монет · моих: <strong>{myCards.length}</strong>
+          {formatCoins(balance)} дублонов · моих: <strong>{myCards.length}</strong>
           {hasTicket && <span className="dw-ticket-pill" style={{ marginLeft: 8 }}>{tickets.cheap}×карт</span>}
         </span>
         <span>Цена: <strong>{priceLabel}</strong></span>
@@ -1441,14 +1626,8 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
 
       {settled && (
         <div className="dw-pvp-empty">
-          Раунд завершён. Новое лобби откроется — нажми свободную карту.
+          Раунд завершён. Новое лобби откроется — поставь ячейки в следующий.
         </div>
-      )}
-
-      {!settled && !canPlay && (
-        <button className="dw-btn primary full" onClick={onOpenDeposit}>
-          Купить карты для игры
-        </button>
       )}
     </>
   );
@@ -1667,7 +1846,7 @@ function ReferralTab({ referral, player, onCopy, onShare, onClaimReward, onBack,
         <div className="dw-ref-hero-corner br" />
 
         <span className="dw-kicker">Реферальная программа</span>
-        <h1>Зови друзей,<br />получай монеты</h1>
+        <h1>Зови друзей,<br />получай дублоны</h1>
         <p>{referral.structure || `${referral.pct || 7}% с каждого пополнения реферала`}</p>
 
         <div className="dw-ref-link-box">
@@ -1853,7 +2032,7 @@ function ShopTab({ shop, player, onBuyNft, portalsGifts }) {
               </div>
               <span className="dw-kicker" style={{ color: RARITY_COLOR[item.rarity] }}>{item.rarity}</span>
               <h2 style={{ fontSize: 14 }}>{item.name}</h2>
-              <strong style={{ fontSize: 15, color: 'var(--gold)' }}>{formatCoins(item.priceCoins)} монет</strong>
+              <strong style={{ fontSize: 15, color: 'var(--gold)' }}>{formatCoins(item.priceCoins)} дублонов</strong>
               {item.stock > 0
                 ? <p style={{ color: 'var(--muted)', fontSize: 11, margin: '2px 0 6px' }}>Осталось {item.stock}</p>
                 : <p style={{ color: 'var(--crimson-glow)', fontSize: 11, margin: '2px 0 6px' }}>Нет в наличии</p>
@@ -1862,7 +2041,7 @@ function ShopTab({ shop, player, onBuyNft, portalsGifts }) {
                 style={{ width: '100%', fontSize: 13 }}
                 onClick={() => onBuyNft({ ...item, title: item.name })}
                 disabled={!canBuy || item.stock === 0}>
-                {!canBuy ? 'Мало монет' : item.stock === 0 ? 'Нет в наличии' : 'Купить'}
+                {!canBuy ? 'Мало дублонов' : item.stock === 0 ? 'Нет в наличии' : 'Купить'}
               </button>
             </motion.article>
           );
@@ -2084,7 +2263,7 @@ function ContractOverlay({ mode, revealing, result, selectedClause, onReplay, on
                 {result.type === 'multiplier' ? 'следующий выигрыш усилен'
                   : result.type === 'empty' ? 'контракт пуст'
                   : result.type === 'debt' ? 'ставка утрачена'
-                  : result.note || 'монеты зачислены'}
+                  : result.note || 'дублоны зачислены'}
               </motion.p>
             </motion.div>
             <motion.div
@@ -2339,7 +2518,7 @@ function LeaderboardTab({ myId, liveWins, onBack }) {
                 <span className="dw-round-row-avatar" style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
                   {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : u.initial}
                 </span>
-                <span className="dw-round-row-name">{u.displayName} выиграл <strong className="gold">{formatCoins(w.amount)}</strong> монет</span>
+                <span className="dw-round-row-name">{u.displayName} выиграл <strong className="gold">{formatCoins(w.amount)}</strong> дублонов</span>
                 <span className="dw-round-row-prize" style={{ fontSize: 11, opacity: 0.6 }}>{timeAgo(w.date)}</span>
               </div>
             );
@@ -2407,13 +2586,13 @@ function SendDeposit({ onPaid, onNotify }) {
     return (
       <div className="dw-coins-buy">
         <p style={{ color: 'var(--bone-soft)', fontSize: 13, margin: '0 0 12px' }}>
-          Переведи TON на адрес проекта с указанным комментарием. Минимум 0.5 TON (5 монет).
+          Переведи TON на адрес проекта с указанным комментарием. Минимум 0.5 TON (5 дублонов).
         </p>
         <div className="dw-coins-input-wrap">
           <input className="dw-coins-input" type="number" min="0.5" step="0.1" placeholder="Сумма в TON"
             value={amount} onChange={(e) => setAmount(e.target.value)} />
           {amt >= 0.5 && (
-            <div className="dw-coins-preview"><span>{formatCoins(Math.round(amt * 10))} монет</span></div>
+            <div className="dw-coins-preview"><span>{formatCoins(Math.round(amt * 10))} дублонов</span></div>
           )}
         </div>
         <button className="dw-btn primary full" onClick={create} disabled={creating || amt < 0.5}>
@@ -2432,7 +2611,7 @@ function SendDeposit({ onPaid, onNotify }) {
             <strong className="dw-send-timer">{mmss}</strong>
           </div>
           <p style={{ color: 'var(--bone-soft)', fontSize: 12, margin: '4px 0 14px' }}>
-            Отправь <strong className="gold">{dep.amountTon} TON</strong> ({formatCoins(dep.coins)} монет) на адрес ниже, обязательно с комментарием.
+            Отправь <strong className="gold">{dep.amountTon} TON</strong> ({formatCoins(dep.coins)} дублонов) на адрес ниже, обязательно с комментарием.
           </p>
           <label className="dw-send-field-label">Адрес кошелька</label>
           <button className="dw-send-copy" onClick={() => copy(dep.wallet)}>
@@ -2450,7 +2629,7 @@ function SendDeposit({ onPaid, onNotify }) {
       {status === 'confirmed' && (
         <div className="dw-round-my-result win" style={{ marginTop: 8 }}>
           <span className="dw-round-result-emoji">✅</span>
-          <div><strong>Оплата получена!</strong><p>+{formatCoins(dep.coins)} монет зачислено</p></div>
+          <div><strong>Оплата получена!</strong><p>+{formatCoins(dep.coins)} дублонов зачислено</p></div>
         </div>
       )}
       {status === 'expired' && (
@@ -2463,7 +2642,7 @@ function SendDeposit({ onPaid, onNotify }) {
   );
 }
 
-/* ─── Deposit sheet — монеты / карты ─────────────────────── */
+/* ─── Deposit sheet — дублоны / карты ─────────────────────── */
 
 function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, tonPacks, onStarsPay, onStarsCustom, onTonPay, onTonCustom, onBuyCardsCount, payPending, tonWallet, tonIntent, onConnectTon, onClose, ticketPacks, onBuyTickets, player, onSendPaid, notify }) {
   const [coins, setCoins] = React.useState('');
@@ -2477,7 +2656,7 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
 
   const handleBuyCoinsStars = () => {
     if (!coinsNum) return;
-    onStarsCustom(coinsNum); // динамическая сумма: coinsNum монет = coinsNum*20 ⭐
+    onStarsCustom(coinsNum); // динамическая сумма: coinsNum дублонов = coinsNum*20 ⭐
   };
   const handleBuyCoinsTon = () => {
     if (!coinsNum) return;
@@ -2503,7 +2682,7 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
           <div>
             {view !== 'main' && <button className="dw-back-link" style={{ marginBottom: 4 }} onClick={() => onViewChange('main')}>← Назад</button>}
             <h2 style={{ fontSize: 20, margin: '2px 0' }}>Пополнение</h2>
-            <p style={{ color: 'var(--bone-soft)', fontSize: 13, margin: 0 }}>1 монета = 20 ⭐ = 0.1 TON</p>
+            <p style={{ color: 'var(--bone-soft)', fontSize: 13, margin: 0 }}>1 дублон = 20 ⭐ = 0.1 TON</p>
           </div>
           <button className="dw-icon-btn" onClick={onClose}>×</button>
         </div>
@@ -2514,7 +2693,7 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
             <button className="dw-deposit-choice dw-deposit-choice--gold" onClick={() => onViewChange('coins')}>
               <span className="dw-deposit-choice-icon">🪙</span>
               <div className="dw-deposit-choice-text">
-                <strong>Купить монеты</strong>
+                <strong>Купить дублоны</strong>
                 <p>За TON, Stars или выгодные наборы</p>
               </div>
               <span className="dw-deposit-choice-arrow">›</span>
@@ -2530,15 +2709,15 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
           </div>
         )}
 
-        {/* COINS — вводишь сколько монет хочешь */}
+        {/* COINS — вводишь сколько дублонов хочешь */}
         {view === 'coins' && !payPending && !tonIntent && (
           <div className="dw-coins-buy">
             <div className="dw-rate-bar">
-              <span>1 монета</span><span className="dw-rate-eq">=</span>
+              <span>1 дублон</span><span className="dw-rate-eq">=</span>
               <span>20 ⭐</span><span className="dw-rate-eq">=</span><span>0.1 TON</span>
             </div>
             <div className="dw-coins-input-wrap">
-              <input className="dw-coins-input" type="number" min="1" placeholder="Сколько монет?"
+              <input className="dw-coins-input" type="number" min="1" placeholder="Сколько дублонов?"
                 value={coins} onChange={e => setCoins(e.target.value)} />
               {coinsNum > 0 && (
                 <div className="dw-coins-preview">
@@ -2560,13 +2739,13 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
           </div>
         )}
 
-        {/* CARDS — ввод числа карт, оплата монетами (без наборов) */}
+        {/* CARDS — ввод числа карт, оплата дублонами (без наборов) */}
         {view === 'cards' && !payPending && (
           <div className="dw-cards-shop">
             <div className="dw-card-buy-block">
               <div className="dw-cards-section-head">
                 <span style={{ fontSize: 15, fontWeight: 700 }}>🎴 PvP карты</span>
-                <span className="dw-kicker" style={{ marginLeft: 8 }}>5 монет / карта</span>
+                <span className="dw-kicker" style={{ marginLeft: 8 }}>5 дублонов / карта</span>
               </div>
               <div className="dw-card-buy-row">
                 <input className="dw-coins-input" type="number" min="1" placeholder="Сколько карт?"
@@ -2580,7 +2759,7 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
             <div className="dw-card-buy-block" style={{ marginTop: 16 }}>
               <div className="dw-cards-section-head">
                 <span style={{ fontSize: 15, fontWeight: 700 }}>📜 Премиум завещания</span>
-                <span className="dw-kicker" style={{ marginLeft: 8 }}>150 монет / карта</span>
+                <span className="dw-kicker" style={{ marginLeft: 8 }}>150 дублонов / карта</span>
               </div>
               <div className="dw-card-buy-row">
                 <input className="dw-coins-input" type="number" min="1" placeholder="Сколько карт?"
@@ -2655,7 +2834,7 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
   const isLoser = Boolean(myRow) && myProfit < 0;
   const myMult = (myRow && myRow.totalBet > 0) ? (myRow.totalPrize / myRow.totalBet).toFixed(1) : '0.0';
 
-  // Анимированный «отсчёт» выигрыша — монеты набегают, а не появляются разом.
+  // Анимированный «отсчёт» выигрыша — дублоны набегают, а не появляются разом.
   const [shownWin, setShownWin] = useState(0);
   useEffect(() => {
     if (!(myProfit > 0)) { setShownWin(0); return; }
@@ -2712,7 +2891,7 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
               <div>
                 <strong>В этот раз не повезло</strong>
                 <p>Удача отвернулась — попробуй ещё раз</p>
-                <span className="dw-round-amount">−{Math.abs(myProfit)} монет</span>
+                <span className="dw-round-amount">−{Math.abs(myProfit)} дублонов</span>
               </div>
             </div>
           ) : (
@@ -2721,7 +2900,7 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
               <div>
                 <strong>{myProfit > 0 ? 'Ты выиграл!' : 'Ставка отыграна'}</strong>
                 <span className="dw-round-amount">
-                  {myProfit > 0 ? `+${shownWin} монет` : '±0 монет'}
+                  {myProfit > 0 ? `+${shownWin} дублонов` : '±0 дублонов'}
                   <em> ×{myMult} от ставки</em>
                 </span>
               </div>
@@ -2844,12 +3023,12 @@ function TicketsShop({ ticketPacks, inventory, balance, onBuyTickets }) {
         <article className={`dw-ticket-card ${inventory.cheap > 0 ? '' : 'empty'}`}>
           <span className="dw-kicker">Дешёвые карты</span>
           <div className="dw-ticket-count">{inventory.cheap}</div>
-          <p>Сжигаются при покупке PvP-карты вместо монет.</p>
+          <p>Сжигаются при покупке PvP-карты вместо дублонов.</p>
         </article>
         <article className={`dw-ticket-card ${inventory.premium > 0 ? '' : 'empty'}`}>
           <span className="dw-kicker">Премиум карты</span>
           <div className="dw-ticket-count">{inventory.premium}</div>
-          <p>Сжигаются при печати соло-завещания вместо 150 монет.</p>
+          <p>Сжигаются при печати соло-завещания вместо 150 дублонов.</p>
         </article>
       </div>
 
@@ -2857,7 +3036,7 @@ function TicketsShop({ ticketPacks, inventory, balance, onBuyTickets }) {
         <article className="dw-panel">
           <div className="dw-tickets-section-head">
             <h3>Дешёвые карты</h3>
-            <span>5 монет за штуку</span>
+            <span>5 дублонов за штуку</span>
           </div>
           <div className="dw-ticket-pack-list">
             {cheap.map((pack) => {
@@ -2873,7 +3052,7 @@ function TicketsShop({ ticketPacks, inventory, balance, onBuyTickets }) {
                   <span className="dw-ticket-pack-glyph" />
                   <span className="dw-ticket-pack-copy">
                     <strong>{pack.count} карт</strong>
-                    <span>{each} монет за карту{pack.count >= 20 ? ' · скидка' : ''}</span>
+                    <span>{each} дублонов за карту{pack.count >= 20 ? ' · скидка' : ''}</span>
                   </span>
                   <span className="dw-ticket-pack-price">{formatCoins(pack.priceCoins)}</span>
                 </button>
@@ -2887,7 +3066,7 @@ function TicketsShop({ ticketPacks, inventory, balance, onBuyTickets }) {
         <article className="dw-panel">
           <div className="dw-tickets-section-head">
             <h3>Премиум карты</h3>
-            <span>150 монет за штуку</span>
+            <span>150 дублонов за штуку</span>
           </div>
           <div className="dw-ticket-pack-list">
             {premium.map((pack) => {
@@ -2903,7 +3082,7 @@ function TicketsShop({ ticketPacks, inventory, balance, onBuyTickets }) {
                   <span className="dw-ticket-pack-glyph" />
                   <span className="dw-ticket-pack-copy">
                     <strong>{pack.count} карт{pack.count > 1 ? '' : 'а'}</strong>
-                    <span>{each} монет за карту{pack.count >= 5 ? ' · скидка' : ''}</span>
+                    <span>{each} дублонов за карту{pack.count >= 5 ? ' · скидка' : ''}</span>
                   </span>
                   <span className="dw-ticket-pack-price">{formatCoins(pack.priceCoins)}</span>
                 </button>

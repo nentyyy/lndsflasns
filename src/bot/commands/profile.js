@@ -21,10 +21,10 @@ export async function profileCommand(ctx) {
   const text = [
     `👤 ${player.first_name || player.username || 'Игрок'}`,
     '',
-    `💰 Баланс: ${balance} монет`,
+    `💰 Баланс: ${balance} дублонов`,
     `🎮 Игр: ${games}`,
-    `🏆 Выиграно: ${won} монет`,
-    `⭐ Лучший выигрыш: ${best} монет`,
+    `🏆 Выиграно: ${won} дублонов`,
+    `⭐ Лучший выигрыш: ${best} дублонов`,
     '',
     `Реферальный код: ${refCode}`,
     `10% с каждого пополнения твоих рефералов`

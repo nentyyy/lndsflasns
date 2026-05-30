@@ -176,7 +176,10 @@ export async function pollTonDeposits() {
     }
     console.log('[ton] матч депозита', deposit.id, 'comment', comment, 'value', value);
 
-    const total = Number(deposit.coins) + Number(deposit.bonus);
+    const player0 = await db('players').where({ user_id: deposit.user_id }).first();
+    const wheelPct = Number(player0?.wheel_deposit_bonus_pct || 0);
+    const wheelBonus = wheelPct > 0 ? Math.floor(Number(deposit.coins) * wheelPct / 100) : 0;
+    const total = Number(deposit.coins) + Number(deposit.bonus) + wheelBonus;
     const { applied } = await creditOnce(deposit.user_id, total, 'deposit_ton', deposit.id);
     if (applied) {
       await db('deposits').where({ id: deposit.id }).update({
@@ -184,7 +187,9 @@ export async function pollTonDeposits() {
         ton_tx_hash: tx.transaction_id?.hash || null,
         paid_at: db.fn.now()
       });
-      await db('players').where({ user_id: deposit.user_id }).update({ first_deposit_done: true });
+      const upd = { first_deposit_done: true };
+      if (wheelPct > 0) upd.wheel_deposit_bonus_pct = 0;
+      await db('players').where({ user_id: deposit.user_id }).update(upd);
       await rewardReferralForDeposit(deposit.id).catch((e) => console.error('ref reward err', e.message));
       settled += 1;
     }

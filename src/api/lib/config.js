@@ -195,6 +195,21 @@ export const FIRST_DEPOSIT_BONUS_PCT = 0.15;
 // Реферер получает 10% от оборота (депозитов) приглашённого игрока.
 export const REFERRAL_PCT = 0.10;
 
+// ─── Колесо бонусов ───
+// Доступно после первого депозита. Один бесплатный спин раз в 24 часа.
+// type: tickets (фри-ячейки) | coins (дублоны) | deposit_bonus (% к след. деп).
+export const WHEEL_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+export const WHEEL_SEGMENTS = [
+  { key: 'cells1',   type: 'tickets',       value: 1,  label: '+1 ячейка',     weight: 22 },
+  { key: 'coins25',  type: 'coins',         value: 25, label: '+25 дублонов',  weight: 16 },
+  { key: 'cells2',   type: 'tickets',       value: 2,  label: '+2 ячейки',     weight: 16 },
+  { key: 'dep25',    type: 'deposit_bonus', value: 25, label: '+25% к деп.',   weight: 12 },
+  { key: 'coins50',  type: 'coins',         value: 50, label: '+50 дублонов',  weight: 10 },
+  { key: 'cells3',   type: 'tickets',       value: 3,  label: '+3 ячейки',     weight: 9  },
+  { key: 'dep50',    type: 'deposit_bonus', value: 50, label: '+50% к деп.',   weight: 8  },
+  { key: 'jackpot',  type: 'tickets',       value: 5,  label: 'Джекпот +5 ячеек', weight: 7 }
+];
+
 // ─── Tournaments ───
 // Цикл 3 дня. После окончания призы выплачиваются топу.
 export const TOURNAMENT_CYCLE_MS = 3 * 24 * 60 * 60 * 1000;

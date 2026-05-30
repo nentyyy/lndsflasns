@@ -3565,3 +3565,61 @@ html, body { font-size: 16px; }
   opacity: 0.35;
   pointer-events: none;
 }
+
+/* ─── Рандомная ставка (выбор кол-ва ячеек) ──────────────────── */
+.dw-pvp-card--locked { cursor: default; }
+.dw-bet-control {
+  display: flex; align-items: stretch; gap: 10px; margin-top: 12px;
+}
+.dw-bet-stepper {
+  display: flex; align-items: center; gap: 4px;
+  border: 1px solid var(--gold-line); border-radius: 12px; background: var(--surface-2);
+  padding: 4px;
+}
+.dw-bet-stepper button {
+  width: 36px; height: 36px; border-radius: 9px; border: none;
+  background: var(--surface-3); color: var(--gold); font-size: 20px; font-weight: 800;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.dw-bet-stepper button:disabled { opacity: 0.4; cursor: default; }
+.dw-bet-count {
+  min-width: 34px; text-align: center; font-family: var(--font-display);
+  font-size: 20px; font-weight: 800; color: var(--gold-bright);
+}
+.dw-bet-go { flex: 1; }
+
+/* ─── Колесо бонусов ─────────────────────────────────────────── */
+.dw-wheel-banner {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  margin: 10px 0 2px; padding: 12px 14px; border-radius: 14px;
+  border: 1px solid var(--gold-line); cursor: pointer; text-align: left;
+  background: linear-gradient(110deg, rgba(58,46,12,0.9), rgba(28,23,16,0.9));
+  box-shadow: 0 0 18px rgba(212,175,55,0.25);
+}
+.dw-wheel-banner-ico { font-size: 26px; animation: dw-bounce 1.2s ease-in-out infinite; }
+.dw-wheel-banner-txt { flex: 1; display: flex; flex-direction: column; }
+.dw-wheel-banner-txt strong { color: var(--gold-bright); font-family: var(--font-display); letter-spacing: 0.04em; }
+.dw-wheel-banner-txt small { color: var(--bone-soft); font-size: 12px; }
+.dw-wheel-banner-go { color: var(--gold); font-size: 22px; }
+
+.dw-wheel-sheet {
+  position: relative; width: min(100% - 24px, 420px);
+  margin-bottom: calc(120px + env(safe-area-inset-bottom));
+  padding: 18px; border-radius: 18px; text-align: center;
+  border: 1px solid var(--gold-line);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--ink-2) 100%);
+  box-shadow: 0 18px 50px rgba(0,0,0,0.7);
+}
+.dw-wheel-stage { position: relative; width: 260px; max-width: 78vw; margin: 8px auto 14px; }
+.dw-wheel-svg { width: 100%; height: auto; display: block; filter: drop-shadow(0 0 14px rgba(212,175,55,0.4)); }
+.dw-wheel-pointer {
+  position: absolute; top: -4px; left: 50%; transform: translateX(-50%);
+  width: 0; height: 0; z-index: 2;
+  border-left: 11px solid transparent; border-right: 11px solid transparent;
+  border-top: 18px solid var(--gold-bright);
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.6));
+}
+.dw-wheel-result { font-size: 16px; color: var(--gold-bright); margin-bottom: 12px; }
+.dw-wheel-result strong { color: #6dbe88; }
+.dw-wheel-hint { font-size: 13px; color: var(--bone-soft); margin-bottom: 12px; }
+.dw-wheel-spin { box-shadow: 0 0 22px rgba(212,175,55,0.5); }

@@ -43,13 +43,13 @@ const seed = {
       entryCoins: 150,
       accent: 'gold',
       spotlight: 'sealed-obsidian',
-      categories: ['Крупные монеты', 'Golden bonus', 'x2', 'Пусто', 'Проклятый долг'],
+      categories: ['Крупные дублоны', 'Golden bonus', 'x2', 'Пусто', 'Проклятый долг'],
       // RTP = (1200+2500+1520+0+0+0) / 6 / 1000 = 5220/6000 = 87%
       outcomes: [
-        { type: 'coins',      title: 'Крупный выигрыш',      creditCoins: 1200, stamp: '+1 200', tone: 'gold',   note: 'Монеты уже зачислены на баланс.' },
+        { type: 'coins',      title: 'Крупный выигрыш',      creditCoins: 1200, stamp: '+1 200', tone: 'gold',   note: 'Дублоны уже зачислены на баланс.' },
         { type: 'coins',      title: 'Очень крупный выигрыш', creditCoins: 2500, stamp: '+2 500', tone: 'gold',   note: 'Редкий sealed payout активирован.' },
         { type: 'bonus',      title: 'Golden bonus',          creditCoins: 1520, stamp: 'Bonus',  tone: 'gold',   note: 'Выдан бонус и shard на NFT скидку.' },
-        { type: 'multiplier', title: 'Множитель x2',          creditCoins: 0,    nextMultiplier: 2, stamp: 'x2', tone: 'violet', note: 'Следующий выигрыш по монетам будет умножен.' },
+        { type: 'multiplier', title: 'Множитель x2',          creditCoins: 0,    nextMultiplier: 2, stamp: 'x2', tone: 'violet', note: 'Следующий выигрыш по дублонам будет умножен.' },
         { type: 'empty',      title: 'Пустой контракт',       creditCoins: 0,    stamp: 'Пусто', tone: 'muted',  note: 'Контракт оказался без награды.' },
         { type: 'debt',       title: 'Проклятый долг',        creditCoins: 0,    stamp: 'Долг',  tone: 'danger', note: 'Ставка сгорела, повторите позже.' }
       ]
@@ -73,9 +73,9 @@ const seed = {
       { name: 'Legend', min: 25, max: 999, bonus: '15%' }
     ],
     rewards: [
-      { level: 1,  reward: '500 монет',  state: 'claimed' },
-      { level: 3,  reward: '2000 монет', state: 'claimed' },
-      { level: 5,  reward: '5000 монет', state: 'claimable' },
+      { level: 1,  reward: '500 дублонов',  state: 'claimed' },
+      { level: 3,  reward: '2000 дублонов', state: 'claimed' },
+      { level: 5,  reward: '5000 дублонов', state: 'claimable' },
       { level: 10, reward: 'Premium NFT', state: 'locked' },
       { level: 25, reward: 'Legend статус', state: 'locked' }
     ],
@@ -148,7 +148,7 @@ const seed = {
     daily: [
       { id: 'dq-1', title: 'Открыть 3 завещания',  progress: '2 / 3',       xp: 180,  state: 'active'    },
       { id: 'dq-2', title: 'Пополнить баланс',      progress: '0 / 1',       xp: 250,  state: 'active'    },
-      { id: 'dq-3', title: 'Заработать 1500 монет', progress: '1500 / 1500', xp: 220,  state: 'claimable' }
+      { id: 'dq-3', title: 'Заработать 1500 дублонов', progress: '1500 / 1500', xp: 220,  state: 'claimable' }
     ],
     weekly: [
       { id: 'wq-1', title: 'Сыграть 20 раундов',       progress: '13 / 20', xp: 950,  state: 'active'    },
@@ -222,7 +222,7 @@ export function resolveWillOutcome(mode, clauseIndex, roundIndex, multiplier = 1
   if (resolved.usedMultiplier) {
     resolved.creditCoins = Math.round(resolved.creditCoins * multiplier);
     resolved.title = `${resolved.title} x${multiplier}`;
-    resolved.note = 'Множитель применен. Монеты уже зачислены на баланс.';
+    resolved.note = 'Множитель применен. Дублоны уже зачислены на баланс.';
   }
 
   return resolved;

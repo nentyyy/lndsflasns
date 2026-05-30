@@ -29,6 +29,9 @@ export async function migrate() {
       t.bigInteger('pvp_session_returned').notNullable().defaultTo(0);
       t.boolean('first_deposit_done').notNullable().defaultTo(false);
       t.bigInteger('ref_pending').notNullable().defaultTo(0);
+      t.timestamp('wheel_last_spin').nullable();
+      t.integer('wheel_deposit_bonus_pct').notNullable().defaultTo(0);
+      t.integer('wheel_spins').notNullable().defaultTo(0);
       t.timestamp('created_at').defaultTo(db.fn.now());
       t.timestamp('updated_at').defaultTo(db.fn.now());
     });
@@ -47,6 +50,9 @@ export async function migrate() {
     if (!cols.first_deposit_done)    await db.schema.alterTable('players', (t) => t.boolean('first_deposit_done').notNullable().defaultTo(false));
     if (!cols.pvp_session_wagered)   await db.schema.alterTable('players', (t) => t.bigInteger('pvp_session_wagered').notNullable().defaultTo(0));
     if (!cols.pvp_session_returned)  await db.schema.alterTable('players', (t) => t.bigInteger('pvp_session_returned').notNullable().defaultTo(0));
+    if (!cols.wheel_last_spin)        await db.schema.alterTable('players', (t) => t.timestamp('wheel_last_spin').nullable());
+    if (!cols.wheel_deposit_bonus_pct) await db.schema.alterTable('players', (t) => t.integer('wheel_deposit_bonus_pct').notNullable().defaultTo(0));
+    if (!cols.wheel_spins)            await db.schema.alterTable('players', (t) => t.integer('wheel_spins').notNullable().defaultTo(0));
   }
 
   // Double-entry style ledger. balance on players is derived from these.

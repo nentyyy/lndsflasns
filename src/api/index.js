@@ -15,7 +15,8 @@ import { createTonDeposit, createTonDepositCustom, createSendDeposit, startTonPo
 import { createCryptobotDeposit } from './lib/payments/cryptobot.js';
 import { getReferralView, bindReferrer, makeRefCode, claimReferralPending } from './lib/referral.js';
 import { getTournamentView, ensureActiveTournament } from './lib/tournaments.js';
-import { getPvpState, buyCard, PvpError, getLiveFeed, sweepExpiredLobbies } from './lib/pvp.js';
+import { getPvpState, buyCard, buyRandomCards, PvpError, getLiveFeed, sweepExpiredLobbies } from './lib/pvp.js';
+import { getWheelState, spinWheel, WheelError } from './lib/wheel.js';
 import { buyTicketPack, buyTicketsCustom, TicketError } from './lib/tickets.js';
 import { getLeaderboard, getPersonalStats } from './lib/leaderboard.js';
 import { notifyAdminsPurchase } from './lib/admin-notify.js';
@@ -110,6 +111,7 @@ function playerView(p) {
     refCode: p.ref_code || makeRefCode(p.user_id),
     refPending: Number(p.ref_pending || 0),
     firstDepositDone: Boolean(p.first_deposit_done),
+    wheelDepositBonusPct: Number(p.wheel_deposit_bonus_pct || 0),
     pvpTotalReveals: Number(p.pvp_total_reveals || 0),
     tickets: {
       cheap: Number(p.cheap_tickets || 0),
@@ -293,6 +295,41 @@ app.post('/api/pvp/buy',
     } catch (e) {
       if (e instanceof PvpError) return res.status(e.status).json({ error: e.message });
       if (e instanceof InsufficientFunds) return res.status(400).json({ error: 'insufficient_balance' });
+      next(e);
+    }
+  }
+);
+
+// Купить N случайных ячеек (рандомная расстановка).
+app.post('/api/pvp/buy-random',
+  rateLimit({ bucket: 'pvp_buy', max: 40, windowMs: 60_000 }),
+  async (req, res, next) => {
+    try {
+      const mode = typeof req.body?.mode === 'string' ? req.body.mode : 'cheap';
+      const count = Math.max(1, Math.min(36, parseInt(req.body?.count, 10) || 1));
+      const idem = typeof req.body?.idempotencyKey === 'string' ? req.body.idempotencyKey.slice(0, 64) : undefined;
+      const out = await buyRandomCards(req.user.id, mode, count, idem);
+      const state = await getPvpState(req.user.id, mode);
+      res.json({ ...out, ...state });
+    } catch (e) {
+      if (e instanceof PvpError) return res.status(e.status).json({ error: e.message });
+      if (e instanceof InsufficientFunds) return res.status(400).json({ error: 'insufficient_balance' });
+      next(e);
+    }
+  }
+);
+
+// ─── Колесо бонусов ───
+app.get('/api/wheel', async (req, res, next) => {
+  try { res.json(await getWheelState(req.user.id)); } catch (e) { next(e); }
+});
+app.post('/api/wheel/spin',
+  rateLimit({ bucket: 'wheel_spin', max: 10, windowMs: 60_000 }),
+  async (req, res, next) => {
+    try {
+      res.json(await spinWheel(req.user.id));
+    } catch (e) {
+      if (e instanceof WheelError) return res.status(e.status).json({ error: e.message });
       next(e);
     }
   }

@@ -97,7 +97,11 @@ export async function settleStarsPayment({ payload, telegramChargeId, totalAmoun
     throw new Error('amount/currency mismatch');
   }
 
-  const total = Number(deposit.coins) + Number(deposit.bonus);
+  // Бонус с колеса (% к депозиту) — одноразовый, применяется и сгорает.
+  const player0 = await db('players').where({ user_id: deposit.user_id }).first();
+  const wheelPct = Number(player0?.wheel_deposit_bonus_pct || 0);
+  const wheelBonus = wheelPct > 0 ? Math.floor(Number(deposit.coins) * wheelPct / 100) : 0;
+  const total = Number(deposit.coins) + Number(deposit.bonus) + wheelBonus;
   const { balance, applied } = await creditOnce(deposit.user_id, total, 'deposit_stars', deposit.id);
 
   if (applied) {
@@ -106,7 +110,9 @@ export async function settleStarsPayment({ payload, telegramChargeId, totalAmoun
       telegram_charge_id: telegramChargeId,
       paid_at: db.fn.now()
     });
-    await db('players').where({ user_id: deposit.user_id }).update({ first_deposit_done: true });
+    const upd = { first_deposit_done: true };
+    if (wheelPct > 0) upd.wheel_deposit_bonus_pct = 0;
+    await db('players').where({ user_id: deposit.user_id }).update(upd);
     await rewardReferralForDeposit(deposit.id).catch((e) => console.error('ref reward err', e.message));
   }
   return { balance, coins: total, userId: deposit.user_id, applied };
