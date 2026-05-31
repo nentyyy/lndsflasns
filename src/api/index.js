@@ -837,7 +837,7 @@ app.post('/api/portals/buy',
 );
 
 // ─── Clans ───
-import { listClans, getMyClan, createClan, joinClan, leaveClan, kickMember, setRole, deleteClan, contributeToChest, withdrawChest, getClanLeaderboard, getChatMessages, sendChatMessage, requestArtifact, giveArtifact, ClanError } from './lib/clans.js';
+import { listClans, getMyClan, createClan, joinClan, leaveClan, kickMember, setRole, deleteClan, contributeToChest, withdrawChest, getClanLeaderboard, getChatMessages, sendChatMessage, requestArtifact, requestCard, giveTrade, ClanError } from './lib/clans.js';
 
 app.get('/api/clans', async (req, res, next) => {
   try { res.json(await listClans(req.user.id)); } catch (e) { next(e); }
@@ -933,20 +933,25 @@ app.post('/api/clans/:id/chat',
   }
 );
 
-// Обмен артефактами в клане
+// Обмен в клане (артефакт или карта)
 app.post('/api/clans/:id/trade/request', async (req, res, next) => {
   try {
-    const msgId = await requestArtifact(req.user.id, Number(req.params.id), req.body?.artifactId);
-    res.json({ ok: true, messageId: msgId });
+    const out = await requestArtifact(req.user.id, Number(req.params.id), req.body?.artifactId);
+    res.json({ ok: true, ...out });
+  } catch (e) { if (e instanceof ClanError) return res.status(e.status).json({ error: e.message }); next(e); }
+});
+app.post('/api/clans/:id/trade/request-card', async (req, res, next) => {
+  try {
+    const out = await requestCard(req.user.id, Number(req.params.id));
+    res.json({ ok: true, ...out });
   } catch (e) { if (e instanceof ClanError) return res.status(e.status).json({ error: e.message }); next(e); }
 });
 app.post('/api/clans/:id/trade/give', async (req, res, next) => {
   try {
-    await giveArtifact(req.user.id, Number(req.params.id), Number(req.body?.messageId));
+    await giveTrade(req.user.id, Number(req.params.id), Number(req.body?.messageId));
     res.json({ ok: true });
   } catch (e) {
     if (e instanceof ClanError) return res.status(e.status).json({ error: e.message });
-    if (e instanceof InsufficientFunds) return res.status(400).json({ error: 'insufficient_balance' });
     next(e);
   }
 });

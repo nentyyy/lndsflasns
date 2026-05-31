@@ -3780,6 +3780,10 @@ button:disabled, [disabled] { cursor: not-allowed; }
   margin-top: 8px; display: flex; align-items: center;
 }
 .dw-pvp-card--hint { border-color: var(--gold) !important; box-shadow: 0 0 12px rgba(212,175,55,0.7) !important; animation: dw-hint-pulse 1s ease-in-out infinite; }
+.dw-trade-picker {
+  margin-top: 10px; padding: 12px; border-radius: 14px;
+  border: 1px solid var(--gold-line); background: var(--surface-2);
+}
 @keyframes dw-hint-pulse { 0%,100% { box-shadow: 0 0 10px rgba(212,175,55,0.5); } 50% { box-shadow: 0 0 20px rgba(212,175,55,0.9); } }
 
 /* Lucky Buy slider */

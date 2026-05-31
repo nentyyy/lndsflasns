@@ -173,5 +173,6 @@ export const api = {
   clanChat: (clanId) => request(`/api/clans/${clanId}/chat`),
   sendClanChat: (clanId, text) => request(`/api/clans/${clanId}/chat`, { method: 'POST', body: { text } }),
   tradeRequest: (clanId, artifactId) => request(`/api/clans/${clanId}/trade/request`, { method: 'POST', body: { artifactId } }),
+  tradeRequestCard: (clanId) => request(`/api/clans/${clanId}/trade/request-card`, { method: 'POST', body: {} }),
   tradeGive: (clanId, messageId) => request(`/api/clans/${clanId}/trade/give`, { method: 'POST', body: { messageId } }),
 };

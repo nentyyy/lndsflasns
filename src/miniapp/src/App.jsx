@@ -1417,10 +1417,11 @@ function buildPvpRows(cardCount) {
   return rows;
 }
 
-function PvpCard({ card, idx, settled, revealOpen = true, pickable = false, artPick = false, hinted = false, pvpBuying, onBuyPvpCard, onArtPick, onOpenPlayerProfile, shuffling }) {
+function PvpCard({ card, idx, settled, revealOpen = true, pickable = false, artPick = false, artPickMine = false, hinted = false, pvpBuying, onBuyPvpCard, onArtPick, onOpenPlayerProfile, shuffling }) {
   const isRevealed = revealOpen && (settled || card.status === 'revealed') && card.outcome;
   const canPick = pickable && !card.taken && !settled && !pvpBuying;
-  const canArt = artPick && !card.taken && !settled;
+  // artPick = свободные ячейки (place_choose), artPickMine = свои ячейки (double_cell/book)
+  const canArt = (artPick && !card.taken && !settled) || (artPickMine && card.mine && !settled);
   const cls = [
     'dw-pvp-card',
     canPick || canArt ? 'dw-pvp-card--pick' : 'dw-pvp-card--locked',
@@ -1609,7 +1610,8 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
                 settled={settled}
                 revealOpen={revealStep === 9999 || i < revealStep}
                 pickable={canPlay && !artPending}
-                artPick={Boolean(artPending && (artPending.kind === 'place_choose' || artPending.kind === 'double_cell'))}
+                artPick={Boolean(artPending && artPending.kind === 'place_choose')}
+                artPickMine={Boolean(artPending && artPending.kind === 'double_cell')}
                 hinted={Boolean(
                   artHints?.cell === i ||
                   artHints?.row?.includes(i)
@@ -1850,8 +1852,24 @@ function ClansTab({ onBack, player, onNotify }) {
   };
 
   const handleGive = async (msgId) => {
-    try { await api.tradeGive(myClanId, msgId); onNotify('Артефакт передан!', 'success'); await loadChat(); }
-    catch (e) { onNotify(e.message === 'not_owned' ? 'У тебя нет этого артефакта' : 'Ошибка', 'danger'); }
+    try { await api.tradeGive(myClanId, msgId); onNotify('Передано!', 'success'); await loadChat(); }
+    catch (e) { onNotify(e.message === 'not_owned' ? 'У тебя нет этого' : 'Ошибка', 'danger'); }
+  };
+
+  const [tradeOpen, setTradeOpen] = useState(false);
+  const [myArtsForTrade, setMyArtsForTrade] = useState([]);
+
+  const openTrade = async () => {
+    try { const d = await api.myArtifacts(); setMyArtsForTrade(d.artifacts || []); } catch {}
+    setTradeOpen(true);
+  };
+  const handleRequestArtifact = async (artifactId) => {
+    try { await api.tradeRequest(myClanId, artifactId); onNotify('Запрос отправлен в чат', 'success'); setTradeOpen(false); await loadChat(); }
+    catch (e) { onNotify(e.message || 'Ошибка', 'danger'); }
+  };
+  const handleRequestCard = async () => {
+    try { await api.tradeRequestCard(myClanId); onNotify('Запрос карты отправлен', 'success'); setTradeOpen(false); await loadChat(); }
+    catch (e) { onNotify(e.message || 'Ошибка', 'danger'); }
   };
 
   const isOwner = myClan && String(myClan.ownerId) === String(player?.id);
@@ -1976,12 +1994,51 @@ function ClansTab({ onBack, player, onNotify }) {
             ))}
           </div>
           <div className="dw-clan-chat-input">
+            <button className="dw-btn ghost small" onClick={openTrade} title="Запросить карту или артефакт">🤝</button>
             <input className="dw-manual-input" style={{ flex: 1, textAlign: 'left', fontSize: 14 }}
               placeholder="Сообщение…" maxLength={500} value={chatText}
               onChange={(e) => setChatText(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') sendChat(); }} />
             <button className="dw-btn primary small" onClick={sendChat} disabled={sending || !chatText.trim()}>→</button>
           </div>
+
+          {/* Пикер запроса (карта или артефакт) */}
+          {tradeOpen && (
+            <div className="dw-trade-picker">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <strong style={{ fontSize: 14 }}>Что запросить?</strong>
+                <button className="dw-icon-btn" onClick={() => setTradeOpen(false)}>×</button>
+              </div>
+              <button className="dw-btn primary full" style={{ marginBottom: 8 }} onClick={handleRequestCard}>
+                🃏 Запросить ПВП-карту
+              </button>
+              {myArtsForTrade.length > 0 ? (
+                <>
+                  <p style={{ fontSize: 12, color: 'var(--bone-soft)', marginBottom: 6 }}>Запросить артефакт:</p>
+                  <div className="dw-art-row">
+                    {myArtsForTrade.map((a) => (
+                      <button key={a.artifactId} className="dw-art-btn" onClick={() => handleRequestArtifact(a.artifactId)}>
+                        <span>{artIcon(a.artifactId)}</span>
+                        <small>{a.name}</small>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p style={{ fontSize: 12, color: 'var(--bone-soft)', marginBottom: 6 }}>Нет артефактов для запроса. Выбери из каталога:</p>
+                  <div className="dw-art-row">
+                    {[{id:'card',name:'Карта'},{id:'amulet',name:'Амулет'},{id:'staff',name:'Посох'},{id:'guide',name:'Путеводитель'},{id:'book',name:'Книга'}].map((a) => (
+                      <button key={a.id} className="dw-art-btn" onClick={() => handleRequestArtifact(a.id)}>
+                        <span>{artIcon(a.id)}</span>
+                        <small>{a.name}</small>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -2336,8 +2393,9 @@ function LuckyBuyModal({ gift, player, onClose }) {
   const rotRef = React.useRef(0);
 
   const price = Number(gift.priceCoins) || 0;
-  const bet = Math.max(1, Math.round((price / chance * 100) * 0.95));
-  const mult = price > 0 && bet > 0 ? (price / bet).toFixed(2) : '—';
+  // bet = price * chance/100 * 0.95 (больше шанс = больше платишь, чаще выигрываешь)
+  const bet = Math.max(1, Math.round(price * chance / 100 * 0.95));
+  const mult = price > 0 && bet > 0 ? (price / bet).toFixed(1) : '—';
   const canAfford = (player?.coins || 0) >= bet;
 
   useEffect(() => { api.luckyFeed().then((d) => setFeed(d.feed || [])).catch(() => {}); }, []);

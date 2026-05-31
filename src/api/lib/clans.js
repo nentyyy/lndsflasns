@@ -237,54 +237,83 @@ export async function sendChatMessage(userId, clanId, text) {
   return id;
 }
 
-// ─── Обмен артефактами в клане ───
+// ─── Обмен в клане: артефакт или карта ───
+// trade_type: 'artifact' | 'card'
+
+function playerName(p) {
+  return p?.username ? `@${p.username}` : p?.first_name || `Player #${String(p.user_id).slice(-4)}`;
+}
+
+// Запросить артефакт у участников клана.
 export async function requestArtifact(userId, clanId, artifactId) {
   const member = await db('clan_members').where({ clan_id: clanId, user_id: String(userId) }).first();
   if (!member) throw new ClanError('not_member', 403);
   const art = await db('artifacts').where({ id: artifactId }).first();
   if (!art) throw new ClanError('artifact_not_found', 404);
   const player = await db('players').where({ user_id: String(userId) }).first();
-  const name = player?.username ? `@${player.username}` : player?.first_name || `Player #${String(userId).slice(-4)}`;
-  const text = `${name} просит ${art.name}`;
+  const text = `${playerName(player)} просит ${art.name}`;
   const [msgId] = await db('clan_messages').insert({
     clan_id: clanId, user_id: String(userId), type: 'trade_request',
     text, artifact_id: artifactId, target_user_id: String(userId)
   });
-  return msgId;
+  return { msgId, tradeType: 'artifact' };
 }
 
-export async function giveArtifact(donorId, clanId, msgId) {
+// Запросить ПВП-карту у участников клана.
+export async function requestCard(userId, clanId) {
+  const member = await db('clan_members').where({ clan_id: clanId, user_id: String(userId) }).first();
+  if (!member) throw new ClanError('not_member', 403);
+  const player = await db('players').where({ user_id: String(userId) }).first();
+  const text = `${playerName(player)} просит ПВП-карту`;
+  const [msgId] = await db('clan_messages').insert({
+    clan_id: clanId, user_id: String(userId), type: 'trade_request',
+    text, artifact_id: '__card__', target_user_id: String(userId)
+  });
+  return { msgId, tradeType: 'card' };
+}
+
+// Выдать то, что просил участник (артефакт или карту).
+export async function giveTrade(donorId, clanId, msgId) {
   const msg = await db('clan_messages').where({ id: msgId, clan_id: clanId, type: 'trade_request' }).first();
   if (!msg) throw new ClanError('request_not_found', 404);
   if (msg.trade_fulfilled) throw new ClanError('already_fulfilled', 409);
   if (String(msg.target_user_id) === String(donorId)) throw new ClanError('cannot_give_to_self');
-
   const donorMember = await db('clan_members').where({ clan_id: clanId, user_id: String(donorId) }).first();
   if (!donorMember) throw new ClanError('not_member', 403);
 
-  const artId = msg.artifact_id;
+  const isCard = msg.artifact_id === '__card__';
+  const donor = await db('players').where({ user_id: String(donorId) }).first();
+  const dname = playerName(donor);
+  const rname = msg.text.split(' ')[0];
+
   await db.transaction(async (trx) => {
-    const owned = await trx('player_artifacts').where({ user_id: String(donorId), artifact_id: artId }).where('quantity', '>', 0).first();
-    if (!owned) throw new ClanError('not_owned', 409);
-    await trx('player_artifacts').where({ id: owned.id }).update({ quantity: trx.raw('quantity - 1') });
-
-    const recv = await trx('player_artifacts').where({ user_id: String(msg.target_user_id), artifact_id: artId }).first();
-    if (recv) await trx('player_artifacts').where({ id: recv.id }).update({ quantity: trx.raw('quantity + 1') });
-    else {
+    if (isCard) {
+      // Списываем карту у дарителя, зачисляем получателю.
+      const ok = await trx('players').where({ user_id: String(donorId) }).where('cheap_tickets', '>', 0)
+        .update({ cheap_tickets: trx.raw('cheap_tickets - 1') });
+      if (!ok) throw new ClanError('not_owned', 409);
+      await trx('players').where({ user_id: String(msg.target_user_id) })
+        .update({ cheap_tickets: trx.raw('cheap_tickets + 1') });
+      await trx('clan_messages').where({ id: msgId }).update({ trade_fulfilled: true });
+      await trx('clan_messages').insert({
+        clan_id: clanId, user_id: String(donorId), type: 'trade_done',
+        text: `${dname} подарил ПВП-карту → ${rname}`
+      });
+    } else {
+      const artId = msg.artifact_id;
       const { randomUUID } = await import('node:crypto');
-      await trx('player_artifacts').insert({ id: randomUUID(), user_id: String(msg.target_user_id), artifact_id: artId, quantity: 1 });
+      const owned = await trx('player_artifacts').where({ user_id: String(donorId), artifact_id: artId }).where('quantity', '>', 0).first();
+      if (!owned) throw new ClanError('not_owned', 409);
+      await trx('player_artifacts').where({ id: owned.id }).update({ quantity: trx.raw('quantity - 1') });
+      const recv = await trx('player_artifacts').where({ user_id: String(msg.target_user_id), artifact_id: artId }).first();
+      if (recv) await trx('player_artifacts').where({ id: recv.id }).update({ quantity: trx.raw('quantity + 1') });
+      else await trx('player_artifacts').insert({ id: randomUUID(), user_id: String(msg.target_user_id), artifact_id: artId, quantity: 1 });
+      await trx('clan_messages').where({ id: msgId }).update({ trade_fulfilled: true });
+      const art = await trx('artifacts').where({ id: artId }).first();
+      await trx('clan_messages').insert({
+        clan_id: clanId, user_id: String(donorId), type: 'trade_done',
+        text: `${dname} подарил ${art?.name || artId} → ${rname}`, artifact_id: artId
+      });
     }
-
-    await trx('clan_messages').where({ id: msgId }).update({ trade_fulfilled: true });
-
-    const donor = await trx('players').where({ user_id: String(donorId) }).first();
-    const art = await trx('artifacts').where({ id: artId }).first();
-    const dname = donor?.username ? `@${donor.username}` : donor?.first_name || `Player #${String(donorId).slice(-4)}`;
-    const rname = msg.text.split(' ')[0]; // имя получателя из оригинального сообщения
-    await trx('clan_messages').insert({
-      clan_id: clanId, user_id: String(donorId), type: 'trade_done',
-      text: `${dname} подарил ${art?.name || artId} → ${rname}`,
-      artifact_id: artId
-    });
   });
 }
