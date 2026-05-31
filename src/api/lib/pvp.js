@@ -6,6 +6,7 @@ import { debit, credit } from './wallet.js';
 import { addTournamentScore } from './tournaments.js';
 import { consumeTicket } from './tickets.js';
 import { addPoints } from './points.js';
+import { addClanXp } from './clans.js';
 
 export class PvpError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -287,8 +288,9 @@ export async function buyCard(userId, mode, cardIndex, idempotencyKey) {
       pvp_total_reveals: trx.raw('pvp_total_reveals + 1')
     });
 
-    // Поинты лояльности: ставка = entry дублонов.
+    // Поинты лояльности + XP клана.
     await addPoints(trx, userId, Number(lobby.entry_coins));
+    addClanXp(userId, Number(lobby.entry_coins)).catch(() => {});
 
     // Запустить таймер при первой покупке
     if (!lobby.opened_at) {

@@ -15,7 +15,9 @@ import {
   XP_PER_LEVEL,
   XP_PER_ROUND
 } from './data/mock.js';
-import { NFT_RARITIES, RARITY_COLOR } from './data/gifts-catalog.js';
+// rarity removed per Task 2 — import kept empty to avoid breaking JSX references below
+const NFT_RARITIES = [];
+const RARITY_COLOR = {};
 
 const toneByType = { coins: 'gold', bonus: 'gold', multiplier: 'violet', empty: 'muted', debt: 'danger' };
 const titleByType = {
@@ -1696,135 +1698,247 @@ function SoloPanel({
 /* ─── Clans tab ───────────────────────────────────────────── */
 
 function ClansTab({ onBack, player, onNotify }) {
-  // Система кланов временно закрыта — заглушка «будет позже».
-  return (
-    <section className="dw-page dw-clans-page">
-      <button className="dw-back-link" onClick={onBack}>‹ назад</button>
-      <div className="dw-tut-card" style={{ margin: '40px auto 0', position: 'static' }}>
-        <div className="dw-tut-icon">⚔️</div>
-        <h2 className="dw-tut-title">Кланы</h2>
-        <p className="dw-tut-text">Система кланов скоро появится. Загляни позже!</p>
-        <button className="dw-btn primary full" onClick={onBack}>Понятно</button>
-      </div>
-    </section>
-  );
-}
-
-function ClansTabDisabled({ onBack, player, onNotify }) {
-  const [clans, setClans] = React.useState([]);
-  const [myClanId, setMyClanId] = React.useState(null);
-  const [loading, setLoading] = React.useState(true);
-  const [creating, setCreating] = React.useState(false);
-  const [form, setForm] = React.useState({ name: '', tag: '', description: '' });
+  const [view, setView] = useState('list'); // list | my | chat | lb
+  const [clans, setClans] = useState([]);
+  const [myClanId, setMyClanId] = useState(null);
+  const [myClan, setMyClan] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ name: '', tag: '', description: '' });
+  const [chatMsgs, setChatMsgs] = useState([]);
+  const [chatText, setChatText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [lb, setLb] = useState([]);
+  const [chestAmt, setChestAmt] = useState('');
 
   const load = async () => {
     setLoading(true);
     try {
-      const data = await api.clans();
-      setClans(data.clans || []);
-      setMyClanId(data.myClanId || null);
+      const [d, mc] = await Promise.all([api.clans(), api.myClan()]);
+      setClans(d.clans || []);
+      setMyClanId(d.myClanId || null);
+      setMyClan(mc.clan || null);
     } catch {}
     setLoading(false);
   };
 
-  React.useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, []);
+
+  const loadChat = async () => {
+    if (!myClanId) return;
+    try { const d = await api.clanChat(myClanId); setChatMsgs(d.messages || []); } catch {}
+  };
+
+  useEffect(() => {
+    if (view === 'chat') loadChat();
+    if (view === 'lb') api.clanLeaderboard().then((d) => setLb(d.leaderboard || [])).catch(() => {});
+  }, [view, myClanId]);
 
   const handleCreate = async () => {
-    if (!form.name.trim()) return;
+    if (!form.name.trim() || !form.tag.trim()) return onNotify('Введи название и тег', 'danger');
     try {
       await api.createClan(form.name, form.tag, form.description);
-      setCreating(false);
-      setForm({ name: '', tag: '', description: '' });
-      load();
-      onNotify('Клан создан!', 'success');
+      setCreating(false); setForm({ name: '', tag: '', description: '' });
+      onNotify('Клан создан!', 'success'); load();
     } catch (e) {
-      onNotify(e.message === 'name_taken' ? 'Имя занято' : e.message === 'already_in_clan' ? 'Ты уже в клане' : 'Ошибка', 'danger');
+      onNotify(e.message === 'name_taken' ? 'Имя занято' : e.message === 'already_in_clan' ? 'Ты уже в клане' : e.message === 'insufficient_balance' ? 'Нужно 50 дублонов' : 'Ошибка', 'danger');
     }
   };
 
   const handleJoin = async (clanId) => {
-    try {
-      await api.joinClan(clanId);
-      load();
-      onNotify('Вступил в клан', 'success');
-    } catch (e) {
-      onNotify(e.message === 'already_in_clan' ? 'Уже в клане' : 'Ошибка', 'danger');
-    }
+    try { await api.joinClan(clanId); onNotify('Вступил!', 'success'); load(); }
+    catch (e) { onNotify(e.message === 'already_in_clan' ? 'Уже в клане' : 'Ошибка', 'danger'); }
   };
 
-  const myClan = clans.find((c) => c.id === myClanId);
+  const handleLeave = async () => {
+    if (!window.confirm('Выйти из клана?')) return;
+    try { await api.leaveClan(myClanId); onNotify('Вышел из клана', 'success'); load(); setView('list'); }
+    catch (e) { onNotify(e.message || 'Ошибка', 'danger'); }
+  };
+
+  const handleKick = async (userId) => {
+    try { await api.kickMember(myClanId, userId); onNotify('Исключён', 'success'); load(); }
+    catch { onNotify('Ошибка', 'danger'); }
+  };
+
+  const handleSetRole = async (userId, role) => {
+    try { await api.setRole(myClanId, userId, role); onNotify('Роль изменена', 'success'); load(); }
+    catch { onNotify('Ошибка', 'danger'); }
+  };
+
+  const handleChestContribute = async () => {
+    const amt = parseInt(chestAmt, 10);
+    if (!amt || amt <= 0) return;
+    try { await api.contributeChest(myClanId, amt); onNotify(`+${amt} в сундук`, 'success'); setChestAmt(''); load(); }
+    catch (e) { onNotify(e.message === 'insufficient_balance' ? 'Мало дублонов' : 'Ошибка', 'danger'); }
+  };
+
+  const handleChestWithdraw = async () => {
+    const amt = parseInt(chestAmt, 10);
+    if (!amt || amt <= 0) return;
+    try { await api.withdrawChest(myClanId, amt); onNotify(`Выведено ${amt} дублонов`, 'success'); setChestAmt(''); load(); }
+    catch (e) { onNotify(e.message === 'not_enough_chest' ? 'Нет столько в сундуке' : 'Ошибка', 'danger'); }
+  };
+
+  const sendChat = async () => {
+    if (!chatText.trim() || sending) return;
+    setSending(true);
+    try { await api.sendClanChat(myClanId, chatText); setChatText(''); await loadChat(); }
+    catch { onNotify('Ошибка отправки', 'danger'); }
+    setSending(false);
+  };
+
+  const handleGive = async (msgId) => {
+    try { await api.tradeGive(myClanId, msgId); onNotify('Артефакт передан!', 'success'); await loadChat(); }
+    catch (e) { onNotify(e.message === 'not_owned' ? 'У тебя нет этого артефакта' : 'Ошибка', 'danger'); }
+  };
+
+  const isOwner = myClan && String(myClan.ownerId) === String(player?.id);
+
+  if (loading) return <section className="dw-page"><div className="dw-pay-loading"><div className="dw-pay-spinner" /></div></section>;
 
   return (
     <section className="dw-page dw-clans-page">
-      <button className="dw-back-link" onClick={onBack}>‹ назад</button>
-      <h2 style={{ marginBottom: 16 }}>Кланы</h2>
+      <div className="dw-clan-topbar">
+        <button className="dw-back-link" onClick={onBack}>‹ назад</button>
+        <div className="dw-clan-nav">
+          <button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')}>Кланы</button>
+          {myClanId && <button className={view === 'my' ? 'active' : ''} onClick={() => setView('my')}>Мой</button>}
+          {myClanId && <button className={view === 'chat' ? 'active' : ''} onClick={() => { setView('chat'); }}>Чат</button>}
+          <button className={view === 'lb' ? 'active' : ''} onClick={() => setView('lb')}>ТОП</button>
+        </div>
+      </div>
 
-      {loading && <div className="dw-pay-loading"><div className="dw-pay-spinner" /></div>}
-
-      {!loading && myClan && (
-        <article className="dw-panel" style={{ marginBottom: 12 }}>
-          <div className="dw-panel-head">
-            <div>
-              <span className="dw-kicker">Мой клан</span>
-              <h2>[{myClan.tag}] {myClan.name}</h2>
-            </div>
-            <span className="dw-badge">{myClan.memberCount} чел.</span>
-          </div>
-          {myClan.description && <p style={{ color: 'var(--bone-soft)', marginTop: 6 }}>{myClan.description}</p>}
-        </article>
-      )}
-
-      {!loading && !myClanId && (
+      {/* СПИСОК */}
+      {view === 'list' && (
         <>
-          {!creating ? (
-            <button className="dw-btn primary full" style={{ marginBottom: 16 }} onClick={() => setCreating(true)}>
-              + Создать клан
-            </button>
-          ) : (
-            <article className="dw-panel" style={{ marginBottom: 16 }}>
-              <div className="dw-panel-head"><h2>Новый клан</h2><button className="dw-icon-btn" onClick={() => setCreating(false)}>×</button></div>
-              <input className="dw-manual-input" style={{ marginBottom: 10, textAlign: 'left', fontSize: 15 }}
-                placeholder="Название клана" value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-              <input className="dw-manual-input" style={{ marginBottom: 10, textAlign: 'left', fontSize: 15 }}
-                placeholder="Тег (до 8 символов)" maxLength={8} value={form.tag}
-                onChange={(e) => setForm((f) => ({ ...f, tag: e.target.value }))} />
-              <input className="dw-manual-input" style={{ marginBottom: 12, textAlign: 'left', fontSize: 15 }}
-                placeholder="Описание (необязательно)" value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
-              <button className="dw-btn primary full" onClick={handleCreate} disabled={!form.name.trim()}>
-                Создать
-              </button>
-            </article>
+          {!myClanId && (
+            creating ? (
+              <div className="dw-panel" style={{ marginBottom: 12 }}>
+                <div className="dw-panel-head"><h2>Создать клан <small style={{ color: 'var(--bone-soft)', fontSize: 12 }}>— 50 дбл.</small></h2><button className="dw-icon-btn" onClick={() => setCreating(false)}>×</button></div>
+                <input className="dw-manual-input" placeholder="Название" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} style={{ marginBottom: 8, textAlign: 'left' }} />
+                <input className="dw-manual-input" placeholder="Тег [до 8 букв]" maxLength={8} value={form.tag} onChange={(e) => setForm((f) => ({ ...f, tag: e.target.value.toUpperCase() }))} style={{ marginBottom: 8, textAlign: 'left' }} />
+                <input className="dw-manual-input" placeholder="Описание" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} style={{ marginBottom: 10, textAlign: 'left' }} />
+                <button className="dw-btn primary full" onClick={handleCreate} disabled={!form.name.trim() || !form.tag.trim()}>Создать</button>
+              </div>
+            ) : (
+              <button className="dw-btn primary full" style={{ marginBottom: 12 }} onClick={() => setCreating(true)}>+ Создать клан — 50 дбл.</button>
+            )
           )}
+          <div className="dw-clan-list">
+            {clans.map((c) => (
+              <div key={c.id} className="dw-clan-row">
+                <div className="dw-clan-tag-badge">[{c.tag}]</div>
+                <div style={{ flex: 1 }}>
+                  <strong>{c.name}</strong>
+                  <div style={{ fontSize: 12, color: 'var(--bone-soft)' }}>Ур.{c.level} · {c.memberCount} чел. · +{c.bonusPct}% к выигрышу</div>
+                </div>
+                {!myClanId && <button className="dw-btn primary small" onClick={() => handleJoin(c.id)}>Вступить</button>}
+                {String(c.id) === String(myClanId) && <span className="dw-badge">Мой</span>}
+              </div>
+            ))}
+          </div>
         </>
       )}
 
-      {!loading && clans.length === 0 && (
-        <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: '24px 0' }}>Кланов пока нет. Создай первый!</p>
+      {/* МОЙ КЛАН */}
+      {view === 'my' && myClan && (
+        <div>
+          <div className="dw-clan-header">
+            <span className="dw-clan-tag-badge">[{myClan.tag}]</span>
+            <div>
+              <h2 style={{ margin: 0 }}>{myClan.name}</h2>
+              <p style={{ color: 'var(--bone-soft)', fontSize: 13, margin: 0 }}>Уровень {myClan.level} · +{myClan.bonusPct}% к выигрышу</p>
+            </div>
+          </div>
+          <div className="dw-clan-xp-bar"><span style={{ width: `${myClan.xpNext ? Math.min(100, myClan.xp / myClan.xpNext * 100) : 100}%` }} /></div>
+          <p style={{ fontSize: 12, color: 'var(--bone-soft)', margin: '4px 0 12px' }}>{myClan.xp} / {myClan.xpNext || '—'} XP</p>
+
+          {/* Сундук */}
+          <div className="dw-panel" style={{ marginBottom: 12 }}>
+            <div className="dw-panel-head"><span>💰 Клановый сундук</span><strong style={{ color: 'var(--gold)' }}>{formatCoins(myClan.chest)} дбл.</strong></div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <input className="dw-manual-input" style={{ flex: 1, textAlign: 'left', fontSize: 14 }} type="number" min={1} placeholder="Сумма" value={chestAmt} onChange={(e) => setChestAmt(e.target.value)} />
+              <button className="dw-btn primary small" onClick={handleChestContribute}>Взнос</button>
+              {isOwner && <button className="dw-btn ghost small" onClick={handleChestWithdraw}>Вывод</button>}
+            </div>
+          </div>
+
+          {/* Участники */}
+          <div className="dw-panel">
+            <div className="dw-panel-head"><h3 style={{ margin: 0 }}>Участники</h3></div>
+            {myClan.members.map((m) => (
+              <div key={m.userId} className="dw-clan-member-row">
+                <span className="dw-round-row-avatar" style={m.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+                  {m.avatarUrl ? <img src={m.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : m.name?.[0]?.toUpperCase()}
+                </span>
+                <div style={{ flex: 1 }}>
+                  <strong style={{ fontSize: 14 }}>{m.name}</strong>
+                  <div style={{ fontSize: 11, color: 'var(--bone-soft)' }}>{m.role} · взнос {formatCoins(m.contributed)}</div>
+                </div>
+                {isOwner && String(m.userId) !== String(player?.id) && (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="dw-btn ghost small" onClick={() => handleSetRole(m.userId, m.role === 'officer' ? 'member' : 'officer')}>
+                      {m.role === 'officer' ? 'Разжаловать' : 'Офицер'}
+                    </button>
+                    <button className="dw-btn ghost small" style={{ color: 'var(--crimson-glow)' }} onClick={() => handleKick(m.userId)}>Кик</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {!isOwner && <button className="dw-btn ghost full" style={{ marginTop: 12, color: 'var(--crimson-glow)' }} onClick={handleLeave}>Выйти из клана</button>}
+        </div>
       )}
 
-      <div className="dw-stack">
-        {clans.map((clan, i) => (
-          <article className="dw-panel" key={clan.id}>
-            <div className="dw-panel-head">
-              <div>
-                <span className="dw-kicker">#{i + 1}</span>
-                <h2>[{clan.tag}] {clan.name}</h2>
+      {/* ЧАТ */}
+      {view === 'chat' && (
+        <div className="dw-clan-chat">
+          <div className="dw-clan-chat-msgs">
+            {chatMsgs.map((m) => (
+              <div key={m.id} className={`dw-clan-chat-msg ${m.type === 'system' || m.type === 'trade_done' ? 'system' : ''}`}>
+                {(m.type === 'msg' || m.type === 'trade_request') && (
+                  <span className="dw-round-row-avatar" style={{ width: 24, height: 24, fontSize: 11, flexShrink: 0, ...(m.author.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}) }}>
+                    {m.author.avatarUrl ? <img src={m.author.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : m.author.name?.[0]?.toUpperCase()}
+                  </span>
+                )}
+                <div style={{ flex: 1 }}>
+                  {m.type === 'msg' && <><strong style={{ fontSize: 12, color: 'var(--gold-bright)' }}>{m.author.name}</strong> <span style={{ fontSize: 11, color: 'var(--bone-soft)' }}>[{m.author.role}]</span><br /></>}
+                  <span style={{ fontSize: 13 }}>{m.text}</span>
+                  {m.type === 'trade_request' && !m.tradeFulfilled && String(m.target_user_id) !== String(player?.id) && (
+                    <button className="dw-btn primary small" style={{ marginLeft: 8 }} onClick={() => handleGive(m.id)}>Дать</button>
+                  )}
+                  {m.type === 'trade_request' && m.tradeFulfilled && <span style={{ color: 'var(--emerald-glow)', fontSize: 11, marginLeft: 8 }}>✓ выдан</span>}
+                </div>
               </div>
-              <span className="dw-badge">{clan.memberCount} чел.</span>
+            ))}
+          </div>
+          <div className="dw-clan-chat-input">
+            <input className="dw-manual-input" style={{ flex: 1, textAlign: 'left', fontSize: 14 }}
+              placeholder="Сообщение…" maxLength={500} value={chatText}
+              onChange={(e) => setChatText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') sendChat(); }} />
+            <button className="dw-btn primary small" onClick={sendChat} disabled={sending || !chatText.trim()}>→</button>
+          </div>
+        </div>
+      )}
+
+      {/* ТОП */}
+      {view === 'lb' && (
+        <div className="dw-clan-lb">
+          {lb.map((c) => (
+            <div key={c.id} className="dw-clan-lb-row">
+              <span className="dw-clan-lb-rank">#{c.rank}</span>
+              <div style={{ flex: 1 }}>
+                <strong>[{c.tag}] {c.name}</strong>
+                <div style={{ fontSize: 12, color: 'var(--bone-soft)' }}>Ур.{c.level} · {c.memberCount} чел.</div>
+              </div>
+              <span style={{ color: 'var(--gold)', fontWeight: 800 }}>{formatCoins(c.xp)} XP</span>
             </div>
-            {clan.description && <p style={{ color: 'var(--bone-soft)', fontSize: 13, marginTop: 4 }}>{clan.description}</p>}
-            <div style={{ marginTop: 10 }}>
-              {clan.isMember ? (
-                <span className="dw-badge accent">Мой клан</span>
-              ) : !myClanId ? (
-                <button className="dw-btn secondary small" onClick={() => handleJoin(clan.id)}>Вступить</button>
-              ) : null}
-            </div>
-          </article>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -1985,72 +2099,301 @@ function ReferralTab({ referral, player, onCopy, onShare, onClaimReward, onBack,
 /* ─── Shop tab ────────────────────────────────────────────── */
 
 function ShopTab({ shop, player, onBuyNft, portalsGifts }) {
-  const [nftRarity, setNftRarity] = useState('all');
-  const [sortDir, setSortDir] = useState('asc'); // по возрастанию по умолчанию
+  const [sortDir, setSortDir] = useState('asc');
+  const [luckyGift, setLuckyGift] = useState(null); // gift открытый в Lucky Buy
+  const [shopView, setShopView] = useState('gifts'); // gifts | artifacts | points
 
-  // ТОЛЬКО серверный каталог (цены и список — из БД). Никакого статичного
-  // fallback: иначе при сбое bootstrap показались бы чужие подарки/цены.
   const catalog = portalsGifts || [];
-  const filtered = nftRarity === 'all'
-    ? catalog
-    : catalog.filter((g) => g.rarity === nftRarity);
-  const filteredGifts = [...filtered].sort((a, b) =>
+  const sorted = [...catalog].sort((a, b) =>
     sortDir === 'asc' ? a.priceCoins - b.priceCoins : b.priceCoins - a.priceCoins);
 
   return (
     <section className="dw-page dw-shop-page">
-      <h1 className="dw-shop-title" style={{ fontSize: 22 }}>NFT Shop</h1>
-      <p style={{ color: 'var(--bone-soft)', fontSize: 13, marginBottom: 12, textAlign: 'center' }}>
-        Подарки доставляются через Portals
-      </p>
+      <div className="dw-shop-tabs">
+        <button className={shopView === 'gifts' ? 'active' : ''} onClick={() => setShopView('gifts')}>Подарки</button>
+        <button className={shopView === 'artifacts' ? 'active' : ''} onClick={() => setShopView('artifacts')}>Лавка</button>
+        <button className={shopView === 'points' ? 'active' : ''} onClick={() => setShopView('points')}>Поинты</button>
+      </div>
 
-      <div className="dw-nft-rarity-bar">
-        {NFT_RARITIES.map((r) => (
-          <button key={r} className={`dw-nft-rarity-chip ${nftRarity === r ? 'active' : ''}`}
-            style={nftRarity === r && r !== 'all' ? { borderColor: RARITY_COLOR[r], color: RARITY_COLOR[r] } : {}}
-            onClick={() => setNftRarity(r)}>
-            {r === 'all' ? 'Все' : r}
-          </button>
-        ))}
-      </div>
-      <div className="dw-sort-row">
-        <span>Цена</span>
-        <button className={`dw-sort-arrow ${sortDir === 'asc' ? 'active' : ''}`} onClick={() => setSortDir('asc')} title="по возрастанию">↑</button>
-        <button className={`dw-sort-arrow ${sortDir === 'desc' ? 'active' : ''}`} onClick={() => setSortDir('desc')} title="по убыванию">↓</button>
-      </div>
-      {catalog.length === 0 && (
-        <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: '24px 0', fontSize: 14 }}>
-          Загрузка каталога…
-        </p>
+      {shopView === 'gifts' && (
+        <>
+          <div className="dw-sort-row">
+            <span style={{ color: 'var(--bone-soft)', fontSize: 13 }}>Сортировка</span>
+            <button className={`dw-sort-arrow ${sortDir === 'asc' ? 'active' : ''}`} onClick={() => setSortDir('asc')}>↑</button>
+            <button className={`dw-sort-arrow ${sortDir === 'desc' ? 'active' : ''}`} onClick={() => setSortDir('desc')}>↓</button>
+          </div>
+          {catalog.length === 0 && <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: '24px 0', fontSize: 14 }}>Загрузка…</p>}
+          <div className="dw-nft-grid">
+            {sorted.map((item, i) => {
+              const canBuy = (player?.coins || 0) >= item.priceCoins;
+              return (
+                <motion.article className="dw-nft-tile" key={item.id}
+                  initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.22, delay: Math.min(i * 0.03, 0.4) }}>
+                  <div className="dw-nft-preview" style={{ position: 'relative' }}>
+                    <img src={`/gifts/${item.file}`} alt={item.name} className="dw-gift-img" loading="lazy" />
+                    <button className="dw-lucky-icon" onClick={() => setLuckyGift(item)} title="Lucky Buy">🍀</button>
+                  </div>
+                  <h2 style={{ fontSize: 14 }}>{item.name}</h2>
+                  <strong style={{ fontSize: 15, color: 'var(--gold)' }}>{formatCoins(item.priceCoins)} дбл.</strong>
+                  {item.stock > 0
+                    ? <p style={{ color: 'var(--muted)', fontSize: 11, margin: '2px 0 6px' }}>{item.stock} шт.</p>
+                    : <p style={{ color: 'var(--crimson-glow)', fontSize: 11, margin: '2px 0 6px' }}>Нет в наличии</p>}
+                  <button className={`dw-btn ${canBuy && item.stock > 0 ? 'primary' : 'ghost'}`}
+                    style={{ width: '100%', fontSize: 13 }}
+                    onClick={() => onBuyNft({ ...item, title: item.name })}
+                    disabled={!canBuy || item.stock === 0}>
+                    {!canBuy ? 'Мало дублонов' : item.stock === 0 ? 'Нет в наличии' : 'Купить'}
+                  </button>
+                </motion.article>
+              );
+            })}
+          </div>
+        </>
       )}
-      <div className="dw-nft-grid">
-        {filteredGifts.map((item, i) => {
-          const canBuy = (player?.coins || 0) >= item.priceCoins;
-          return (
-            <motion.article className="dw-nft-tile" key={item.id}
-              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.22, delay: Math.min(i * 0.03, 0.4) }}>
-              <div className={`dw-nft-preview rarity-${(item.rarity || 'common').toLowerCase()}`}>
-                <img src={`/gifts/${item.file}`} alt={item.name} className="dw-gift-img" loading="lazy" />
-              </div>
-              <span className="dw-kicker" style={{ color: RARITY_COLOR[item.rarity] }}>{item.rarity}</span>
-              <h2 style={{ fontSize: 14 }}>{item.name}</h2>
-              <strong style={{ fontSize: 15, color: 'var(--gold)' }}>{formatCoins(item.priceCoins)} дублонов</strong>
-              {item.stock > 0
-                ? <p style={{ color: 'var(--muted)', fontSize: 11, margin: '2px 0 6px' }}>Осталось {item.stock}</p>
-                : <p style={{ color: 'var(--crimson-glow)', fontSize: 11, margin: '2px 0 6px' }}>Нет в наличии</p>
-              }
-              <button className={`dw-btn ${canBuy && item.stock > 0 ? 'primary' : 'ghost'}`}
-                style={{ width: '100%', fontSize: 13 }}
-                onClick={() => onBuyNft({ ...item, title: item.name })}
-                disabled={!canBuy || item.stock === 0}>
-                {!canBuy ? 'Мало дублонов' : item.stock === 0 ? 'Нет в наличии' : 'Купить'}
-              </button>
-            </motion.article>
-          );
-        })}
-      </div>
+
+      {shopView === 'artifacts' && <ArtifactsShop player={player} />}
+      {shopView === 'points' && <PointsShop player={player} catalog={catalog} />}
+
+      {luckyGift && (
+        <LuckyBuyModal gift={luckyGift} player={player} onClose={() => setLuckyGift(null)} />
+      )}
     </section>
+  );
+}
+
+/* ─── Лавка торговца (артефакты) ─────────────────────────── */
+
+function ArtifactsShop({ player }) {
+  const [artifacts, setArtifacts] = useState([]);
+  const [inventory, setInventory] = useState([]);
+  const [buying, setBuying] = useState(null);
+
+  useEffect(() => {
+    api.shopArtifacts().then((d) => setArtifacts(d.artifacts || [])).catch(() => {});
+    api.myArtifacts().then((d) => setInventory(d.artifacts || [])).catch(() => {});
+  }, []);
+
+  const buy = async (artifactId) => {
+    setBuying(artifactId);
+    try {
+      await api.buyArtifact(artifactId);
+      const [sh, inv] = await Promise.all([api.shopArtifacts(), api.myArtifacts()]);
+      setArtifacts(sh.artifacts || []);
+      setInventory(inv.artifacts || []);
+    } catch (e) {
+      // notify handled by caller
+    } finally { setBuying(null); }
+  };
+
+  const owned = Object.fromEntries(inventory.map((i) => [i.artifactId, i.quantity]));
+
+  return (
+    <div className="dw-artifacts-grid">
+      {artifacts.map((art) => {
+        const qty = owned[art.id] || 0;
+        const canAfford = (player?.coins || 0) >= art.price;
+        return (
+          <div key={art.id} className="dw-artifact-tile">
+            <div className="dw-artifact-icon">{artIcon(art.id)}</div>
+            <h3>{art.name}</h3>
+            <p>{art.description}</p>
+            <div className="dw-artifact-footer">
+              <strong style={{ color: 'var(--gold)' }}>{art.price} дбл.</strong>
+              {qty > 0 && <span className="dw-artifact-qty">×{qty}</span>}
+            </div>
+            <button className={`dw-btn ${canAfford ? 'primary' : 'ghost'} full`}
+              disabled={!canAfford || buying === art.id}
+              onClick={() => buy(art.id)}>
+              {buying === art.id ? '…' : canAfford ? 'Купить' : 'Мало дублонов'}
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function artIcon(id) {
+  return { card: '🃏', amulet: '📿', staff: '🪄', guide: '🧭', book: '📖' }[id] || '✨';
+}
+
+/* ─── Магазин поинтов ─────────────────────────────────────── */
+
+function PointsShop({ player, catalog }) {
+  const [data, setData] = useState(null);
+  const [spending, setSpending] = useState(null);
+
+  useEffect(() => { api.shopPoints().then(setData).catch(() => {}); }, []);
+
+  const spend = async (itemId, targetId) => {
+    setSpending(itemId);
+    try {
+      await api.spendPoints(itemId, targetId);
+      const d = await api.shopPoints();
+      setData(d);
+    } catch { } finally { setSpending(null); }
+  };
+
+  if (!data) return <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: 24 }}>Загрузка…</p>;
+
+  return (
+    <div style={{ paddingBottom: 16 }}>
+      <div className="dw-points-balance">
+        <strong>{data.points}</strong> поинтов
+        <small> / всего заработано: {data.totalEarned}</small>
+      </div>
+      {(data.items || []).map((item) => {
+        const canAfford = data.points >= item.cost;
+        return (
+          <div key={item.id} className="dw-points-row">
+            <div>
+              <strong style={{ color: canAfford ? 'var(--gold)' : 'var(--bone-soft)' }}>{item.cost} птс</strong>
+              <p style={{ color: 'var(--bone-soft)', fontSize: 13, margin: '2px 0 0' }}>{item.label}</p>
+            </div>
+            <button className={`dw-btn ${canAfford ? 'primary' : 'ghost'} small`}
+              disabled={!canAfford || spending === item.id}
+              onClick={() => spend(item.id, null)}>
+              {spending === item.id ? '…' : 'Забрать'}
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── Lucky Buy колесо ────────────────────────────────────── */
+
+function LuckyBuyModal({ gift, player, onClose }) {
+  const [chance, setChance] = useState(20);
+  const [spinning, setSpinning] = useState(false);
+  const [rotation, setRotation] = useState(0);
+  const [result, setResult] = useState(null);
+  const [demoResult, setDemoResult] = useState(null);
+  const [feed, setFeed] = useState([]);
+  const rotRef = React.useRef(0);
+
+  const price = Number(gift.priceCoins) || 0;
+  const bet = Math.max(1, Math.round((price / chance * 100) * 0.95));
+  const mult = price > 0 && bet > 0 ? (price / bet).toFixed(2) : '—';
+  const canAfford = (player?.coins || 0) >= bet;
+
+  useEffect(() => { api.luckyFeed().then((d) => setFeed(d.feed || [])).catch(() => {}); }, []);
+
+  const spinWheel = async (demo) => {
+    setSpinning(true); setResult(null); setDemoResult(null);
+    const won = demo ? Math.random() * 100 < chance : null;
+    // Spin animation: always lands on the "won" zone visually for demo or based on server for real
+    const goldDeg = chance / 100 * 360;
+    const goldStart = 90; // pointer at top = 90°
+    let landDeg;
+    if (demo) {
+      landDeg = won ? goldStart + goldDeg * 0.5 : goldStart + goldDeg + (360 - goldDeg) * 0.5;
+    } else {
+      landDeg = goldStart + goldDeg * 0.5; // will be corrected after server response
+    }
+    const spins = 360 * 5;
+    rotRef.current = Math.ceil(rotRef.current / 360) * 360 + spins + landDeg;
+    setRotation(rotRef.current);
+
+    if (demo) {
+      setTimeout(() => { setSpinning(false); setDemoResult(won ? 'win' : 'lose'); }, 3500);
+      return;
+    }
+    try {
+      const out = await api.luckyBuy(gift.id, chance);
+      // Adjust final rotation so wheel matches server result
+      const finalDeg = Math.ceil(rotRef.current / 360) * 360 + spins +
+        (out.won ? goldStart + goldDeg * 0.5 : goldStart + goldDeg + (360 - goldDeg) * 0.5);
+      rotRef.current = finalDeg;
+      setRotation(finalDeg);
+      setTimeout(() => { setSpinning(false); setResult(out); }, 3500);
+    } catch (e) { setSpinning(false); }
+  };
+
+  // SVG wheel: gold zone = chance%, grey = rest, pointer at top
+  const r = 90;
+  const cx = 100, cy = 100;
+  const goldAngle = (chance / 100) * 2 * Math.PI;
+  // Gold arc: starts at -90° (top) going clockwise
+  const toXY = (a, rad) => [cx + rad * Math.cos(a - Math.PI / 2), cy + rad * Math.sin(a - Math.PI / 2)];
+  const [gx1, gy1] = toXY(0, r);
+  const [gx2, gy2] = toXY(goldAngle, r);
+  const largeArc = goldAngle > Math.PI ? 1 : 0;
+
+  const outcome = result || (demoResult === 'win' ? { won: true } : demoResult === 'lose' ? { won: false } : null);
+
+  return (
+    <motion.div className="dw-sheet-backdrop" onClick={spinning ? undefined : onClose}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <motion.div className="dw-wheel-sheet dw-lucky-sheet" onClick={(e) => e.stopPropagation()}
+        initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
+        <div className="dw-round-result-header">
+          <h2>🍀 Lucky Buy</h2>
+          <button className="dw-icon-btn" onClick={onClose} disabled={spinning}>×</button>
+        </div>
+
+        <div className="dw-wheel-stage">
+          <div className="dw-wheel-pointer" />
+          <svg viewBox="0 0 200 200" className="dw-wheel-svg">
+            <g style={{ transition: spinning ? 'transform 3.4s cubic-bezier(0.16,1,0.3,1)' : 'none', transform: `rotate(${rotation}deg)`, transformOrigin: `${cx}px ${cy}px` }}>
+              {/* Grey zone (loss) */}
+              <circle cx={cx} cy={cy} r={r} fill="#2a2520" />
+              {/* Gold zone (win) */}
+              <path d={`M${cx} ${cy} L${gx1} ${gy1} A${r} ${r} 0 ${largeArc} 1 ${gx2} ${gy2} Z`} fill="#d4af37" opacity="0.85" />
+              {/* Center: gift image (use emoji fallback) */}
+              <circle cx={cx} cy={cy} r={22} fill="#1a1510" stroke="#d4af37" strokeWidth="1.5" />
+              <text x={cx} y={cy + 7} textAnchor="middle" fontSize="22">🎁</text>
+            </g>
+            {/* Outer ring */}
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#d4af37" strokeWidth="2" opacity="0.5" />
+          </svg>
+        </div>
+
+        {outcome && (
+          <div className={`dw-lucky-result ${outcome.won ? 'win' : 'lose'}`}>
+            {outcome.won ? `🎉 Вы выиграли ${gift.name}!` : '💀 Удача отвернулась — попробуй ещё раз'}
+          </div>
+        )}
+
+        <div className="dw-lucky-slider-row">
+          <span>Шанс: <strong style={{ color: 'var(--gold)' }}>{chance}%</strong></span>
+          <span>Ставка: <strong style={{ color: 'var(--gold)' }}>{formatCoins(bet)} дбл.</strong></span>
+        </div>
+        <input type="range" min={1} max={80} value={chance}
+          onChange={(e) => { setChance(Number(e.target.value)); setResult(null); setDemoResult(null); }}
+          className="dw-lucky-slider" disabled={spinning} />
+        <div className="dw-lucky-meta">
+          <span>Множитель: ×{mult}</span>
+          <span>Цена подарка: {formatCoins(price)} дбл.</span>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+          <button className="dw-btn ghost" style={{ flex: 1 }} disabled={spinning} onClick={() => spinWheel(true)}>
+            🎭 Демо
+          </button>
+          <button className={`dw-btn ${canAfford ? 'primary' : 'ghost'}`} style={{ flex: 2 }}
+            disabled={spinning || !canAfford} onClick={() => spinWheel(false)}>
+            {spinning ? 'Крутим…' : canAfford ? `Сыграть — ${formatCoins(bet)} дбл.` : 'Мало дублонов'}
+          </button>
+        </div>
+
+        {feed.length > 0 && (
+          <div className="dw-lucky-feed">
+            <span className="dw-kicker" style={{ color: 'var(--gold)' }}>Последние выигрыши</span>
+            {feed.map((w, i) => (
+              <div key={i} className="dw-lucky-feed-row">
+                <span className="dw-round-row-avatar" style={{ width: 22, height: 22, fontSize: 11 }}>
+                  {w.avatarUrl ? <img src={w.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : w.name?.[0]?.toUpperCase()}
+                </span>
+                <span>{w.name} выиграл <strong>{w.giftName}</strong> при шансе {w.chance}%</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -2068,8 +2411,10 @@ function ProfileTab({ player, filters, activeFilter, onFilterChange, history, to
             : u.initial}
         </div>
         <div className="dw-profile-header-copy">
-          <h1 className="dw-profile-name" style={{ fontSize: 20 }}>{u.displayName}</h1>
-          {u.badge && <span className="dw-badge premium" style={{ marginBottom: 4 }}>{u.badge}</span>}
+          <h1 className="dw-profile-name" style={{ fontSize: 20 }}>
+            {player.clanTag && <span className="dw-clan-tag-badge" style={{ marginRight: 6, fontSize: 13 }}>[{player.clanTag}]</span>}
+            {u.displayName}
+          </h1>
           <p className="dw-profile-meta" style={{ fontSize: 13 }}>ID {player.id}</p>
         </div>
       </div>

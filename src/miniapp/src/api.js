@@ -147,8 +147,31 @@ export const api = {
   adminPortals: () => request('/api/admin/portals'),
   adminEconomy: () => request('/api/admin/economy'),
   adminAdjustBalance: (userId, amount, reason) => request(`/api/admin/users/${userId}/adjust`, { method: 'POST', body: { amount, reason } }),
+  // Artifacts
+  shopArtifacts: () => request('/api/shop/artifacts'),
+  buyArtifact: (artifactId) => request('/api/shop/artifacts/buy', { method: 'POST', body: { artifactId } }),
+  myArtifacts: () => request('/api/player/artifacts'),
+  useArtifact: (artifactId, targetCells = []) => request('/api/player/artifacts/use', { method: 'POST', body: { artifactId, targetCells } }),
+  shopPoints: () => request('/api/shop/points'),
+  spendPoints: (itemId, targetId) => request('/api/shop/points/spend', { method: 'POST', body: { itemId, targetId } }),
+  // Lucky Buy
+  luckyBuy: (giftId, chancePercent) => request('/api/lucky-buy', { method: 'POST', body: { giftId, chancePercent } }),
+  luckyFeed: () => request('/api/lucky-buy/feed'),
+  // Clans
   clans: () => request('/api/clans'),
+  myClan: () => request('/api/clans/my'),
+  clanLeaderboard: () => request('/api/clans/leaderboard'),
   createClan: (name, tag, description) => request('/api/clans', { method: 'POST', body: { name, tag, description } }),
+  updateClan: (id, description) => request(`/api/clans/${id}`, { method: 'PUT', body: { description } }),
+  deleteClan: (id) => request(`/api/clans/${id}`, { method: 'DELETE', body: {} }),
   joinClan: (id) => request(`/api/clans/${id}/join`, { method: 'POST', body: {} }),
-  leaveClan: (id) => request(`/api/clans/${id}/leave`, { method: 'POST', body: {} })
+  leaveClan: (id) => request(`/api/clans/${id}/leave`, { method: 'POST', body: {} }),
+  kickMember: (clanId, userId) => request(`/api/clans/${clanId}/kick/${userId}`, { method: 'POST', body: {} }),
+  setRole: (clanId, userId, role) => request(`/api/clans/${clanId}/role/${userId}`, { method: 'PUT', body: { role } }),
+  contributeChest: (clanId, amount) => request(`/api/clans/${clanId}/chest/contribute`, { method: 'POST', body: { amount } }),
+  withdrawChest: (clanId, amount) => request(`/api/clans/${clanId}/chest/withdraw`, { method: 'POST', body: { amount } }),
+  clanChat: (clanId) => request(`/api/clans/${clanId}/chat`),
+  sendClanChat: (clanId, text) => request(`/api/clans/${clanId}/chat`, { method: 'POST', body: { text } }),
+  tradeRequest: (clanId, artifactId) => request(`/api/clans/${clanId}/trade/request`, { method: 'POST', body: { artifactId } }),
+  tradeGive: (clanId, messageId) => request(`/api/clans/${clanId}/trade/give`, { method: 'POST', body: { messageId } }),
 };

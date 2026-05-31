@@ -3678,3 +3678,79 @@ button:disabled, [disabled] { cursor: not-allowed; }
 
 /* ПВП-шапка после удаления «Лучший»: таймер слева, прошлый раунд справа */
 .dw-pvp-header--3col { grid-template-columns: 1fr auto !important; align-items: center; }
+
+/* ════ МАГАЗИН — вкладки ════ */
+.dw-shop-tabs {
+  display: flex; gap: 4px; margin-bottom: 14px;
+  background: var(--surface-2); padding: 4px; border-radius: 12px;
+  border: 1px solid var(--border-strong);
+}
+.dw-shop-tabs button {
+  flex: 1; padding: 9px 6px; border-radius: 9px; border: none;
+  background: transparent; color: var(--bone-soft); font-weight: 800; font-size: 13px; cursor: pointer;
+}
+.dw-shop-tabs button.active { background: var(--gold); color: #1a1305; }
+
+/* NFT preview без рамок редкости */
+.dw-nft-preview { position: relative; border-radius: 12px; overflow: hidden; background: var(--surface-3); border: 1px solid var(--border-strong); }
+.dw-lucky-icon {
+  position: absolute; top: 4px; right: 4px; font-size: 18px;
+  background: rgba(0,0,0,0.55); border-radius: 50%; width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  border: none; transition: transform 0.15s;
+}
+.dw-lucky-icon:hover { transform: scale(1.15); }
+
+/* ════ ЛАВКА (артефакты) ════ */
+.dw-artifacts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dw-artifact-tile {
+  padding: 12px; border-radius: 14px; border: 1px solid var(--gold-line);
+  background: var(--surface-2); display: flex; flex-direction: column; gap: 6px;
+}
+.dw-artifact-icon { font-size: 28px; text-align: center; }
+.dw-artifact-tile h3 { font-size: 13px; font-family: var(--font-display); color: var(--gold-bright); margin: 0; }
+.dw-artifact-tile p { font-size: 11px; color: var(--bone-soft); margin: 0; flex: 1; }
+.dw-artifact-footer { display: flex; align-items: center; justify-content: space-between; }
+.dw-artifact-qty { background: var(--gold); color: #1a1305; font-size: 11px; font-weight: 800; border-radius: 20px; padding: 2px 7px; }
+
+/* ════ ПОИНТЫ ════ */
+.dw-points-balance { font-size: 22px; font-weight: 800; color: var(--gold-bright); text-align: center; padding: 14px 0; }
+.dw-points-balance small { font-size: 13px; color: var(--bone-soft); }
+.dw-points-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.dw-points-row:last-child { border-bottom: none; }
+
+/* ════ LUCKY BUY ════ */
+.dw-lucky-sheet { max-height: 90vh; overflow-y: auto; }
+.dw-lucky-result { text-align: center; padding: 12px; border-radius: 12px; font-weight: 800; margin-bottom: 12px; }
+.dw-lucky-result.win { background: rgba(74,138,94,0.2); color: #6dbe88; }
+.dw-lucky-result.lose { background: rgba(107,16,24,0.2); color: var(--crimson-glow); }
+.dw-lucky-slider-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
+.dw-lucky-slider { width: 100%; accent-color: var(--gold); margin-bottom: 6px; }
+.dw-lucky-meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--bone-soft); margin-bottom: 4px; }
+.dw-lucky-feed { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.dw-lucky-feed-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--bone-soft); }
+.dw-lucky-feed-row strong { color: var(--gold); }
+
+/* ════ КЛАНЫ ════ */
+.dw-clan-topbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.dw-clan-nav { display: flex; gap: 4px; background: var(--surface-2); padding: 3px; border-radius: 10px; flex: 1; }
+.dw-clan-nav button { flex: 1; padding: 7px 4px; border-radius: 8px; border: none; background: transparent; color: var(--bone-soft); font-weight: 800; font-size: 12px; cursor: pointer; }
+.dw-clan-nav button.active { background: var(--gold); color: #1a1305; }
+.dw-clan-tag-badge { display: inline-block; background: var(--gold-faint); border: 1px solid var(--gold-line); color: var(--gold-bright); font-weight: 800; font-size: 12px; border-radius: 6px; padding: 2px 6px; }
+.dw-clan-list { display: flex; flex-direction: column; gap: 8px; }
+.dw-clan-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface-2); border-radius: 12px; border: 1px solid var(--border-strong); }
+.dw-clan-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.dw-clan-xp-bar { height: 6px; background: var(--surface-3); border-radius: 4px; overflow: hidden; margin-bottom: 4px; }
+.dw-clan-xp-bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold-bright)); border-radius: 4px; }
+.dw-clan-member-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.dw-clan-member-row:last-child { border-bottom: none; }
+/* Чат */
+.dw-clan-chat { display: flex; flex-direction: column; height: 55vh; }
+.dw-clan-chat-msgs { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-bottom: 8px; }
+.dw-clan-chat-msg { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; }
+.dw-clan-chat-msg.system { color: var(--bone-soft); font-size: 12px; justify-content: center; padding: 2px 0; }
+.dw-clan-chat-input { display: flex; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border-strong); }
+/* Лидерборд */
+.dw-clan-lb { display: flex; flex-direction: column; gap: 8px; }
+.dw-clan-lb-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface-2); border-radius: 12px; border: 1px solid var(--border-strong); }
+.dw-clan-lb-rank { font-size: 18px; font-weight: 800; color: var(--gold); min-width: 32px; font-family: var(--font-display); }

@@ -116,6 +116,7 @@ function playerView(p) {
     firstDepositDone: Boolean(p.first_deposit_done),
     wheelDepositBonusPct: Number(p.wheel_deposit_bonus_pct || 0),
     pvpTotalReveals: Number(p.pvp_total_reveals || 0),
+    clanTag: p._clanTag || null,
     tickets: {
       cheap: Number(p.cheap_tickets || 0),
       premium: Number(p.premium_tickets || 0)
@@ -134,8 +135,18 @@ async function recentHistory(userId, limit = 25) {
   }));
 }
 
+async function withClanTag(player) {
+  try {
+    const member = await db('clan_members').where({ user_id: String(player.user_id) }).first();
+    if (!member) return player;
+    const clan = await db('clans').where({ id: member.clan_id }).first('tag');
+    return { ...player, _clanTag: clan?.tag || null };
+  } catch { return player; }
+}
+
 app.get('/api/me', async (req, res) => {
-  res.json({ player: playerView(req.player) });
+  const p = await withClanTag(req.player);
+  res.json({ player: playerView(p) });
 });
 
 // Топ игроков (кэш 5 мин на бэке): all-time + сегодня.
@@ -826,74 +837,118 @@ app.post('/api/portals/buy',
 );
 
 // ─── Clans ───
+import { listClans, getMyClan, createClan, joinClan, leaveClan, kickMember, setRole, deleteClan, contributeToChest, withdrawChest, getClanLeaderboard, getChatMessages, sendChatMessage, requestArtifact, giveArtifact, ClanError } from './lib/clans.js';
+
 app.get('/api/clans', async (req, res, next) => {
+  try { res.json(await listClans(req.user.id)); } catch (e) { next(e); }
+});
+app.get('/api/clans/my', async (req, res, next) => {
   try {
-    const clans = await db('clans')
-      .orderBy('total_wagered', 'desc')
-      .limit(50)
-      .select('id', 'name', 'tag', 'owner_id', 'description', 'total_wagered', 'created_at');
-    const enriched = await Promise.all(clans.map(async (c) => {
-      const count = await db('clan_members').where({ clan_id: c.id }).count('* as n').first();
-      const me = await db('clan_members').where({ clan_id: c.id, user_id: req.user.id }).first();
-      return { ...c, memberCount: Number(count.n), isMember: Boolean(me), isOwner: String(c.owner_id) === String(req.user.id) };
-    }));
-    const myClan = await db('clan_members').where({ user_id: req.user.id }).first();
-    res.json({ clans: enriched, myClanId: myClan?.clan_id || null });
+    const clan = await getMyClan(req.user.id);
+    res.json({ clan });
+  } catch (e) { next(e); }
+});
+app.get('/api/clans/leaderboard', async (req, res, next) => {
+  try { res.json({ leaderboard: await getClanLeaderboard(50) }); } catch (e) { next(e); }
+});
+
+app.post('/api/clans', rateLimit({ bucket: 'clan_create', max: 3, windowMs: 3600_000 }), async (req, res, next) => {
+  try {
+    const { name, tag, description } = req.body || {};
+    res.json(await createClan(req.user.id, name, tag, description));
+  } catch (e) {
+    if (e instanceof ClanError) return res.status(e.status).json({ error: e.message });
+    if (e instanceof InsufficientFunds) return res.status(400).json({ error: 'insufficient_balance' });
+    if (e.message?.includes('UNIQUE')) return res.status(409).json({ error: 'name_taken' });
+    next(e);
+  }
+});
+
+app.put('/api/clans/:id', async (req, res, next) => {
+  try {
+    const clanId = Number(req.params.id);
+    const clan = await db('clans').where({ id: clanId }).first();
+    if (!clan) return res.status(404).json({ error: 'not_found' });
+    if (String(clan.owner_id) !== String(req.user.id)) return res.status(403).json({ error: 'forbidden' });
+    const { description } = req.body || {};
+    await db('clans').where({ id: clanId }).update({ description: description?.slice(0, 200) || null });
+    res.json({ ok: true });
   } catch (e) { next(e); }
 });
 
-app.post('/api/clans',
-  rateLimit({ bucket: 'clan_create', max: 3, windowMs: 3600_000 }),
+app.delete('/api/clans/:id', async (req, res, next) => {
+  try { await deleteClan(req.user.id, Number(req.params.id)); res.json({ ok: true }); }
+  catch (e) { if (e instanceof ClanError) return res.status(e.status).json({ error: e.message }); next(e); }
+});
+
+app.post('/api/clans/:id/join', async (req, res, next) => {
+  try { await joinClan(req.user.id, Number(req.params.id)); res.json({ ok: true }); }
+  catch (e) { if (e instanceof ClanError) return res.status(e.status).json({ error: e.message }); next(e); }
+});
+app.post('/api/clans/:id/leave', async (req, res, next) => {
+  try { await leaveClan(req.user.id, Number(req.params.id)); res.json({ ok: true }); }
+  catch (e) { if (e instanceof ClanError) return res.status(e.status).json({ error: e.message }); next(e); }
+});
+app.post('/api/clans/:id/kick/:userId', async (req, res, next) => {
+  try { await kickMember(req.user.id, Number(req.params.id), req.params.userId); res.json({ ok: true }); }
+  catch (e) { if (e instanceof ClanError) return res.status(e.status).json({ error: e.message }); next(e); }
+});
+app.put('/api/clans/:id/role/:userId', async (req, res, next) => {
+  try { await setRole(req.user.id, Number(req.params.id), req.params.userId, req.body?.role); res.json({ ok: true }); }
+  catch (e) { if (e instanceof ClanError) return res.status(e.status).json({ error: e.message }); next(e); }
+});
+
+// Клановый сундук
+app.post('/api/clans/:id/chest/contribute', async (req, res, next) => {
+  try {
+    await contributeToChest(req.user.id, Number(req.params.id), req.body?.amount);
+    const player = await db('players').where({ user_id: req.user.id }).first();
+    res.json({ ok: true, balance: Number(player.balance) });
+  } catch (e) {
+    if (e instanceof ClanError) return res.status(e.status).json({ error: e.message });
+    if (e instanceof InsufficientFunds) return res.status(400).json({ error: 'insufficient_balance' });
+    next(e);
+  }
+});
+app.post('/api/clans/:id/chest/withdraw', async (req, res, next) => {
+  try {
+    await withdrawChest(req.user.id, Number(req.params.id), req.body?.amount);
+    const player = await db('players').where({ user_id: req.user.id }).first();
+    res.json({ ok: true, balance: Number(player.balance) });
+  } catch (e) { if (e instanceof ClanError) return res.status(e.status).json({ error: e.message }); next(e); }
+});
+
+// Клановый чат
+app.get('/api/clans/:id/chat', async (req, res, next) => {
+  try { res.json({ messages: await getChatMessages(req.user.id, Number(req.params.id)) }); }
+  catch (e) { if (e instanceof ClanError) return res.status(e.status).json({ error: e.message }); next(e); }
+});
+app.post('/api/clans/:id/chat',
+  rateLimit({ bucket: 'clan_chat', max: 60, windowMs: 60_000 }),
   async (req, res, next) => {
     try {
-      const { name, tag, description } = req.body || {};
-      if (!name || name.length < 2 || name.length > 32) return res.status(400).json({ error: 'invalid_name' });
-      const safeTag = (tag || name).slice(0, 8).replace(/[^a-zA-ZА-Яа-я0-9]/g, '').toUpperCase() || 'CLAN';
-
-      // Проверяем что уже не в клане
-      const already = await db('clan_members').where({ user_id: req.user.id }).first();
-      if (already) return res.status(409).json({ error: 'already_in_clan' });
-
-      await db('clans').insert({
-        name: name.trim(),
-        tag: safeTag,
-        owner_id: req.user.id,
-        description: description ? String(description).slice(0, 200) : null
-      });
-
-      const newClan = await db('clans').where({ owner_id: req.user.id }).orderBy('id', 'desc').first();
-      if (!newClan) throw new Error('clan insert failed');
-
-      await db('clan_members').insert({ clan_id: newClan.id, user_id: req.user.id, role: 'owner' });
-      res.json({ ok: true, clanId: newClan.id });
-    } catch (e) {
-      if (e.message?.includes('UNIQUE')) return res.status(409).json({ error: 'name_taken' });
-      next(e);
-    }
+      const id = await sendChatMessage(req.user.id, Number(req.params.id), req.body?.text);
+      res.json({ ok: true, messageId: id });
+    } catch (e) { if (e instanceof ClanError) return res.status(e.status).json({ error: e.message }); next(e); }
   }
 );
 
-app.post('/api/clans/:id/join', async (req, res, next) => {
+// Обмен артефактами в клане
+app.post('/api/clans/:id/trade/request', async (req, res, next) => {
   try {
-    const clanId = Number(req.params.id);
-    const clan = await db('clans').where({ id: clanId }).first();
-    if (!clan) return res.status(404).json({ error: 'not_found' });
-    const already = await db('clan_members').where({ user_id: req.user.id }).first();
-    if (already) return res.status(409).json({ error: 'already_in_clan' });
-    await db('clan_members').insert({ clan_id: clanId, user_id: req.user.id, role: 'member' });
-    res.json({ ok: true });
-  } catch (e) { next(e); }
+    const msgId = await requestArtifact(req.user.id, Number(req.params.id), req.body?.artifactId);
+    res.json({ ok: true, messageId: msgId });
+  } catch (e) { if (e instanceof ClanError) return res.status(e.status).json({ error: e.message }); next(e); }
 });
-
-app.post('/api/clans/:id/leave', async (req, res, next) => {
+app.post('/api/clans/:id/trade/give', async (req, res, next) => {
   try {
-    const clanId = Number(req.params.id);
-    const clan = await db('clans').where({ id: clanId }).first();
-    if (!clan) return res.status(404).json({ error: 'not_found' });
-    if (String(clan.owner_id) === String(req.user.id)) return res.status(400).json({ error: 'owner_cannot_leave' });
-    await db('clan_members').where({ clan_id: clanId, user_id: req.user.id }).delete();
+    await giveArtifact(req.user.id, Number(req.params.id), Number(req.body?.messageId));
     res.json({ ok: true });
-  } catch (e) { next(e); }
+  } catch (e) {
+    if (e instanceof ClanError) return res.status(e.status).json({ error: e.message });
+    if (e instanceof InsufficientFunds) return res.status(400).json({ error: 'insufficient_balance' });
+    next(e);
+  }
 });
 
 // ─── Error handler ───

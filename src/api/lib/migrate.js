@@ -259,16 +259,42 @@ export async function migrate() {
       t.bigInteger('owner_id').notNullable().index();
       t.text('description').nullable();
       t.bigInteger('total_wagered').notNullable().defaultTo(0);
+      t.integer('level').notNullable().defaultTo(1);
+      t.bigInteger('xp').notNullable().defaultTo(0);
+      t.bigInteger('chest').notNullable().defaultTo(0); // клановый сундук (дублоны)
       t.timestamp('created_at').defaultTo(db.fn.now());
     });
+  } else {
+    const clanCols = await db('clans').columnInfo().catch(() => ({}));
+    if (!clanCols.level) await db.schema.alterTable('clans', (t) => t.integer('level').notNullable().defaultTo(1));
+    if (!clanCols.xp)    await db.schema.alterTable('clans', (t) => t.bigInteger('xp').notNullable().defaultTo(0));
+    if (!clanCols.chest) await db.schema.alterTable('clans', (t) => t.bigInteger('chest').notNullable().defaultTo(0));
   }
   if (!(await db.schema.hasTable('clan_members'))) {
     await db.schema.createTable('clan_members', (t) => {
       t.increments('id').primary();
       t.integer('clan_id').notNullable().index();
       t.bigInteger('user_id').notNullable().unique();
-      t.string('role').notNullable().defaultTo('member'); // owner | member
+      t.string('role').notNullable().defaultTo('member'); // owner | officer | member
+      t.bigInteger('contributed').notNullable().defaultTo(0);
       t.timestamp('joined_at').defaultTo(db.fn.now());
+    });
+  } else {
+    const mcols = await db('clan_members').columnInfo().catch(() => ({}));
+    if (!mcols.contributed) await db.schema.alterTable('clan_members', (t) => t.bigInteger('contributed').notNullable().defaultTo(0));
+  }
+  // Клановый чат
+  if (!(await db.schema.hasTable('clan_messages'))) {
+    await db.schema.createTable('clan_messages', (t) => {
+      t.increments('id').primary();
+      t.integer('clan_id').notNullable().index();
+      t.bigInteger('user_id').notNullable();
+      t.string('type').notNullable().defaultTo('msg'); // msg | system | trade_request | trade_done
+      t.text('text').notNullable();
+      t.string('artifact_id').nullable(); // для trade_request/trade_done
+      t.bigInteger('target_user_id').nullable(); // получатель трейда
+      t.boolean('trade_fulfilled').notNullable().defaultTo(false);
+      t.timestamp('created_at').defaultTo(db.fn.now());
     });
   }
 
