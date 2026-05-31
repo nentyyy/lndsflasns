@@ -1417,12 +1417,14 @@ function buildPvpRows(cardCount) {
   return rows;
 }
 
-function PvpCard({ card, idx, settled, revealOpen = true, pickable = false, pvpBuying, lowBalance, onBuyPvpCard, onOpenPlayerProfile, shuffling }) {
-  // revealOpen=false → исход ещё «закрыт» (последовательное открытие после замеса).
+function PvpCard({ card, idx, settled, revealOpen = true, pickable = false, artPick = false, hinted = false, pvpBuying, onBuyPvpCard, onArtPick, onOpenPlayerProfile, shuffling }) {
   const isRevealed = revealOpen && (settled || card.status === 'revealed') && card.outcome;
   const canPick = pickable && !card.taken && !settled && !pvpBuying;
+  const canArt = artPick && !card.taken && !settled;
   const cls = [
-    'dw-pvp-card', canPick ? 'dw-pvp-card--pick' : 'dw-pvp-card--locked',
+    'dw-pvp-card',
+    canPick || canArt ? 'dw-pvp-card--pick' : 'dw-pvp-card--locked',
+    hinted ? 'dw-pvp-card--hint' : '',
     card.taken && !card.mine ? 'taken' : '',
     card.mine ? 'mine' : '',
     isRevealed ? 'revealed' : '',
@@ -1431,14 +1433,16 @@ function PvpCard({ card, idx, settled, revealOpen = true, pickable = false, pvpB
     shuffling ? 'shuffling' : ''
   ].filter(Boolean).join(' ');
 
+  const handleClick = canArt ? () => onArtPick(idx) : canPick ? () => onBuyPvpCard(idx) : undefined;
+
   return (
     <motion.div
       className={cls}
-      onClick={canPick ? () => onBuyPvpCard(idx) : undefined}
+      onClick={handleClick}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.18, delay: 0.008 * idx }}
-      whileTap={canPick ? { scale: 0.95 } : undefined}
+      whileTap={handleClick ? { scale: 0.95 } : undefined}
     >
       {card.owner && (() => { const u = userDisplay(card.owner); return (
         <button className="dw-pvp-avatar-btn"
@@ -1480,13 +1484,20 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   const [shuffling, setShuffling] = useState(false);
   const [revealStep, setRevealStep] = useState(9999); // сколько ячеек уже раскрыто (9999 = все)
   const [bestRound, setBestRound] = useState(null);
-  const [bet, setBet] = useState(1); // сколько ячеек поставить (рандомно)
-  const [betMode, setBetMode] = useState('random'); // random | manual
+  const [bet, setBet] = useState(1); // сколько ячеек для рандомной ставки
+  const [artifacts, setArtifacts] = useState([]);
+  const [artPending, setArtPending] = useState(null); // { artifactId, kind } — ожидает выбора ячейки
+  const [artHints, setArtHints] = useState(null); // { row?:[], cell?:number } — подсказка от Посоха/Путеводителя
   const prevStatus = React.useRef(null);
 
   // Лучший раунд (по призу) — для левой плашки шапки.
   useEffect(() => {
     api.rounds('best', 0, 1).then((d) => setBestRound(d.rounds?.[0] || null)).catch(() => {});
+  }, [pvpState?.lobby?.status]);
+
+  // Артефакты игрока — обновляем при смене лобби.
+  useEffect(() => {
+    api.myArtifacts().then((d) => setArtifacts(d.artifacts || [])).catch(() => {});
   }, [pvpState?.lobby?.status]);
 
   useEffect(() => {
@@ -1552,10 +1563,31 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   const cellWord = (n) => { const a = n % 10, b = n % 100; if (a === 1 && b !== 11) return 'ячейку'; if (a >= 2 && a <= 4 && (b < 10 || b >= 20)) return 'ячейки'; return 'ячеек'; };
 
   const rows = buildPvpRows(cardCount);
-
   const getCard = (i) => cards.find((c) => c.index === i) || { index: i, status: 'free', mine: false, taken: false, outcome: null, owner: null };
-
   const gameNum = lobby?.gameNum ? `#${lobby.gameNum}` : '';
+
+  // Применить артефакт: для place_choose и double_cell сначала выбираем ячейку.
+  const applyArtifact = async (artifactId, targetCells) => {
+    const art = artifacts.find((a) => a.artifactId === artifactId);
+    if (!art) return;
+    const kind = art.effect?.kind;
+    // Артефакты, требующие выбора ячейки — переходим в режим ожидания.
+    if ((kind === 'place_choose' || kind === 'double_cell') && targetCells.length === 0) {
+      setArtPending({ artifactId, kind }); setArtHints(null); return;
+    }
+    try {
+      const out = await api.useArtifact(artifactId, targetCells);
+      setArtPending(null);
+      if (out.kind === 'reveal_row') setArtHints({ row: out.row });
+      else if (out.kind === 'reveal_cell') setArtHints({ cell: out.cell });
+      else setArtHints(null);
+      // Обновляем инвентарь артефактов.
+      api.myArtifacts().then((d) => setArtifacts(d.artifacts || [])).catch(() => {});
+    } catch (e) {
+      setArtPending(null);
+      // Ошибки тихо игнорируем — onNotify здесь недоступен, но достаточно визуальной отмены.
+    }
+  };
 
   return (
     <>
@@ -1576,9 +1608,15 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
                 idx={i}
                 settled={settled}
                 revealOpen={revealStep === 9999 || i < revealStep}
-                pickable={betMode === 'manual' && canPlay}
+                pickable={canPlay && !artPending}
+                artPick={Boolean(artPending && (artPending.kind === 'place_choose' || artPending.kind === 'double_cell'))}
+                hinted={Boolean(
+                  artHints?.cell === i ||
+                  artHints?.row?.includes(i)
+                )}
                 pvpBuying={pvpBuying}
                 onBuyPvpCard={onBuyPvpCard}
+                onArtPick={artPending ? (idx) => applyArtifact(artPending.artifactId, [idx]) : undefined}
                 onOpenPlayerProfile={onOpenPlayerProfile}
                 shuffling={shuffling}
               />
@@ -1595,31 +1633,54 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
         }
       </div>
 
-      {/* Режим расстановки: рандом или вручную */}
+      {/* Управление ставкой */}
       {!settled && (
         <>
-          <div className="dw-bet-mode">
-            <button className={betMode === 'random' ? 'active' : ''} onClick={() => setBetMode('random')}>🎲 Рандом</button>
-            <button className={betMode === 'manual' ? 'active' : ''} onClick={() => setBetMode('manual')}>👆 Вручную</button>
-          </div>
-
           {!canPlay ? (
-            <button className="dw-btn primary full" onClick={onOpenDeposit}>Купить карты для игры</button>
-          ) : betMode === 'random' ? (
-            <div className="dw-bet-control">
-              <div className="dw-bet-stepper">
-                <button onClick={() => setBet(Math.max(1, betClamped - 1))} disabled={pvpBuying || betClamped <= 1}>−</button>
-                <span className="dw-bet-count">{betClamped}</span>
-                <button onClick={() => setBet(Math.min(maxBet, betClamped + 1))} disabled={pvpBuying || betClamped >= maxBet}>+</button>
-              </div>
-              <button className="dw-btn primary dw-bet-go" disabled={pvpBuying} onClick={() => onBetRandom(betClamped)}>
-                🎲 Поставить {betClamped} {cellWord(betClamped)}
-              </button>
+            <button className="dw-btn primary full" style={{ marginTop: 8 }} onClick={onOpenDeposit}>Купить карты для игры</button>
+          ) : artPending ? (
+            <div className="dw-art-pending-hint">
+              {artPending.kind === 'place_choose' ? '🃏 Выбери ячейку для карты' : '📖 Выбери свою ячейку для удвоения'}
+              <button className="dw-btn ghost small" style={{ marginLeft: 8 }} onClick={() => { setArtPending(null); setArtHints(null); }}>Отмена</button>
             </div>
           ) : (
-            <div className="dw-bet-manual-hint">👆 Нажимай на свободные ячейки, чтобы занять их</div>
+            <>
+              <p className="dw-bet-manual-hint">👆 Нажимай на свободные ячейки · <span style={{ color: 'var(--bone-soft)' }}>{tickets?.cheap || 0} карт</span></p>
+              <div className="dw-bet-control" style={{ marginTop: 6 }}>
+                <div className="dw-bet-stepper">
+                  <button onClick={() => setBet(Math.max(1, betClamped - 1))} disabled={pvpBuying || betClamped <= 1}>−</button>
+                  <span className="dw-bet-count">{betClamped}</span>
+                  <button onClick={() => setBet(Math.min(maxBet, betClamped + 1))} disabled={pvpBuying || betClamped >= maxBet}>+</button>
+                </div>
+                <button className="dw-btn ghost dw-bet-go" disabled={pvpBuying} onClick={() => onBetRandom(betClamped)}>
+                  🎲 Рандом ×{betClamped}
+                </button>
+              </div>
+            </>
           )}
         </>
+      )}
+
+      {/* Артефакты — показываем если есть */}
+      {!settled && artifacts.length > 0 && !artPending && (
+        <div className="dw-art-panel">
+          {artHints && (
+            <div className="dw-art-hint-msg">
+              {artHints.row ? `🪄 Ряд с призом: ячейки ${artHints.row.map((i) => i + 1).join(', ')}` : `🧭 Выигрышная ячейка: #${artHints.cell + 1}`}
+              <button className="dw-btn ghost small" style={{ marginLeft: 8 }} onClick={() => setArtHints(null)}>✕</button>
+            </div>
+          )}
+          <div className="dw-art-row">
+            {artifacts.map((a) => (
+              <button key={a.artifactId} className="dw-art-btn" title={a.description}
+                onClick={() => applyArtifact(a.artifactId, [])}>
+                <span>{artIcon(a.artifactId)}</span>
+                <span className="dw-art-qty">×{a.quantity}</span>
+                <small>{a.name}</small>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       <div className="dw-pvp-footer">
@@ -2695,15 +2756,14 @@ function PlayerProfileModal({ userId, data, onClose }) {
 
 function PersonalStats({ player }) {
   const [s, setS] = useState(null);
-  useEffect(() => { api.stats().then(setS).catch(() => {}); }, []);
-  // Фолбэк из player пока грузится /api/stats.
+  const [pts, setPts] = useState(null);
+  useEffect(() => {
+    api.stats().then(setS).catch(() => {});
+    api.shopPoints().then((d) => setPts(d.points)).catch(() => {});
+  }, []);
   const roundsPlayed = s ? s.roundsPlayed : (player?.gamesPlayed || 0);
   const wins = s?.wins ?? 0;
-  const losses = s?.losses ?? 0;
   const bestWin = s ? s.bestWin : (player?.bestWin || 0);
-  const totalWon = s ? s.totalWon : (player?.coinsWon || 0);
-  const totalSpent = s ? s.totalSpent : (player?.coinsSpent || 0);
-  const favoriteGift = s?.favoriteGift || null;
   const winRate = roundsPlayed > 0 ? Math.round((wins / roundsPlayed) * 100) : 0;
   return (
     <article className="dw-panel" style={{ marginBottom: 12 }}>
@@ -2713,6 +2773,12 @@ function PersonalStats({ player }) {
         <div className="dw-stat-cell accent"><span>winrate</span><strong>{winRate}%</strong></div>
         <div className="dw-stat-cell accent"><span>рекорд</span><strong>{formatCompact(bestWin)}</strong></div>
       </div>
+      {pts !== null && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)', fontSize: 13, color: 'var(--bone-soft)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>⭐ Поинты лояльности</span>
+          <strong style={{ color: 'var(--gold)', fontFamily: 'var(--font-display)' }}>{formatCoins(pts)}</strong>
+        </div>
+      )}
     </article>
   );
 }

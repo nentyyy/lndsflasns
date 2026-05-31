@@ -9,14 +9,15 @@ export class LuckyError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
 
-// Ставка в ДУБЛОНАХ. Формула по ТЗ: bet = (price / chance * 100) * 0.95.
+// Ставка в ДУБЛОНАХ: за шанс X% выиграть подарок ценой P ты платишь P*X/100*0.95.
+// (Больший шанс = больше платишь, но чаще выигрываешь. Меньший шанс = лотерея.)
 export function luckyBet(priceCoins, chancePercent) {
-  return Math.max(1, Math.round((priceCoins / chancePercent * 100) * 0.95));
+  return Math.max(1, Math.round(priceCoins * chancePercent / 100 * 0.95));
 }
-// Множитель = во сколько раз приз (подарок) больше ставки.
+// Множитель = приз / ставка (показывает "в сколько раз приз больше ставки").
 export function luckyMultiplier(priceCoins, chancePercent) {
   const bet = luckyBet(priceCoins, chancePercent);
-  return Number((priceCoins / bet).toFixed(2));
+  return Number((priceCoins / bet).toFixed(1));
 }
 
 export async function playLuckyBuy(userId, giftId, chancePercentRaw) {
