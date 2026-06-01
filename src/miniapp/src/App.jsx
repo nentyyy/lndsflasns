@@ -2440,12 +2440,24 @@ function LuckyBuyModal({ gift, player, onClose }) {
   const [error, setError] = useState(null);
   const [feed, setFeed] = useState([]);
   const rotRef = React.useRef(0);
+  const touchStartY = React.useRef(null);
 
   const price = Number(gift.priceCoins) || 0;
-  // bet = price * chance/100 * 0.95 (больше шанс = больше платишь, чаще выигрываешь)
-  const bet = Math.max(1, Math.round(price * chance / 100 * 0.95));
+  // bet = price * chance/100 * 0.95 — точность до 0.01 (не округляем до целого).
+  const bet = Math.max(0.01, Math.round(price * chance / 100 * 0.95 * 100) / 100);
+  // Показываем дробные с 2 знаками, целые — без хвоста.
+  const fmtBet = (b) => Number.isInteger(b) ? formatCoins(b) : b.toFixed(2);
   const mult = price > 0 && bet > 0 ? (price / bet).toFixed(1) : '—';
   const canAfford = (player?.coins || 0) >= bet;
+
+  // Свайп вниз закрывает шторку (как нативные Telegram drawers).
+  const onTouchStart = (e) => { touchStartY.current = e.touches[0].clientY; };
+  const onTouchEnd = (e) => {
+    if (touchStartY.current === null) return;
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+    touchStartY.current = null;
+    if (dy > 80 && !spinning) onClose();
+  };
 
   useEffect(() => { api.luckyFeed().then((d) => setFeed(d.feed || [])).catch(() => {}); }, []);
 
@@ -2498,11 +2510,11 @@ function LuckyBuyModal({ gift, player, onClose }) {
     <motion.div className="dw-sheet-backdrop" onClick={onClose}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <motion.div className="dw-wheel-sheet dw-lucky-sheet" onClick={(e) => e.stopPropagation()}
+        onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}
         initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
+        <div className="dw-drawer-handle" />
         <div className="dw-round-result-header">
-          <button className="dw-btn ghost small" onClick={onClose}>← Назад</button>
           <h2 style={{ flex: 1, textAlign: 'center' }}>🍀 Lucky Buy</h2>
-          <button className="dw-icon-btn" onClick={onClose}>×</button>
         </div>
         {error && <div className="dw-lucky-result lose" style={{ marginBottom: 10 }}>{error}</div>}
 
@@ -2531,7 +2543,7 @@ function LuckyBuyModal({ gift, player, onClose }) {
 
         <div className="dw-lucky-slider-row">
           <span>Шанс: <strong style={{ color: 'var(--gold)' }}>{chance}%</strong></span>
-          <span>Ставка: <strong style={{ color: 'var(--gold)' }}>{formatCoins(bet)} дбл.</strong></span>
+          <span>Ставка: <strong style={{ color: 'var(--gold)' }}>{fmtBet(bet)} дбл.</strong></span>
         </div>
         <input type="range" min={1} max={80} step={1} value={chance}
           onChange={(e) => { setChance(Number(e.target.value)); setResult(null); setDemoResult(null); setError(null); }}
@@ -2547,7 +2559,7 @@ function LuckyBuyModal({ gift, player, onClose }) {
           </button>
           <button className={`dw-btn ${canAfford ? 'primary' : 'ghost'}`} style={{ flex: 2 }}
             disabled={spinning || !canAfford} onClick={() => spinWheel(false)}>
-            {spinning ? 'Крутим…' : canAfford ? `Сыграть — ${formatCoins(bet)} дбл.` : 'Мало дублонов'}
+            {spinning ? 'Крутим…' : canAfford ? `Сыграть — ${fmtBet(bet)} дбл.` : 'Мало дублонов'}
           </button>
         </div>
 

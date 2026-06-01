@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { db } from './db.js';
-import { debit } from './wallet.js';
+import { debit, round2 } from './wallet.js';
 import { getGiftFromCache } from './portals.js';
 import { notifyAdminsPurchase } from './admin-notify.js';
 import { addPoints } from './points.js';
@@ -11,8 +11,9 @@ export class LuckyError extends Error {
 
 // Ставка в ДУБЛОНАХ: за шанс X% выиграть подарок ценой P ты платишь P*X/100*0.95.
 // (Больший шанс = больше платишь, но чаще выигрываешь. Меньший шанс = лотерея.)
+// Точность до 0.01 — НЕ округляем до целого (иначе дешёвые подарки = 1 дбл.).
 export function luckyBet(priceCoins, chancePercent) {
-  return Math.max(1, Math.round(priceCoins * chancePercent / 100 * 0.95));
+  return Math.max(0.01, round2(priceCoins * chancePercent / 100 * 0.95));
 }
 // Множитель = приз / ставка (показывает "в сколько раз приз больше ставки").
 export function luckyMultiplier(priceCoins, chancePercent) {
@@ -35,8 +36,8 @@ export async function playLuckyBuy(userId, giftId, chancePercentRaw) {
   let purchaseId = null;
   await db.transaction(async (trx) => {
     balance = await debit(trx, userId, bet, 'lucky_bet', `lucky:${attemptId}`);
-    await trx('players').where({ user_id: userId }).update({ coins_spent: trx.raw('coins_spent + ?', [bet]) });
-    await addPoints(trx, userId, bet); // ставка тоже даёт поинты
+    await trx('players').where({ user_id: userId }).update({ coins_spent: trx.raw('ROUND(coins_spent + ?, 2)', [bet]) });
+    await addPoints(trx, userId, Math.floor(bet)); // поинты — целые
     await trx('lucky_buy_attempts').insert({
       id: attemptId, user_id: String(userId), gift_id: gift.id,
       chance_percent: chance, bet_coins: bet, won, created_at: trx.fn.now()
@@ -65,22 +66,43 @@ export async function playLuckyBuy(userId, giftId, chancePercentRaw) {
 }
 
 export async function getLuckyFeed(limit = 10) {
+  // Берём с запасом, потом дедуплицируем.
   const rows = await db('lucky_buy_attempts as a')
     .join('players as p', 'a.user_id', 'p.user_id')
     .leftJoin('portals_cache as g', 'a.gift_id', 'g.id')
     .where('a.won', true)
     .orderBy('a.created_at', 'desc')
-    .limit(limit)
+    .limit(limit * 6)
     .select('a.gift_id', 'a.chance_percent', 'a.bet_coins', 'a.created_at',
       'g.name as gift_name', 'g.file as gift_file',
       'p.user_id', 'p.username', 'p.first_name', 'p.last_name', 'p.avatar_file_id');
-  return rows.map((r) => ({
-    giftId: r.gift_id,
-    giftName: r.gift_name || r.gift_id,
-    giftFile: r.gift_file || null,
-    chance: Number(r.chance_percent),
-    name: r.username ? `@${r.username}` : [r.first_name, r.last_name].filter(Boolean).join(' ') || `Player #${String(r.user_id).slice(-4)}`,
-    avatarUrl: r.avatar_file_id ? `/api/avatar/${r.avatar_file_id}` : null,
-    at: r.created_at
-  }));
+
+  const FIVE_MIN = 5 * 60 * 1000;
+  const out = [];
+  let prevUser = null;            // не показывать того же игрока с тем же подарком подряд
+  const recentByUser = new Map(); // не чаще 1 записи от игрока за 5 минут
+
+  for (const r of rows) {
+    const uid = String(r.user_id);
+    const ts = new Date(r.created_at).getTime();
+    // Подряд один и тот же игрок+подарок — пропускаем.
+    if (prevUser && prevUser.uid === uid && prevUser.gift === r.gift_id) continue;
+    // Не чаще 1 раза за 5 минут от одного игрока.
+    const last = recentByUser.get(uid);
+    if (last && Math.abs(last - ts) < FIVE_MIN) continue;
+
+    out.push({
+      giftId: r.gift_id,
+      giftName: r.gift_name || r.gift_id,
+      giftFile: r.gift_file || null,
+      chance: Number(r.chance_percent),
+      name: r.username ? `@${r.username}` : [r.first_name, r.last_name].filter(Boolean).join(' ') || `Player #${uid.slice(-4)}`,
+      avatarUrl: r.avatar_file_id ? `/api/avatar/${r.avatar_file_id}` : null,
+      at: r.created_at
+    });
+    prevUser = { uid, gift: r.gift_id };
+    recentByUser.set(uid, ts);
+    if (out.length >= limit) break;
+  }
+  return out;
 }

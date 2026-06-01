@@ -184,7 +184,13 @@ const seed = {
 
 export const createInitialState = () => JSON.parse(JSON.stringify(seed));
 
-export const formatCoins = (value) => new Intl.NumberFormat('ru-RU').format(value);
+// Целые — без хвоста, дробные дублоны — до 2 знаков (для Lucky Buy / копеек).
+export const formatCoins = (value) => {
+  const n = Number(value) || 0;
+  return Number.isInteger(n)
+    ? new Intl.NumberFormat('ru-RU').format(n)
+    : new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+};
 
 export const formatCompact = (value) =>
   new Intl.NumberFormat('ru-RU', { notation: 'compact', maximumFractionDigits: 1 }).format(value);

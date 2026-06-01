@@ -3804,6 +3804,11 @@ button:disabled, [disabled] { cursor: not-allowed; }
   border-radius: 10px; padding: 8px 14px; font-weight: 700; font-size: 13px; cursor: pointer;
 }
 .dw-points-btn { min-width: 96px; flex-shrink: 0; }
+/* Полоска-индикатор шторки (drawer handle) */
+.dw-drawer-handle {
+  width: 40px; height: 4px; border-radius: 2px;
+  background: #666; margin: 0 auto 10px; flex-shrink: 0;
+}
 @keyframes dw-hint-pulse { 0%,100% { box-shadow: 0 0 10px rgba(212,175,55,0.5); } 50% { box-shadow: 0 0 20px rgba(212,175,55,0.9); } }
 
 /* Lucky Buy slider */

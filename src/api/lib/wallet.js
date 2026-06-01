@@ -4,10 +4,14 @@ import { MAX_OP_COINS } from './config.js';
 export class InsufficientFunds extends Error {}
 export class AmountError extends Error {}
 
-// Валидация суммы операции: только целое в (0 .. MAX_OP_COINS].
+// Округление до 2 знаков (дублоны хранятся с точностью до 0.01).
+export const round2 = (x) => Math.round((Number(x) + Number.EPSILON) * 100) / 100;
+
+// Валидация суммы операции: положительное число с точностью ≤ 0.01, в (0 .. MAX_OP_COINS].
 function assertAmount(amount) {
-  if (!Number.isInteger(amount)) throw new AmountError('amount must be integer');
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) throw new AmountError('amount must be a finite number');
   if (amount <= 0) throw new AmountError('amount must be positive');
+  if (round2(amount) !== amount) throw new AmountError('amount precision exceeds 0.01');
   if (amount > MAX_OP_COINS) throw new AmountError('amount exceeds per-operation limit');
 }
 
@@ -33,7 +37,7 @@ export async function debit(trx, userId, amount, refType, refId, meta) {
     .where({ user_id: userId })
     .andWhere('balance', '>=', amount)
     .update({
-      balance: trx.raw('balance - ?', [amount]),
+      balance: trx.raw('ROUND(balance - ?, 2)', [amount]),
       updated_at: trx.fn.now()
     });
   if (affected === 0) throw new InsufficientFunds();
@@ -52,7 +56,7 @@ export async function credit(trx, userId, amount, refType, refId, meta) {
   const before = await trx('players').where({ user_id: userId }).first('balance');
   await trx('players')
     .where({ user_id: userId })
-    .update({ balance: trx.raw('balance + ?', [amount]), updated_at: trx.fn.now() });
+    .update({ balance: trx.raw('ROUND(balance + ?, 2)', [amount]), updated_at: trx.fn.now() });
   const { balance } = await trx('players').where({ user_id: userId }).first('balance');
   await writeLedger(trx, { userId, refType, refId, amount, balanceBefore: Number(before.balance), balanceAfter: balance, meta });
   return balance;
