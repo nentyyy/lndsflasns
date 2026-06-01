@@ -2534,9 +2534,17 @@ function LuckyBuyModal({ gift, player, onClose }) {
               <circle cx={cx} cy={cy} r={r} fill="#2a2520" />
               {/* Gold zone (win) */}
               <path d={`M${cx} ${cy} L${gx1} ${gy1} A${r} ${r} 0 ${largeArc} 1 ${gx2} ${gy2} Z`} fill="#d4af37" opacity="0.85" />
-              {/* Center: gift image (use emoji fallback) */}
+              {/* Center: картинка подарка, который крутит игрок */}
+              <defs>
+                <clipPath id="dw-wheel-gift"><circle cx={cx} cy={cy} r={20} /></clipPath>
+              </defs>
               <circle cx={cx} cy={cy} r={22} fill="#1a1510" stroke="#d4af37" strokeWidth="1.5" />
-              <text x={cx} y={cy + 7} textAnchor="middle" fontSize="22">🎁</text>
+              {gift.file ? (
+                <image href={`/gifts/${gift.file}`} x={cx - 20} y={cy - 20} width={40} height={40}
+                  clipPath="url(#dw-wheel-gift)" preserveAspectRatio="xMidYMid slice" />
+              ) : (
+                <text x={cx} y={cy + 7} textAnchor="middle" fontSize="22">🎁</text>
+              )}
             </g>
             {/* Outer ring */}
             <circle cx={cx} cy={cy} r={r} fill="none" stroke="#d4af37" strokeWidth="2" opacity="0.5" />
