@@ -143,23 +143,23 @@ export const PVP_MODES = {
     title: 'PvP · Live Round',
     cardCount: 36,
     entryCoins: 5,
-    // Раскладка призов (36 ячеек): 20 пустых + 16 выигрышных = 176 монет.
-    // 1×40, 2×20, 1×19, 2×13, 3×8, 2×6, 5×3.
+    // RTP 90%: вход 36×5 = 180, сумма выплат = 162 (162/180 = 0.90).
+    // 20 пустых + 16 выигрышных. 1×40, 2×18, 1×16, 2×12, 3×8, 2×6, 5×4 = 162.
     outcomesPool: [
       // 20 пустых
       ...Array.from({ length: 20 }, () => ({ key: 'empty', type: 'empty', credit: 0, stamp: 'Пусто' })),
-      // 5 ячеек — 3 монеты
-      ...Array.from({ length: 5 }, () => ({ key: 'win_3', type: 'coins', credit: 3, stamp: '+3' })),
+      // 5 ячеек — 4 монеты
+      ...Array.from({ length: 5 }, () => ({ key: 'win_4', type: 'coins', credit: 4, stamp: '+4' })),
       // 2 ячейки — 6 монет
       ...Array.from({ length: 2 }, () => ({ key: 'win_6', type: 'coins', credit: 6, stamp: '+6' })),
       // 3 ячейки — 8 монет
       ...Array.from({ length: 3 }, () => ({ key: 'win_8', type: 'coins', credit: 8, stamp: '+8' })),
-      // 2 ячейки — 13 монет
-      ...Array.from({ length: 2 }, () => ({ key: 'win_13', type: 'coins', credit: 13, stamp: '+13' })),
-      // 1 ячейка — 19 монет
-      { key: 'win_19', type: 'coins', credit: 19, stamp: '+19' },
-      // 2 ячейки — 20 монет
-      ...Array.from({ length: 2 }, () => ({ key: 'win_20', type: 'coins', credit: 20, stamp: '+20' })),
+      // 2 ячейки — 12 монет
+      ...Array.from({ length: 2 }, () => ({ key: 'win_12', type: 'coins', credit: 12, stamp: '+12' })),
+      // 1 ячейка — 16 монет
+      { key: 'win_16', type: 'coins', credit: 16, stamp: '+16' },
+      // 2 ячейки — 18 монет
+      ...Array.from({ length: 2 }, () => ({ key: 'win_18', type: 'coins', credit: 18, stamp: '+18' })),
       // 1 ячейка — 40 монет
       { key: 'win_40', type: 'coins', credit: 40, stamp: '+40' }
     ]

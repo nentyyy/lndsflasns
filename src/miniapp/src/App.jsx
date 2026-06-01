@@ -562,7 +562,7 @@ function App() {
     try {
       const res = await api.portalsBuy(item.id);
       setState((c) => ({ ...c, player: { ...c.player, coins: res.player.coins } }));
-      notify('Заявка создана — подарок придёт через Portals', 'success');
+      notify(`Куплено: ${item.name || item.title}`, 'success');
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
     } catch (e) {
       if (e.message === 'insufficient_balance') notify('Недостаточно дублонов', 'danger');
@@ -741,10 +741,6 @@ function App() {
         <main className="dw-app">
           <TopBar player={state.player} tonWallet={tonWallet} onOpenDeposit={() => { setDepositOpen(true); setDepositView('main'); setTonIntent(null); }} onOpenTutorial={() => setTutorialOpen(true)} />
 
-          {tab === 'play' && state.player.firstDepositDone && (
-            <WheelBanner bonusPct={state.player.wheelDepositBonusPct} onOpen={() => setWheelOpen(true)} />
-          )}
-
           {tab === 'play' && (
             <WillTab
               view={willView}
@@ -816,6 +812,7 @@ function App() {
               onOpenAdmin={() => setAdminOpen(true)}
               onOpenClans={() => setTab('clans')}
               onOpenRef={() => setTab('referral')}
+              onOpenWheel={() => setWheelOpen(true)}
             />
           )}
         </main>
@@ -1422,15 +1419,25 @@ function PvpCard({ card, idx, settled, revealOpen = true, pickable = false, artP
   const canPick = pickable && !card.taken && !settled && !pvpBuying;
   // artPick = свободные ячейки (place_choose), artPickMine = свои ячейки (double_cell/book)
   const canArt = (artPick && !card.taken && !settled) || (artPickMine && card.mine && !settled);
+  const credit = isRevealed ? (card.outcome.credit || 0) : 0;
+  const win = isRevealed && credit > 0;
+  const empty = isRevealed && credit === 0;
+  // Монетка по номиналу: золото >=20, серебро 8-19, бронза 1-7, скрыта при 0.
+  const coinTier = credit >= 20 ? 'gold' : credit >= 8 ? 'silver' : credit >= 1 ? 'bronze' : null;
+  // Цвет рамки выигрышной: моя — синяя, чужая — жёлтая.
+  const winMine = win && card.mine;
+  const winOther = win && !card.mine;
+
   const cls = [
     'dw-pvp-card',
     canPick || canArt ? 'dw-pvp-card--pick' : 'dw-pvp-card--locked',
     hinted ? 'dw-pvp-card--hint' : '',
-    card.taken && !card.mine ? 'taken' : '',
-    card.mine ? 'mine' : '',
+    card.taken && !card.mine && !isRevealed ? 'taken' : '',
+    card.mine && !isRevealed ? 'mine' : '',
     isRevealed ? 'revealed' : '',
-    isRevealed && card.outcome.type === 'coins' ? 'win' : '',
-    isRevealed && card.outcome.type === 'empty' ? 'empty' : '',
+    winMine ? 'win-mine' : '',
+    winOther ? 'win-other' : '',
+    empty ? 'empty' : '',
     shuffling ? 'shuffling' : ''
   ].filter(Boolean).join(' ');
 
@@ -1445,7 +1452,7 @@ function PvpCard({ card, idx, settled, revealOpen = true, pickable = false, artP
       transition={{ duration: 0.18, delay: 0.008 * idx }}
       whileTap={handleClick ? { scale: 0.95 } : undefined}
     >
-      {card.owner && (() => { const u = userDisplay(card.owner); return (
+      {card.owner && !isRevealed && (() => { const u = userDisplay(card.owner); return (
         <button className="dw-pvp-avatar-btn"
           onClick={(e) => { e.stopPropagation(); onOpenPlayerProfile(card.owner.userId); }}
           title={u.displayName}
@@ -1455,9 +1462,14 @@ function PvpCard({ card, idx, settled, revealOpen = true, pickable = false, artP
             : <span className="dw-pvp-avatar">{u.initial}</span>}
         </button>
       ); })()}
-      <span className="dw-pvp-card-num">{idx + 1}</span>
+      {!isRevealed && <span className="dw-pvp-card-num">{idx + 1}</span>}
       {!isRevealed && <span className="dw-pvp-card-seal" />}
-      {isRevealed && <span className="dw-pvp-card-stamp">{card.outcome.stamp}</span>}
+      {isRevealed && win && (
+        <>
+          {coinTier && <span className={`dw-pvp-coin dw-pvp-coin--${coinTier}`} />}
+          <span className="dw-pvp-card-big">{credit}</span>
+        </>
+      )}
     </motion.div>
   );
 }
@@ -1543,7 +1555,6 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   const cardCount = lobby?.cardCount ?? 36;
   const hasTicket = (tickets?.cheap || 0) > 0;
   const welcomeFree = welcomeAvailable && cards.every((c) => !c.mine);
-  const myCards = cards.filter((c) => c.mine);
 
   // Free spin counter
   const FREE_EVERY = 10;
@@ -1553,7 +1564,6 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
 
   // PvP только за карты. Нет карты/бесплатного → надо купить карты.
   const canPlay = welcomeFree || hasTicket || isFreeNext;
-  const priceLabel = welcomeFree ? 'бесплатно' : hasTicket ? `${tickets.cheap} карт` : 'нужна карта';
 
   // Сколько ячеек можно поставить рандомно: ограничено свободными ячейками и
   // доступными «входами» (welcome + free spin + cheap-карты).
@@ -1561,7 +1571,6 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   const entriesAvail = (welcomeFree ? 1 : 0) + (isFreeNext ? 1 : 0) + (tickets?.cheap || 0);
   const maxBet = Math.max(1, Math.min(freeCount, entriesAvail || 1, 15));
   const betClamped = Math.min(Math.max(1, bet), maxBet);
-  const cellWord = (n) => { const a = n % 10, b = n % 100; if (a === 1 && b !== 11) return 'ячейку'; if (a >= 2 && a <= 4 && (b < 10 || b >= 20)) return 'ячейки'; return 'ячеек'; };
 
   const rows = buildPvpRows(cardCount);
   const getCard = (i) => cards.find((c) => c.index === i) || { index: i, status: 'free', mine: false, taken: false, outcome: null, owner: null };
@@ -1646,19 +1655,16 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
               <button className="dw-btn ghost small" style={{ marginLeft: 8 }} onClick={() => { setArtPending(null); setArtHints(null); }}>Отмена</button>
             </div>
           ) : (
-            <>
-              <p className="dw-bet-manual-hint">👆 Нажимай на свободные ячейки · <span style={{ color: 'var(--bone-soft)' }}>{tickets?.cheap || 0} карт</span></p>
-              <div className="dw-bet-control" style={{ marginTop: 6 }}>
-                <div className="dw-bet-stepper">
-                  <button onClick={() => setBet(Math.max(1, betClamped - 1))} disabled={pvpBuying || betClamped <= 1}>−</button>
-                  <span className="dw-bet-count">{betClamped}</span>
-                  <button onClick={() => setBet(Math.min(maxBet, betClamped + 1))} disabled={pvpBuying || betClamped >= maxBet}>+</button>
-                </div>
-                <button className="dw-btn ghost dw-bet-go" disabled={pvpBuying} onClick={() => onBetRandom(betClamped)}>
-                  🎲 Рандом ×{betClamped}
-                </button>
+            <div className="dw-bet-control" style={{ marginTop: 8 }}>
+              <div className="dw-bet-stepper">
+                <button onClick={() => setBet(Math.max(1, betClamped - 1))} disabled={pvpBuying || betClamped <= 1}>−</button>
+                <span className="dw-bet-count">{betClamped}</span>
+                <button onClick={() => setBet(Math.min(maxBet, betClamped + 1))} disabled={pvpBuying || betClamped >= maxBet}>+</button>
               </div>
-            </>
+              <button className="dw-btn primary dw-bet-go" disabled={pvpBuying} onClick={() => onBetRandom(betClamped)}>
+                🎲 РАНДОМ ×{betClamped}
+              </button>
+            </div>
           )}
         </>
       )}
@@ -1684,14 +1690,6 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
           </div>
         </div>
       )}
-
-      <div className="dw-pvp-footer">
-        <span>
-          {formatCoins(balance)} дублонов · моих: <strong>{myCards.length}</strong>
-          {hasTicket && <span className="dw-ticket-pill" style={{ marginLeft: 8 }}>{tickets.cheap}×карт</span>}
-        </span>
-        <span>Цена: <strong>{priceLabel}</strong></span>
-      </div>
 
       {/* Номер игры */}
       {gameNum && (
@@ -1737,10 +1735,11 @@ function SoloPanel({
       </div>
 
       <div className="dw-play-action">
-        <p className="dw-play-meta-line">
-          вход · <span className="gold">премиум-карта</span>
-          {hasTicket && <span className="dw-ticket-pill" style={{ marginLeft: 8 }}>{tickets.premium} в инвентаре</span>}
-        </p>
+        {hasTicket && (
+          <p className="dw-play-meta-line" style={{ fontSize: 11, opacity: 0.6 }}>
+            {tickets.premium} карт
+          </p>
+        )}
         {roundArmed ? (
           <p className="dw-play-hint">выбери одну из пяти</p>
         ) : !hasTicket ? (
@@ -2236,9 +2235,9 @@ function ShopTab({ shop, player, onBuyNft, portalsGifts }) {
       {shopView === 'gifts' && (
         <>
           <div className="dw-sort-row">
-            <span style={{ color: 'var(--bone-soft)', fontSize: 13 }}>Сортировка</span>
-            <button className={`dw-sort-arrow ${sortDir === 'asc' ? 'active' : ''}`} onClick={() => setSortDir('asc')}>↑</button>
-            <button className={`dw-sort-arrow ${sortDir === 'desc' ? 'active' : ''}`} onClick={() => setSortDir('desc')}>↓</button>
+            <button className="dw-sort-toggle" onClick={() => setSortDir(sortDir === 'asc' ? 'desc' : 'asc')}>
+              Цена {sortDir === 'asc' ? '↑ дешевле' : '↓ дороже'}
+            </button>
           </div>
           {catalog.length === 0 && <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: '24px 0', fontSize: 14 }}>Загрузка…</p>}
           <div className="dw-nft-grid">
@@ -2252,13 +2251,11 @@ function ShopTab({ shop, player, onBuyNft, portalsGifts }) {
                     <img src={`/gifts/${item.file}`} alt={item.name} className="dw-gift-img" loading="lazy" />
                     <button className="dw-lucky-icon" onClick={() => setLuckyGift(item)} title="Lucky Buy">🍀</button>
                   </div>
-                  <h2 style={{ fontSize: 14 }}>{item.name}</h2>
+                  <h2 style={{ fontSize: 14, textTransform: 'lowercase' }}>{item.name}</h2>
                   <strong style={{ fontSize: 15, color: 'var(--gold)' }}>{formatCoins(item.priceCoins)} дбл.</strong>
-                  {item.stock > 0
-                    ? <p style={{ color: 'var(--muted)', fontSize: 11, margin: '2px 0 6px' }}>{item.stock} шт.</p>
-                    : <p style={{ color: 'var(--crimson-glow)', fontSize: 11, margin: '2px 0 6px' }}>Нет в наличии</p>}
+                  {item.stock === 0 && <p style={{ color: 'var(--crimson-glow)', fontSize: 11, margin: '2px 0 6px' }}>Нет в наличии</p>}
                   <button className={`dw-btn ${canBuy && item.stock > 0 ? 'primary' : 'ghost'}`}
-                    style={{ width: '100%', fontSize: 13 }}
+                    style={{ width: '100%', fontSize: 13, marginTop: 6 }}
                     onClick={() => onBuyNft({ ...item, title: item.name })}
                     disabled={!canBuy || item.stock === 0}>
                     {!canBuy ? 'Мало дублонов' : item.stock === 0 ? 'Нет в наличии' : 'Купить'}
@@ -2309,7 +2306,6 @@ function ArtifactsShop({ player }) {
   return (
     <div className="dw-artifacts-grid">
       {artifacts.map((art) => {
-        const qty = owned[art.id] || 0;
         const canAfford = (player?.coins || 0) >= art.price;
         return (
           <div key={art.id} className="dw-artifact-tile">
@@ -2318,7 +2314,6 @@ function ArtifactsShop({ player }) {
             <p>{art.description}</p>
             <div className="dw-artifact-footer">
               <strong style={{ color: 'var(--gold)' }}>{art.price} дбл.</strong>
-              {qty > 0 && <span className="dw-artifact-qty">×{qty}</span>}
             </div>
             <button className={`dw-btn ${canAfford ? 'primary' : 'ghost'} full`}
               disabled={!canAfford || buying === art.id}
@@ -2341,42 +2336,95 @@ function artIcon(id) {
 function PointsShop({ player, catalog }) {
   const [data, setData] = useState(null);
   const [spending, setSpending] = useState(null);
+  const [picker, setPicker] = useState(null); // { item, kind } — выбор артефакта/NFT
+  const [arts, setArts] = useState([]);
+  const [msg, setMsg] = useState(null);
 
-  useEffect(() => { api.shopPoints().then(setData).catch(() => {}); }, []);
+  useEffect(() => {
+    api.shopPoints().then(setData).catch(() => {});
+    api.shopArtifacts().then((d) => setArts(d.artifacts || [])).catch(() => {});
+  }, []);
 
-  const spend = async (itemId, targetId) => {
-    setSpending(itemId);
+  const doSpend = async (itemId, targetId) => {
+    setSpending(itemId); setMsg(null);
     try {
-      await api.spendPoints(itemId, targetId);
+      const res = await api.spendPoints(itemId, targetId);
       const d = await api.shopPoints();
       setData(d);
-    } catch { } finally { setSpending(null); }
+      setPicker(null);
+      setMsg(res?.granted ? `Получено: ${res.granted.name}` : 'Готово!');
+    } catch (e) {
+      console.error('points spend failed', e);
+      setMsg(
+        e?.message === 'not_enough_points' ? 'Недостаточно поинтов'
+        : e?.message === 'gift_over_limit' ? 'Подарок дороже лимита'
+        : e?.message === 'no_gifts' ? 'Нет доступных НФТ'
+        : 'Не удалось — попробуй ещё раз'
+      );
+    } finally { setSpending(null); }
+  };
+
+  const onClaim = (item) => {
+    setMsg(null);
+    // artifact_choice / nft_choice требуют выбора цели; nft_random — сразу.
+    if (item.kind === 'artifact_choice') { setPicker({ item, kind: 'artifact' }); return; }
+    if (item.kind === 'nft_choice') { setPicker({ item, kind: 'nft' }); return; }
+    doSpend(item.id, null); // nft_random
   };
 
   if (!data) return <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: 24 }}>Загрузка…</p>;
 
+  const nftChoices = (catalog || []).filter((g) => !picker?.item?.maxValue || g.priceCoins <= picker.item.maxValue);
+
   return (
     <div style={{ paddingBottom: 16 }}>
-      <div className="dw-points-balance">
-        <strong>{data.points}</strong> поинтов
-        <small> / всего заработано: {data.totalEarned}</small>
-      </div>
+      <div className="dw-points-balance"><strong>{data.points}</strong> поинтов</div>
+      {msg && <div className="dw-lucky-result win" style={{ marginBottom: 10 }}>{msg}</div>}
       {(data.items || []).map((item) => {
         const canAfford = data.points >= item.cost;
         return (
           <div key={item.id} className="dw-points-row">
-            <div>
+            <div style={{ flex: 1 }}>
               <strong style={{ color: canAfford ? 'var(--gold)' : 'var(--bone-soft)' }}>{item.cost} птс</strong>
               <p style={{ color: 'var(--bone-soft)', fontSize: 13, margin: '2px 0 0' }}>{item.label}</p>
             </div>
-            <button className={`dw-btn ${canAfford ? 'primary' : 'ghost'} small`}
+            <button className={`dw-btn ${canAfford ? 'primary' : 'ghost'} small dw-points-btn`}
               disabled={!canAfford || spending === item.id}
-              onClick={() => spend(item.id, null)}>
+              onClick={() => onClaim(item)}>
               {spending === item.id ? '…' : 'Забрать'}
             </button>
           </div>
         );
       })}
+
+      {/* Пикер выбора артефакта/НФТ */}
+      {picker && (
+        <div className="dw-trade-picker" style={{ marginTop: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <strong style={{ fontSize: 14 }}>{picker.kind === 'artifact' ? 'Выбери артефакт' : 'Выбери НФТ'}</strong>
+            <button className="dw-icon-btn" onClick={() => setPicker(null)}>×</button>
+          </div>
+          {picker.kind === 'artifact' ? (
+            <div className="dw-art-row">
+              {arts.map((a) => (
+                <button key={a.id} className="dw-art-btn" disabled={spending} onClick={() => doSpend(picker.item.id, a.id)}>
+                  <span>{artIcon(a.id)}</span><small>{a.name}</small>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="dw-nft-grid">
+              {nftChoices.map((g) => (
+                <button key={g.id} className="dw-nft-tile" style={{ cursor: 'pointer' }} disabled={spending} onClick={() => doSpend(picker.item.id, g.id)}>
+                  <div className="dw-nft-preview"><img src={`/gifts/${g.file}`} alt={g.name} className="dw-gift-img" loading="lazy" /></div>
+                  <h2 style={{ fontSize: 12, textTransform: 'lowercase' }}>{g.name}</h2>
+                  <strong style={{ fontSize: 12, color: 'var(--gold)' }}>{formatCoins(g.priceCoins)} дбл.</strong>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -2389,6 +2437,7 @@ function LuckyBuyModal({ gift, player, onClose }) {
   const [rotation, setRotation] = useState(0);
   const [result, setResult] = useState(null);
   const [demoResult, setDemoResult] = useState(null);
+  const [error, setError] = useState(null);
   const [feed, setFeed] = useState([]);
   const rotRef = React.useRef(0);
 
@@ -2401,34 +2450,36 @@ function LuckyBuyModal({ gift, player, onClose }) {
   useEffect(() => { api.luckyFeed().then((d) => setFeed(d.feed || [])).catch(() => {}); }, []);
 
   const spinWheel = async (demo) => {
-    setSpinning(true); setResult(null); setDemoResult(null);
-    const won = demo ? Math.random() * 100 < chance : null;
-    // Spin animation: always lands on the "won" zone visually for demo or based on server for real
+    setSpinning(true); setResult(null); setDemoResult(null); setError(null);
     const goldDeg = chance / 100 * 360;
-    const goldStart = 90; // pointer at top = 90°
-    let landDeg;
-    if (demo) {
-      landDeg = won ? goldStart + goldDeg * 0.5 : goldStart + goldDeg + (360 - goldDeg) * 0.5;
-    } else {
-      landDeg = goldStart + goldDeg * 0.5; // will be corrected after server response
-    }
+    const goldStart = 90; // pointer at top
     const spins = 360 * 5;
-    rotRef.current = Math.ceil(rotRef.current / 360) * 360 + spins + landDeg;
-    setRotation(rotRef.current);
+    const landFor = (won) => won ? goldStart + goldDeg * 0.5 : goldStart + goldDeg + (360 - goldDeg) * 0.5;
 
     if (demo) {
+      const won = Math.random() * 100 < chance;
+      rotRef.current = Math.ceil(rotRef.current / 360) * 360 + spins + landFor(won);
+      setRotation(rotRef.current);
       setTimeout(() => { setSpinning(false); setDemoResult(won ? 'win' : 'lose'); }, 3500);
       return;
     }
+
+    // Реальная игра — крутим только после ответа сервера, чтобы колесо совпало.
     try {
       const out = await api.luckyBuy(gift.id, chance);
-      // Adjust final rotation so wheel matches server result
-      const finalDeg = Math.ceil(rotRef.current / 360) * 360 + spins +
-        (out.won ? goldStart + goldDeg * 0.5 : goldStart + goldDeg + (360 - goldDeg) * 0.5);
-      rotRef.current = finalDeg;
-      setRotation(finalDeg);
+      rotRef.current = Math.ceil(rotRef.current / 360) * 360 + spins + landFor(out.won);
+      setRotation(rotRef.current);
       setTimeout(() => { setSpinning(false); setResult(out); }, 3500);
-    } catch (e) { setSpinning(false); }
+    } catch (e) {
+      console.error('lucky-buy failed', e);
+      setSpinning(false);
+      setError(
+        e?.message === 'insufficient_balance' ? 'Недостаточно дублонов'
+        : e?.message === 'gift_not_found' ? 'Подарок не найден'
+        : e?.message === 'invalid_price' ? 'Некорректная цена подарка'
+        : 'Не удалось сыграть, попробуй ещё раз'
+      );
+    }
   };
 
   // SVG wheel: gold zone = chance%, grey = rest, pointer at top
@@ -2444,14 +2495,16 @@ function LuckyBuyModal({ gift, player, onClose }) {
   const outcome = result || (demoResult === 'win' ? { won: true } : demoResult === 'lose' ? { won: false } : null);
 
   return (
-    <motion.div className="dw-sheet-backdrop" onClick={spinning ? undefined : onClose}
+    <motion.div className="dw-sheet-backdrop" onClick={onClose}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <motion.div className="dw-wheel-sheet dw-lucky-sheet" onClick={(e) => e.stopPropagation()}
         initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
         <div className="dw-round-result-header">
-          <h2>🍀 Lucky Buy</h2>
-          <button className="dw-icon-btn" onClick={onClose} disabled={spinning}>×</button>
+          <button className="dw-btn ghost small" onClick={onClose}>← Назад</button>
+          <h2 style={{ flex: 1, textAlign: 'center' }}>🍀 Lucky Buy</h2>
+          <button className="dw-icon-btn" onClick={onClose}>×</button>
         </div>
+        {error && <div className="dw-lucky-result lose" style={{ marginBottom: 10 }}>{error}</div>}
 
         <div className="dw-wheel-stage">
           <div className="dw-wheel-pointer" />
@@ -2480,8 +2533,8 @@ function LuckyBuyModal({ gift, player, onClose }) {
           <span>Шанс: <strong style={{ color: 'var(--gold)' }}>{chance}%</strong></span>
           <span>Ставка: <strong style={{ color: 'var(--gold)' }}>{formatCoins(bet)} дбл.</strong></span>
         </div>
-        <input type="range" min={1} max={80} value={chance}
-          onChange={(e) => { setChance(Number(e.target.value)); setResult(null); setDemoResult(null); }}
+        <input type="range" min={1} max={80} step={1} value={chance}
+          onChange={(e) => { setChance(Number(e.target.value)); setResult(null); setDemoResult(null); setError(null); }}
           className="dw-lucky-slider" disabled={spinning} />
         <div className="dw-lucky-meta">
           <span>Множитель: ×{mult}</span>
@@ -2518,8 +2571,9 @@ function LuckyBuyModal({ gift, player, onClose }) {
 
 /* ─── Profile tab ─────────────────────────────────────────── */
 
-function ProfileTab({ player, filters, activeFilter, onFilterChange, history, tonWallet, onConnectTon, onDisconnectTon, onOpenAdmin, onOpenClans, onOpenRef }) {
+function ProfileTab({ player, filters, activeFilter, onFilterChange, history, tonWallet, onConnectTon, onDisconnectTon, onOpenAdmin, onOpenClans, onOpenRef, onOpenWheel }) {
   const u = userDisplay(player);
+  const [showId, setShowId] = useState(false);
   return (
     <section className="dw-page dw-profile-page">
 
@@ -2534,7 +2588,9 @@ function ProfileTab({ player, filters, activeFilter, onFilterChange, history, to
             {player.clanTag && <span className="dw-clan-tag-badge" style={{ marginRight: 6, fontSize: 13 }}>[{player.clanTag}]</span>}
             {u.displayName}
           </h1>
-          <p className="dw-profile-meta" style={{ fontSize: 13 }}>ID {player.id}</p>
+          <p className="dw-profile-meta" style={{ fontSize: 13, cursor: 'pointer' }} onClick={() => setShowId((v) => !v)}>
+            {showId ? `ID ${player.id}` : 'показать ID'}
+          </p>
         </div>
       </div>
 
@@ -2544,14 +2600,18 @@ function ProfileTab({ player, filters, activeFilter, onFilterChange, history, to
         <button className="dw-panel dw-nav-card" onClick={onOpenClans}>
           <span className="dw-kicker">кланы</span>
           <strong>Кланы</strong>
-          <p>вступить или создать</p>
         </button>
         <button className="dw-panel dw-nav-card" onClick={onOpenRef}>
           <span className="dw-kicker">реферал</span>
           <strong>10%</strong>
-          <p>зови друзей</p>
         </button>
       </div>
+
+      {player.firstDepositDone && (
+        <div style={{ marginBottom: 12 }}>
+          <WheelBanner bonusPct={player.wheelDepositBonusPct} onOpen={onOpenWheel} />
+        </div>
+      )}
 
       <article className="dw-panel" style={{ marginBottom: 12 }}>
         <div className="dw-panel-head" style={{ marginBottom: 10 }}>
@@ -2828,7 +2888,7 @@ function PersonalStats({ player }) {
       <div className="dw-stats-row">
         <div className="dw-stat-cell"><span>раундов</span><strong>{formatCoins(roundsPlayed)}</strong></div>
         <div className="dw-stat-cell"><span>побед</span><strong>{formatCoins(wins)}</strong></div>
-        <div className="dw-stat-cell accent"><span>winrate</span><strong>{winRate}%</strong></div>
+        <div className="dw-stat-cell accent"><span>винрейт</span><strong>{winRate}%</strong></div>
         <div className="dw-stat-cell accent"><span>рекорд</span><strong>{formatCompact(bestWin)}</strong></div>
       </div>
       {pts !== null && (
@@ -3299,12 +3359,18 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
   const winners = rows.filter(r => r.profit >= 0);  // окуп тоже считается «в плюсе»
   const losers = rows.filter(r => r.profit < 0);
 
-  // BUG 2 — мой результат суммируется по всем моим картам.
+  // Мой результат суммируется по всем моим картам. 4 состояния:
+  // profit>0 победа, =0 ноль, -bet<profit<0 частичный слив, =-bet полный проигрыш.
   const myRow = rows.find(r => r.mine);
   const myProfit = myRow ? myRow.profit : 0;
-  const isWinner = Boolean(myRow) && myProfit >= 0 && myRow.totalPrize > 0;
-  const isLoser = Boolean(myRow) && myProfit < 0;
+  const myBet = myRow ? myRow.totalBet : 0;
   const myMult = (myRow && myRow.totalBet > 0) ? (myRow.totalPrize / myRow.totalBet).toFixed(1) : '0.0';
+  const myState = !myRow ? null
+    : myProfit > 0 ? 'win'
+    : myProfit === 0 ? 'zero'
+    : myProfit > -myBet ? 'partial'
+    : 'lose';
+  const isLoser = myState === 'partial' || myState === 'lose';
 
   // Анимированный «отсчёт» выигрыша — дублоны набегают, а не появляются разом.
   const [shownWin, setShownWin] = useState(0);
@@ -3355,29 +3421,39 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
           <button className="dw-icon-btn" onClick={onClose}>×</button>
         </div>
 
-        {/* Мой результат — суммарный по всем картам */}
-        {myRow && (
-          isLoser ? (
-            <div className="dw-round-my-result lose">
-              <span className="dw-round-result-emoji">💀</span>
-              <div>
-                <strong>В этот раз не повезло</strong>
-                <p>Удача отвернулась — попробуй ещё раз</p>
-                <span className="dw-round-amount">−{Math.abs(myProfit)} дублонов</span>
-              </div>
+        {/* Мой результат — суммарный по всем картам, 4 состояния */}
+        {myState === 'win' && (
+          <div className="dw-round-my-result win dw-win-anim">
+            <span className="dw-round-result-emoji dw-emoji-bounce">🏆</span>
+            <div>
+              <strong>ТЫ ВЫИГРАЛ</strong>
+              <span className="dw-round-amount">+{shownWin} дублонов <em> ×{myMult}</em></span>
             </div>
-          ) : (
-            <div className="dw-round-my-result win dw-win-anim">
-              <span className="dw-round-result-emoji dw-emoji-bounce">🏆</span>
-              <div>
-                <strong>{myProfit > 0 ? 'Ты выиграл!' : 'Ставка отыграна'}</strong>
-                <span className="dw-round-amount">
-                  {myProfit > 0 ? `+${shownWin} дублонов` : '±0 дублонов'}
-                  <em> ×{myMult} от ставки</em>
-                </span>
-              </div>
+          </div>
+        )}
+        {myState === 'zero' && (
+          <div className="dw-round-my-result zero">
+            <span className="dw-round-result-emoji">🤝</span>
+            <div><strong>Вышел в ноль</strong></div>
+          </div>
+        )}
+        {myState === 'partial' && (
+          <div className="dw-round-my-result lose">
+            <span className="dw-round-result-emoji">😬</span>
+            <div>
+              <strong>Немного слило</strong>
+              <span className="dw-round-amount">−{Math.abs(myProfit)} дублонов <em> ×{myMult}</em></span>
             </div>
-          )
+          </div>
+        )}
+        {myState === 'lose' && (
+          <div className="dw-round-my-result lose">
+            <span className="dw-round-result-emoji">💀</span>
+            <div>
+              <strong>В этот раз не повезло</strong>
+              <span className="dw-round-amount">−{Math.abs(myProfit)} дублонов</span>
+            </div>
+          </div>
         )}
 
         {/* Победители */}

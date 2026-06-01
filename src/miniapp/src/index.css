@@ -1144,19 +1144,35 @@ h2, .dw-panel h2 {
 
 /* раскрытые карты */
 .dw-pvp-card.revealed { background: var(--surface-3); animation: dw-card-flip 0.34s cubic-bezier(0.34,1.56,0.64,1) both; }
-.dw-pvp-card.revealed.win   { border-color: var(--gold); opacity: 1; box-shadow: 0 0 20px rgba(255,215,0,0.55); animation: dw-card-flip 0.34s cubic-bezier(0.34,1.56,0.64,1) both, dw-win-pulse 1.4s ease-in-out 0.34s infinite; }
-.dw-pvp-card.revealed.empty { border-color: var(--border-strong); opacity: 0.15; box-shadow: none; }
-.dw-pvp-card.revealed.debt  { border-color: var(--crimson-line); box-shadow: 0 0 12px rgba(160,26,38,0.28); }
+/* Моя выигрышная — синяя рамка, чужая — жёлтая. */
+.dw-pvp-card.revealed.win-mine  { border-color: #4FC3F7; opacity: 1; box-shadow: 0 0 18px rgba(79,195,247,0.55); animation: dw-card-flip 0.34s cubic-bezier(0.34,1.56,0.64,1) both; }
+.dw-pvp-card.revealed.win-other { border-color: #FFD700; opacity: 1; box-shadow: 0 0 18px rgba(255,215,0,0.5); animation: dw-card-flip 0.34s cubic-bezier(0.34,1.56,0.64,1) both; }
+.dw-pvp-card.revealed.empty { border-color: var(--border-strong); opacity: 0.12; box-shadow: none; }
 
-/* Выигрышная ячейка «выстреливает» золотой монетой при открытии. */
-.dw-pvp-card.revealed.win::after {
-  content: '🪙';
-  position: absolute;
-  top: 2px; right: 4px;
-  font-size: 13px;
-  animation: dw-coin-pop 0.6s ease-out both;
-  pointer-events: none;
+/* Большое число приза на всю карту. */
+.dw-pvp-card-big {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1;
+  color: #fff;
+  position: relative;
+  z-index: 1;
+  animation: dw-stamp-rise 0.4s ease-out 0.15s both;
 }
+.dw-pvp-card.win-mine  .dw-pvp-card-big { color: #4FC3F7; text-shadow: 0 0 10px rgba(79,195,247,0.6); }
+.dw-pvp-card.win-other .dw-pvp-card-big { color: #FFD700; text-shadow: 0 0 10px rgba(255,215,0,0.5); }
+
+/* Монетка по номиналу в углу. */
+.dw-pvp-coin {
+  position: absolute; top: 3px; right: 3px;
+  width: 10px; height: 10px; border-radius: 50%;
+  z-index: 2;
+  animation: dw-coin-pop 0.6s ease-out both;
+}
+.dw-pvp-coin--gold   { background: radial-gradient(circle at 35% 30%, #fff3c4, #f0d57a 40%, #d4af37 70%, #8a6c1c); box-shadow: 0 0 6px rgba(212,175,55,0.7); }
+.dw-pvp-coin--silver { background: radial-gradient(circle at 35% 30%, #fff, #d8d8d8 40%, #a8a8a8 70%, #707070); box-shadow: 0 0 5px rgba(200,200,200,0.6); }
+.dw-pvp-coin--bronze { background: radial-gradient(circle at 35% 30%, #f0c8a0, #cd7f32 50%, #8a5320); box-shadow: 0 0 5px rgba(205,127,50,0.6); }
 
 @keyframes dw-card-flip {
   0%   { transform: rotateY(90deg) scale(0.86); opacity: 0; }
@@ -2782,12 +2798,14 @@ h2, .dw-panel h2 {
   font-family: var(--font-display);
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.08em;
   background: var(--surface);
   border: 1px solid var(--gold-line);
   color: var(--vellum);
-  white-space: nowrap;
+  max-width: 90vw;
+  white-space: normal;
+  word-break: break-word;
+  text-align: center;
   box-shadow: 0 14px 30px rgba(0,0,0,0.6);
   animation: dw-toast-in 0.24s ease both;
 }
@@ -3191,6 +3209,11 @@ html, body { font-size: 16px; }
 }
 .dw-round-my-result.lose strong,
 .dw-round-my-result.lose .dw-round-amount { color: var(--crimson-glow, #e0606c); }
+.dw-round-my-result.zero {
+  background: linear-gradient(135deg, rgba(40,40,46,0.9), rgba(28,28,32,0.9));
+  border: 1px solid var(--border-strong);
+}
+.dw-round-my-result.zero strong { color: var(--bone); }
 .dw-round-my-result strong { font-size: 17px; display: block; }
 .dw-round-my-result p { font-size: 13px; color: var(--bone-soft); margin: 3px 0 0; }
 .dw-round-amount { display: inline-block; font-size: 16px; font-weight: 800; font-family: var(--font-display); margin-top: 4px; }
@@ -3422,17 +3445,9 @@ html, body { font-size: 16px; }
   cursor: default;
 }
 
-/* Карта с монетами — золотое свечение, полностью видима. */
-.dw-pvp-grid-36 .dw-pvp-card.revealed.win {
-  opacity: 1;
-  border-color: var(--gold);
-  background: rgba(58,46,12,0.5);
-  box-shadow: 0 0 20px rgba(255,215,0,0.55);
-}
-
 /* Пустая карта — почти невидима, без свечения. */
 .dw-pvp-grid-36 .dw-pvp-card.revealed.empty {
-  opacity: 0.15;
+  opacity: 0.12;
   box-shadow: none;
 }
 
@@ -3784,6 +3799,11 @@ button:disabled, [disabled] { cursor: not-allowed; }
   margin-top: 10px; padding: 12px; border-radius: 14px;
   border: 1px solid var(--gold-line); background: var(--surface-2);
 }
+.dw-sort-toggle {
+  background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--bone);
+  border-radius: 10px; padding: 8px 14px; font-weight: 700; font-size: 13px; cursor: pointer;
+}
+.dw-points-btn { min-width: 96px; flex-shrink: 0; }
 @keyframes dw-hint-pulse { 0%,100% { box-shadow: 0 0 10px rgba(212,175,55,0.5); } 50% { box-shadow: 0 0 20px rgba(212,175,55,0.9); } }
 
 /* Lucky Buy slider */

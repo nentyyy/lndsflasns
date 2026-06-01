@@ -11,11 +11,11 @@ export class ArtifactError extends Error {
 
 // ─── Каталог артефактов (Лавка торговца) ───
 export const ARTIFACT_CATALOG = [
-  { id: 'card',   name: 'Игральная карта', description: 'Выбор 1 дополнительной ячейки вручную',                price: 5,  effect: { kind: 'place_choose', cells: 1 } },
-  { id: 'amulet', name: 'Амулет',          description: '3 случайные ячейки, 1 гарантированно с призом',         price: 18, effect: { kind: 'place_random', cells: 3, guarantee: true, excludeMax: true } },
-  { id: 'staff',  name: 'Посох',           description: 'Показывает ряд, где находится приз',                    price: 10, effect: { kind: 'reveal_row' } },
-  { id: 'guide',  name: 'Путеводитель',    description: 'Показывает 1 выигрышную ячейку',                        price: 10, effect: { kind: 'reveal_cell', excludeMax: true } },
-  { id: 'book',   name: 'Книга',           description: 'Удваивает приз выбранной ячейки',                       price: 10, effect: { kind: 'double_cell', excludeMax: true } }
+  { id: 'card',   name: 'Игральная карта', description: '+1 ячейка вручную',          price: 5,  effect: { kind: 'place_choose', cells: 1 } },
+  { id: 'amulet', name: 'Амулет',          description: '3 ячейки, 1 с призом',       price: 18, effect: { kind: 'place_random', cells: 3, guarantee: true, excludeMax: true } },
+  { id: 'staff',  name: 'Посох',           description: 'Показывает ряд с призом',     price: 10, effect: { kind: 'reveal_row' } },
+  { id: 'guide',  name: 'Путеводитель',    description: 'Показывает выигрышную ячейку', price: 10, effect: { kind: 'reveal_cell', excludeMax: true } },
+  { id: 'book',   name: 'Книга',           description: 'Удваивает приз ячейки',       price: 10, effect: { kind: 'double_cell', excludeMax: true } }
 ];
 
 export async function seedArtifacts() {

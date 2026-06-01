@@ -396,6 +396,7 @@ app.post('/api/shop/points/spend',
       const points = await getPoints(req.user.id);
       res.json({ ...out, points: points.points });
     } catch (e) {
+      console.error('[points/spend]', req.user?.id, req.body, e.message);
       if (e instanceof ArtifactError) return res.status(e.status).json({ error: e.message });
       if (e.message === 'not_enough_points') return res.status(400).json({ error: 'not_enough_points' });
       next(e);
@@ -411,6 +412,7 @@ app.post('/api/lucky-buy',
       const out = await playLuckyBuy(req.user.id, String(req.body?.giftId || ''), req.body?.chancePercent);
       res.json(out);
     } catch (e) {
+      console.error('[lucky-buy]', req.user?.id, req.body, e.message);
       if (e instanceof LuckyError) return res.status(e.status).json({ error: e.message });
       if (e instanceof InsufficientFunds) return res.status(400).json({ error: 'insufficient_balance' });
       next(e);
