@@ -2463,10 +2463,18 @@ function LuckyBuyModal({ gift, player, onClose }) {
 
   const spinWheel = async (demo) => {
     setSpinning(true); setResult(null); setDemoResult(null); setError(null);
-    const goldDeg = chance / 100 * 360;
-    const goldStart = 90; // pointer at top
+    const goldDeg = chance / 100 * 360; // золотой сектор: [0..goldDeg] по часовой от верха (стрелки)
     const spins = 360 * 5;
-    const landFor = (won) => won ? goldStart + goldDeg * 0.5 : goldStart + goldDeg + (360 - goldDeg) * 0.5;
+    // Стрелка вверху. Локальный угол θ (по часовой от верха) после поворота на R
+    // оказывается под стрелкой при θ + R ≡ 0, т.е. R = (360 − θ). Чтобы стрелка
+    // села в золото — берём θ внутри [0..goldDeg], в проигрыш — внутри остального.
+    const landFor = (won) => {
+      const pad = Math.min(2, goldDeg * 0.15); // отступ от краёв, чтобы не на стыке
+      const theta = won
+        ? pad + Math.random() * Math.max(0.0001, goldDeg - 2 * pad)
+        : goldDeg + 2 + Math.random() * Math.max(0.0001, (360 - goldDeg) - 4);
+      return (360 - (theta % 360)) % 360;
+    };
 
     if (demo) {
       const won = Math.random() * 100 < chance;
@@ -2898,7 +2906,7 @@ function PersonalStats({ player }) {
   return (
     <article className="dw-panel" style={{ marginBottom: 12 }}>
       <div className="dw-stats-row">
-        <div className="dw-stat-cell"><span>раундов</span><strong>{formatCoins(roundsPlayed)}</strong></div>
+        <div className="dw-stat-cell"><span>игр</span><strong>{formatCoins(roundsPlayed)}</strong></div>
         <div className="dw-stat-cell"><span>побед</span><strong>{formatCoins(wins)}</strong></div>
         <div className="dw-stat-cell accent"><span>винрейт</span><strong>{winRate}%</strong></div>
         <div className="dw-stat-cell accent"><span>рекорд</span><strong>{formatCompact(bestWin)}</strong></div>
