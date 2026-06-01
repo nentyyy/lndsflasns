@@ -143,25 +143,21 @@ export const PVP_MODES = {
     title: 'PvP · Live Round',
     cardCount: 36,
     entryCoins: 5,
-    // RTP 90%: вход 36×5 = 180, сумма выплат = 162 (162/180 = 0.90).
-    // 20 пустых + 16 выигрышных. 1×40, 2×18, 1×16, 2×12, 3×8, 2×6, 5×4 = 162.
+    // Ровная раскладка: 10 выигрышных + 26 пустых = 36 ячеек.
+    // 1×50, 2×25, 3×15, 1×10, 3×5 = 170 дублонов (RTP 170/180 ≈ 94%).
     outcomesPool: [
-      // 20 пустых
-      ...Array.from({ length: 20 }, () => ({ key: 'empty', type: 'empty', credit: 0, stamp: 'Пусто' })),
-      // 5 ячеек — 4 монеты
-      ...Array.from({ length: 5 }, () => ({ key: 'win_4', type: 'coins', credit: 4, stamp: '+4' })),
-      // 2 ячейки — 6 монет
-      ...Array.from({ length: 2 }, () => ({ key: 'win_6', type: 'coins', credit: 6, stamp: '+6' })),
-      // 3 ячейки — 8 монет
-      ...Array.from({ length: 3 }, () => ({ key: 'win_8', type: 'coins', credit: 8, stamp: '+8' })),
-      // 2 ячейки — 12 монет
-      ...Array.from({ length: 2 }, () => ({ key: 'win_12', type: 'coins', credit: 12, stamp: '+12' })),
-      // 1 ячейка — 16 монет
-      { key: 'win_16', type: 'coins', credit: 16, stamp: '+16' },
-      // 2 ячейки — 18 монет
-      ...Array.from({ length: 2 }, () => ({ key: 'win_18', type: 'coins', credit: 18, stamp: '+18' })),
-      // 1 ячейка — 40 монет
-      { key: 'win_40', type: 'coins', credit: 40, stamp: '+40' }
+      // 26 пустых
+      ...Array.from({ length: 26 }, () => ({ key: 'empty', type: 'empty', credit: 0, stamp: 'Пусто' })),
+      // 3 ячейки — 5 монет
+      ...Array.from({ length: 3 }, () => ({ key: 'win_5', type: 'coins', credit: 5, stamp: '+5' })),
+      // 1 ячейка — 10 монет
+      { key: 'win_10', type: 'coins', credit: 10, stamp: '+10' },
+      // 3 ячейки — 15 монет
+      ...Array.from({ length: 3 }, () => ({ key: 'win_15', type: 'coins', credit: 15, stamp: '+15' })),
+      // 2 ячейки — 25 монет
+      ...Array.from({ length: 2 }, () => ({ key: 'win_25', type: 'coins', credit: 25, stamp: '+25' })),
+      // 1 ячейка — 50 монет
+      { key: 'win_50', type: 'coins', credit: 50, stamp: '+50' }
     ]
   }
 };
