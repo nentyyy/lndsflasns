@@ -58,15 +58,20 @@ export async function getPersonalStats(userId) {
   const p = await db('players').where({ user_id: userId }).first();
   if (!p) return null;
 
-  const [soloWins, pvpWins, fav] = await Promise.all([
+  // «Игра» = раунд, в котором участвовал игрок. PvP считаем по УНИКАЛЬНЫМ лобби
+  // (а не по числу карт), solo — по числу раундов. Победа PvP = лобби, где есть
+  // хоть одна карта с призом > 0.
+  const [soloPlayed, soloWins, pvpPlayed, pvpWinLobbies, fav] = await Promise.all([
+    db('rounds').where({ user_id: userId, status: 'revealed' }).count('* as n').first(),
     db('rounds').where({ user_id: userId, status: 'revealed' }).where('credit', '>', 0).count('* as n').first(),
-    db('pvp_cards').where({ user_id: userId, status: 'revealed' }).where('credit', '>', 0).count('* as n').first(),
+    db('pvp_cards').where({ user_id: userId }).countDistinct('lobby_id as n').first(),
+    db('pvp_cards').where({ user_id: userId }).where('credit', '>', 0).countDistinct('lobby_id as n').first(),
     db('portals_purchases').where({ user_id: userId }).groupBy('gift_name').orderBy('n', 'desc')
       .select('gift_name').count('* as n').first()
   ]);
 
-  const roundsPlayed = Number(p.games_played || 0) + Number(p.pvp_total_reveals || 0);
-  const wins = Number(soloWins?.n || 0) + Number(pvpWins?.n || 0);
+  const roundsPlayed = Number(soloPlayed?.n || 0) + Number(pvpPlayed?.n || 0);
+  const wins = Number(soloWins?.n || 0) + Number(pvpWinLobbies?.n || 0);
   return {
     roundsPlayed,
     wins,

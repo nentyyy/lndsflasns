@@ -2415,6 +2415,8 @@ h2, .dw-panel h2 {
 .dw-stat-cell span   { font-family: var(--font-display); font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--bone-soft); line-height: 1; }
 .dw-stat-cell strong { font-family: var(--font-display); font-size: 15px; font-weight: 800; color: var(--vellum); font-variant-numeric: tabular-nums; line-height: 1.2; }
 .dw-stat-cell.accent strong { color: var(--gold); text-shadow: 0 0 12px rgba(212,175,55,0.35); }
+.dw-stat-cell--btn { cursor: pointer; font: inherit; }
+.dw-stat-cell--btn span { color: var(--gold); }
 
 .dw-profile-block h2 { font-size: 18px; }
 .dw-profile-block p  { font-family: var(--font-serif); font-style: italic; color: var(--bone-soft); font-size: 12px; }

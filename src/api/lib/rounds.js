@@ -10,12 +10,24 @@ function pview(p) {
   };
 }
 
-// Список завершённых PvP-раундов. sort: 'all' (по номеру) | 'best' (по топ-призу).
-export async function listRounds({ limit = 20, offset = 0, sort = 'all' } = {}) {
-  // Берём последние 500 завершённых лобби (ограничиваем нагрузку).
-  const lobbies = await db('pvp_lobbies')
+// Список завершённых PvP-раундов. sort: 'all' | 'best' | 'mine'.
+// mine — только раунды, где участвовал mineUserId.
+export async function listRounds({ limit = 20, offset = 0, sort = 'all', mineUserId = null } = {}) {
+  let lobbyQuery = db('pvp_lobbies')
     .where({ status: 'settled' })
-    .whereNotNull('round_number')
+    .whereNotNull('round_number');
+
+  // «Мои» раунды — только те лобби, где у игрока есть карта.
+  if (sort === 'mine' && mineUserId) {
+    const mineLobbyIds = await db('pvp_cards')
+      .where({ user_id: mineUserId })
+      .distinct('lobby_id')
+      .pluck('lobby_id');
+    if (!mineLobbyIds.length) return { rounds: [], total: 0, hasMore: false };
+    lobbyQuery = lobbyQuery.whereIn('id', mineLobbyIds);
+  }
+
+  const lobbies = await lobbyQuery
     .orderBy('round_number', 'desc')
     .limit(500)
     .select('id', 'round_number', 'settled_at', 'entry_coins');

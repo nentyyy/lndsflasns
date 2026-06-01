@@ -813,6 +813,7 @@ function App() {
               onOpenClans={() => setTab('clans')}
               onOpenRef={() => setTab('referral')}
               onOpenWheel={() => setWheelOpen(true)}
+              onOpenMyRounds={() => setRoundsOpen('mine')}
             />
           )}
         </main>
@@ -863,7 +864,7 @@ function App() {
       )}
 
       {roundsOpen && (
-        <RoundsHistory myId={state.player.id} onClose={() => setRoundsOpen(false)} />
+        <RoundsHistory myId={state.player.id} initialSort={typeof roundsOpen === 'string' ? roundsOpen : 'all'} onClose={() => setRoundsOpen(false)} />
       )}
 
       {tutorialOpen && (
@@ -2599,7 +2600,7 @@ function LuckyBuyModal({ gift, player, onClose }) {
 
 /* ─── Profile tab ─────────────────────────────────────────── */
 
-function ProfileTab({ player, filters, activeFilter, onFilterChange, history, tonWallet, onConnectTon, onDisconnectTon, onOpenAdmin, onOpenClans, onOpenRef, onOpenWheel }) {
+function ProfileTab({ player, filters, activeFilter, onFilterChange, history, tonWallet, onConnectTon, onDisconnectTon, onOpenAdmin, onOpenClans, onOpenRef, onOpenWheel, onOpenMyRounds }) {
   const u = userDisplay(player);
   const [showId, setShowId] = useState(false);
   return (
@@ -2622,7 +2623,7 @@ function ProfileTab({ player, filters, activeFilter, onFilterChange, history, to
         </div>
       </div>
 
-      <PersonalStats player={player} />
+      <PersonalStats player={player} onOpenMyRounds={onOpenMyRounds} />
 
       <div className="dw-home-strip">
         <button className="dw-panel dw-nav-card" onClick={onOpenClans}>
@@ -2900,7 +2901,7 @@ function PlayerProfileModal({ userId, data, onClose }) {
 
 /* ─── Личная статистика ───────────────────────────────────── */
 
-function PersonalStats({ player }) {
+function PersonalStats({ player, onOpenMyRounds }) {
   const [s, setS] = useState(null);
   const [pts, setPts] = useState(null);
   useEffect(() => {
@@ -2914,7 +2915,7 @@ function PersonalStats({ player }) {
   return (
     <article className="dw-panel" style={{ marginBottom: 12 }}>
       <div className="dw-stats-row">
-        <div className="dw-stat-cell"><span>игр</span><strong>{formatCoins(roundsPlayed)}</strong></div>
+        <button className="dw-stat-cell dw-stat-cell--btn" onClick={onOpenMyRounds}><span>игр ›</span><strong>{formatCoins(roundsPlayed)}</strong></button>
         <div className="dw-stat-cell"><span>побед</span><strong>{formatCoins(wins)}</strong></div>
         <div className="dw-stat-cell accent"><span>винрейт</span><strong>{winRate}%</strong></div>
         <div className="dw-stat-cell accent"><span>рекорд</span><strong>{formatCompact(bestWin)}</strong></div>
@@ -2931,8 +2932,8 @@ function PersonalStats({ player }) {
 
 /* ─── История раундов: список + детали по игрокам ─────────── */
 
-function RoundsHistory({ myId, onClose }) {
-  const [sort, setSort] = useState('all'); // all | best
+function RoundsHistory({ myId, onClose, initialSort = 'all' }) {
+  const [sort, setSort] = useState(initialSort); // all | best | mine
   const [rounds, setRounds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState(null); // { roundNumber, players[] }
@@ -2962,12 +2963,13 @@ function RoundsHistory({ myId, onClose }) {
             </div>
             <div className="dw-will-pager" style={{ marginBottom: 12 }}>
               <button className={`dw-will-pager-btn ${sort === 'all' ? 'active' : ''}`} onClick={() => setSort('all')}>Все</button>
+              <button className={`dw-will-pager-btn ${sort === 'mine' ? 'active' : ''}`} onClick={() => setSort('mine')}>Мои</button>
               <button className={`dw-will-pager-btn ${sort === 'best' ? 'active' : ''}`} onClick={() => setSort('best')}>Лучшие</button>
             </div>
             {loading ? (
               <div className="dw-pay-loading"><div className="dw-pay-spinner" /></div>
             ) : rounds.length === 0 ? (
-              <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: '16px 0', fontSize: 14 }}>Раундов пока нет</p>
+              <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: '16px 0', fontSize: 14 }}>{sort === 'mine' ? 'Ты ещё не играл в раундах' : 'Раундов пока нет'}</p>
             ) : rounds.map((r) => {
               const w = r.winner;
               const u = w ? userDisplay(w) : null;

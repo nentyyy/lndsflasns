@@ -161,8 +161,8 @@ app.get('/api/rounds', async (req, res, next) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 20, 50);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
-    const sort = req.query.sort === 'best' ? 'best' : 'all';
-    res.json(await listRounds({ limit, offset, sort }));
+    const sort = ['best', 'mine'].includes(req.query.sort) ? req.query.sort : 'all';
+    res.json(await listRounds({ limit, offset, sort, mineUserId: req.user.id }));
   } catch (e) { next(e); }
 });
 
