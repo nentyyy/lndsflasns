@@ -1607,7 +1607,6 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
 
   const rows = buildPvpRows(cardCount);
   const getCard = (i) => cards.find((c) => c.index === i) || { index: i, status: 'free', mine: false, taken: false, outcome: null, owner: null };
-  const gameNum = lobby?.gameNum ? `#${lobby.gameNum}` : '';
 
   // Применить артефакт: для place_choose и double_cell сначала выбираем ячейку.
   const applyArtifact = async (artifactId, targetCells) => {
@@ -1634,11 +1633,10 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
 
   return (
     <>
-      <div className="dw-pvp-header dw-pvp-header--3col">
+      <div className="dw-pvp-header dw-pvp-header--center">
         <div className={`dw-pvp-timer ${urgent ? 'urgent' : idle || settled ? 'idle' : ''}`}>
           {settled ? '00' : timer ?? '30'}<span style={{ fontSize: 11, marginLeft: 4, opacity: 0.7 }}>с</span>
         </div>
-        <PvpWinnerStat label="‹ Прошлый" winner={lastWinner} amount={lastWinner?.amount} right onClick={onOpenRounds} />
       </div>
 
       <div className="dw-pvp-grid-36">
@@ -1716,10 +1714,8 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
         </div>
       )}
 
-      {/* Номер игры */}
-      {gameNum && (
-        <div className="dw-pvp-game-num">Игра {gameNum}</div>
-      )}
+      {/* Перелистывание прошлых игр с результатами */}
+      <GameBrowser currentGameNum={lobby?.gameNum || null} />
 
       {settled && (
         <div className="dw-pvp-empty">
@@ -1727,6 +1723,62 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
         </div>
       )}
     </>
+  );
+}
+
+// Листалка прошлых раундов: ‹ Игра #N › с итогами (победитель + банк).
+function GameBrowser({ currentGameNum }) {
+  const [list, setList] = useState([]);
+  const [idx, setIdx] = useState(0);
+  const [detail, setDetail] = useState(null);
+
+  useEffect(() => {
+    api.rounds('all', 0, 50).then((d) => { setList(d.rounds || []); setIdx(0); }).catch(() => {});
+  }, [currentGameNum]);
+
+  const round = list[idx] || null;
+  useEffect(() => {
+    if (!round) { setDetail(null); return; }
+    let cancelled = false;
+    api.roundDetail(round.lobbyId).then((d) => { if (!cancelled) setDetail(d); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [round?.lobbyId]);
+
+  if (!list.length) return null;
+  const winner = round?.winner;
+  const wu = winner ? userDisplay(winner) : null;
+
+  return (
+    <div className="dw-game-browser">
+      <div className="dw-game-browser-nav">
+        <button disabled={idx >= list.length - 1} onClick={() => setIdx((i) => Math.min(list.length - 1, i + 1))}>‹</button>
+        <span className="dw-game-browser-title">Игра #{round?.roundNumber ?? '—'}</span>
+        <button disabled={idx <= 0} onClick={() => setIdx((i) => Math.max(0, i - 1))}>›</button>
+      </div>
+      <div className="dw-game-browser-body">
+        <span className="dw-game-browser-meta">
+          {round?.players || 0} игроков · банк {formatCoins(round?.totalWon || 0)}
+        </span>
+        {wu ? (
+          <div className="dw-game-browser-winner">
+            <span className="dw-round-row-avatar" style={{ width: 22, height: 22, fontSize: 11, ...(wu.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}) }}>
+              {wu.avatarUrl ? <img src={wu.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : wu.initial}
+            </span>
+            <span>{wu.displayName}</span>
+            <strong className="gold">+{formatCoins(winner.amount)}</strong>
+          </div>
+        ) : (
+          <span className="dw-game-browser-meta">Без победителя</span>
+        )}
+      </div>
+      {detail && detail.players?.length > 0 && (
+        <div className="dw-game-browser-cards">
+          {detail.players.filter((p) => p.prize > 0).slice(0, 8).map((p, i) => (
+            <span key={i} className="dw-game-browser-chip">#{p.cardIndex + 1}: +{formatCoins(p.prize)}</span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -58,14 +58,18 @@ export async function getPersonalStats(userId) {
   const p = await db('players').where({ user_id: userId }).first();
   if (!p) return null;
 
-  // «Игра» = раунд, в котором участвовал игрок. PvP считаем по УНИКАЛЬНЫМ лобби
-  // (а не по числу карт), solo — по числу раундов. Победа PvP = лобби, где есть
-  // хоть одна карта с призом > 0.
+  // «Игра» = ЗАВЕРШЁННЫЙ раунд, в котором участвовал игрок. PvP считаем по
+  // УНИКАЛЬНЫМ settled-лобби (совпадает с историей «Мои»); solo — по revealed.
+  // Победа PvP = settled-лобби, где есть хоть одна карта с призом > 0.
   const [soloPlayed, soloWins, pvpPlayed, pvpWinLobbies, fav] = await Promise.all([
     db('rounds').where({ user_id: userId, status: 'revealed' }).count('* as n').first(),
     db('rounds').where({ user_id: userId, status: 'revealed' }).where('credit', '>', 0).count('* as n').first(),
-    db('pvp_cards').where({ user_id: userId }).countDistinct('lobby_id as n').first(),
-    db('pvp_cards').where({ user_id: userId }).where('credit', '>', 0).countDistinct('lobby_id as n').first(),
+    db('pvp_cards as c').join('pvp_lobbies as l', 'c.lobby_id', 'l.id')
+      .where('c.user_id', userId).where('l.status', 'settled')
+      .countDistinct('c.lobby_id as n').first(),
+    db('pvp_cards as c').join('pvp_lobbies as l', 'c.lobby_id', 'l.id')
+      .where('c.user_id', userId).where('l.status', 'settled').where('c.credit', '>', 0)
+      .countDistinct('c.lobby_id as n').first(),
     db('portals_purchases').where({ user_id: userId }).groupBy('gift_name').orderBy('n', 'desc')
       .select('gift_name').count('* as n').first()
   ]);
