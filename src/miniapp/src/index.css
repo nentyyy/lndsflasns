@@ -1003,7 +1003,7 @@ h2, .dw-panel h2 {
 
 /* 3-колоночная шапка: лучший | таймер | прошлый раунд */
 .dw-pvp-header--3col { justify-content: space-between; }
-.dw-pvp-header--center { justify-content: center; }
+.dw-pvp-header--center { justify-content: space-between; }
 .dw-pvp-stat {
   display: flex; flex-direction: column; gap: 2px; min-width: 76px;
   background: none; border: 0; padding: 0; cursor: pointer; font: inherit;
@@ -3567,31 +3567,21 @@ html, body { font-size: 16px; }
   padding: 2px 0 4px;
 }
 
-/* Листалка прошлых игр с результатами */
-.dw-game-browser {
-  margin-top: 12px; padding: 10px 12px; border-radius: 12px;
-  border: 1px solid var(--border-strong); background: var(--surface-2);
+/* Навигация по прошлым играм прямо на поле */
+.dw-pvp-nav-arrow {
+  width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--gold-line);
+  background: var(--surface-3); color: var(--gold); font-size: 20px; font-weight: 800;
+  cursor: pointer; line-height: 1; flex-shrink: 0;
 }
-.dw-game-browser-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.dw-game-browser-nav button {
-  width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--gold-line);
-  background: var(--surface-3); color: var(--gold); font-size: 18px; font-weight: 800; cursor: pointer; line-height: 1;
+.dw-pvp-nav-arrow:disabled { opacity: 0.25; cursor: not-allowed; }
+.dw-pvp-past-title { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 1; }
+.dw-pvp-past-title span { font-family: var(--font-display); font-size: 16px; color: var(--gold-bright); letter-spacing: 0.04em; }
+.dw-pvp-past-title small { font-size: 11px; color: var(--bone-soft); }
+.dw-pvp-return-live {
+  display: block; width: 100%; margin: 10px 0 4px; padding: 8px; border-radius: 10px;
+  border: 1px solid var(--gold-line); background: var(--surface-2); color: var(--gold);
+  font-weight: 700; font-size: 13px; cursor: pointer;
 }
-.dw-game-browser-nav button:disabled { opacity: 0.3; cursor: not-allowed; }
-.dw-game-browser-title { font-family: var(--font-display); font-size: 14px; color: var(--gold-bright); letter-spacing: 0.04em; }
-.dw-game-browser-body { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 8px; }
-.dw-game-browser-meta { font-size: 12px; color: var(--bone-soft); }
-.dw-game-browser-winner { display: flex; align-items: center; gap: 6px; font-size: 13px; }
-.dw-game-browser-cards { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; margin-top: 8px; }
-.dw-game-browser-chip {
-  font-size: 11px; padding: 2px 7px; border-radius: 20px;
-  background: rgba(212,175,55,0.12); border: 1px solid var(--gold-line); color: var(--gold);
-  font-family: var(--font-display);
-}
-/* Поле прошлой игры в листалке — компактнее основного */
-.dw-game-browser-grid { margin-top: 10px; gap: 4px; }
-.dw-game-browser-grid .dw-pvp-card { min-height: 34px; }
-.dw-game-browser-grid .dw-pvp-card-big { font-size: 16px !important; }
 
 /* Referral claim block */
 .dw-ref-claim-block {

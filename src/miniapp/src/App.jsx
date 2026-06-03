@@ -1535,12 +1535,30 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   const [artifacts, setArtifacts] = useState([]);
   const [artPending, setArtPending] = useState(null); // { artifactId, kind } — ожидает выбора ячейки
   const [artHints, setArtHints] = useState(null); // { row?:[], cell?:number } — подсказка от Посоха/Путеводителя
+  // Просмотр прошлых игр прямо на поле. pastList — список раундов, pastIdx — индекс
+  // в списке (null = живая игра). pastDetail — детали выбранного раунда.
+  const [pastList, setPastList] = useState([]);
+  const [pastIdx, setPastIdx] = useState(null);
+  const [pastDetail, setPastDetail] = useState(null);
   const prevStatus = React.useRef(null);
 
   // Лучший раунд (по призу) — для левой плашки шапки.
   useEffect(() => {
     api.rounds('best', 0, 1).then((d) => setBestRound(d.rounds?.[0] || null)).catch(() => {});
   }, [pvpState?.lobby?.status]);
+
+  // Список прошлых раундов для перелистывания.
+  useEffect(() => {
+    api.rounds('all', 0, 50).then((d) => setPastList(d.rounds || [])).catch(() => {});
+  }, [pvpState?.lobby?.status]);
+
+  // Подгружаем детали выбранной прошлой игры.
+  useEffect(() => {
+    if (pastIdx === null || !pastList[pastIdx]) { setPastDetail(null); return; }
+    let cancelled = false;
+    api.roundDetail(pastList[pastIdx].lobbyId).then((d) => { if (!cancelled) setPastDetail(d); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [pastIdx, pastList]);
 
   // Артефакты игрока — обновляем при смене лобби.
   useEffect(() => {
@@ -1632,44 +1650,89 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
     }
   };
 
+  // Просмотр прошлой игры на поле: данные из pastDetail (cardIndex → {owner, prize}).
+  const viewingPast = pastIdx !== null;
+  const pastRound = viewingPast ? pastList[pastIdx] : null;
+  const pastByIndex = {};
+  (pastDetail?.players || []).forEach((p) => { pastByIndex[p.cardIndex] = p; });
+  const goPrev = () => setPastIdx((v) => { const start = v === null ? -1 : v; return Math.min(pastList.length - 1, start + 1); });
+  const goNext = () => setPastIdx((v) => { if (v === null) return null; return v <= 0 ? null : v - 1; });
+
   return (
     <>
       <div className="dw-pvp-header dw-pvp-header--center">
-        <div className={`dw-pvp-timer ${urgent ? 'urgent' : idle || settled ? 'idle' : ''}`}>
-          {settled ? '00' : timer ?? '30'}<span style={{ fontSize: 11, marginLeft: 4, opacity: 0.7 }}>с</span>
-        </div>
+        {pastList.length > 0 && (
+          <button className="dw-pvp-nav-arrow" disabled={pastIdx !== null && pastIdx >= pastList.length - 1} onClick={goPrev}>‹</button>
+        )}
+        {viewingPast ? (
+          <div className="dw-pvp-past-title">
+            <span>Игра #{pastRound?.roundNumber ?? '—'}</span>
+            <small>{pastRound?.players || 0} игроков · банк {formatCoins(pastRound?.totalWon || 0)}</small>
+          </div>
+        ) : (
+          <div className={`dw-pvp-timer ${urgent ? 'urgent' : idle || settled ? 'idle' : ''}`}>
+            {settled ? '00' : timer ?? '30'}<span style={{ fontSize: 11, marginLeft: 4, opacity: 0.7 }}>с</span>
+          </div>
+        )}
+        {pastList.length > 0 && (
+          <button className="dw-pvp-nav-arrow" disabled={!viewingPast} onClick={goNext}>›</button>
+        )}
       </div>
+
+      {viewingPast && (
+        <button className="dw-pvp-return-live" onClick={() => setPastIdx(null)}>← Вернуться к текущей игре</button>
+      )}
 
       <div className="dw-pvp-grid-36">
         {rows.map((row, ri) => (
           <div key={ri} className={`dw-pvp-row ${row.type}`}>
-            {row.indices.map((i) => (
-              <PvpCard
-                key={i}
-                card={getCard(i)}
-                idx={i}
-                settled={settled}
-                revealOpen={revealStep === 9999 || i < revealStep}
-                pickable={canPlay && !artPending}
-                artPick={Boolean(artPending && artPending.kind === 'place_choose')}
-                artPickMine={Boolean(artPending && artPending.kind === 'double_cell')}
-                hinted={Boolean(
-                  artHints?.cell === i ||
-                  artHints?.row?.includes(i)
-                )}
-                pvpBuying={pvpBuying}
-                onBuyPvpCard={onBuyPvpCard}
-                onArtPick={artPending ? (idx) => applyArtifact(artPending.artifactId, [idx]) : undefined}
-                onOpenPlayerProfile={onOpenPlayerProfile}
-                shuffling={shuffling}
-              />
-            ))}
+            {row.indices.map((i) => {
+              // Режим просмотра прошлой игры — рисуем результат, без интеракций.
+              if (viewingPast) {
+                const p = pastByIndex[i];
+                const mine = p && String(p.userId) === String(myUserId);
+                const prize = p ? p.prize : 0;
+                const win = prize > 0;
+                const cls = ['dw-pvp-card', 'dw-pvp-card--locked', 'revealed',
+                  win && mine ? 'win-mine' : '', win && !mine ? 'win-other' : '', !win ? 'empty' : ''].filter(Boolean).join(' ');
+                const u = p ? userDisplay(p) : null;
+                return (
+                  <div key={i} className={cls}>
+                    {u && (
+                      <button className="dw-pvp-avatar-btn" onClick={(e) => { e.stopPropagation(); onOpenPlayerProfile?.(p.userId); }}
+                        style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+                        {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span className="dw-pvp-avatar">{u.initial}</span>}
+                      </button>
+                    )}
+                    {win && <span className="dw-pvp-card-big">{prize}</span>}
+                  </div>
+                );
+              }
+              return (
+                <PvpCard
+                  key={i}
+                  card={getCard(i)}
+                  idx={i}
+                  settled={settled}
+                  revealOpen={revealStep === 9999 || i < revealStep}
+                  pickable={canPlay && !artPending}
+                  artPick={Boolean(artPending && artPending.kind === 'place_choose')}
+                  artPickMine={Boolean(artPending && artPending.kind === 'double_cell')}
+                  hinted={Boolean(artHints?.cell === i || artHints?.row?.includes(i))}
+                  pvpBuying={pvpBuying}
+                  onBuyPvpCard={onBuyPvpCard}
+                  onArtPick={artPending ? (idx) => applyArtifact(artPending.artifactId, [idx]) : undefined}
+                  onOpenPlayerProfile={onOpenPlayerProfile}
+                  shuffling={shuffling}
+                />
+              );
+            })}
           </div>
         ))}
       </div>
 
-      {/* Управление ставкой */}
-      {!settled && (
+      {/* Управление ставкой (скрыто при просмотре прошлой игры) */}
+      {!settled && !viewingPast && (
         <>
           {!canPlay ? (
             <button className="dw-btn primary full" style={{ marginTop: 8 }} onClick={onOpenDeposit}>Купить карты для игры</button>
@@ -1694,7 +1757,7 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
       )}
 
       {/* Артефакты — показываем если есть */}
-      {!settled && artifacts.length > 0 && !artPending && (
+      {!settled && !viewingPast && artifacts.length > 0 && !artPending && (
         <div className="dw-art-panel">
           {artHints && (
             <div className="dw-art-hint-msg">
@@ -1715,106 +1778,12 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
         </div>
       )}
 
-      {/* Перелистывание прошлых игр с результатами */}
-      <GameBrowser currentGameNum={lobby?.gameNum || null} cardCount={cardCount} myUserId={myUserId} onOpenPlayerProfile={onOpenPlayerProfile} />
-
-      {settled && (
+      {settled && !viewingPast && (
         <div className="dw-pvp-empty">
           Раунд завершён. Новое лобби откроется — поставь ячейки в следующий.
         </div>
       )}
     </>
-  );
-}
-
-// Листалка прошлых раундов: ‹ Игра #N › открывает поле прошлой игры с результатами.
-function GameBrowser({ currentGameNum, cardCount = 36, myUserId, onOpenPlayerProfile }) {
-  const [list, setList] = useState([]);
-  const [idx, setIdx] = useState(0);
-  const [detail, setDetail] = useState(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    api.rounds('all', 0, 50).then((d) => { setList(d.rounds || []); setIdx(0); }).catch(() => {});
-  }, [currentGameNum]);
-
-  const round = list[idx] || null;
-  useEffect(() => {
-    if (!round) { setDetail(null); return; }
-    let cancelled = false;
-    setLoading(true);
-    api.roundDetail(round.lobbyId).then((d) => { if (!cancelled) setDetail(d); }).catch(() => {}).finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [round?.lobbyId]);
-
-  if (!list.length) return null;
-  const winner = round?.winner;
-  const wu = winner ? userDisplay(winner) : null;
-
-  // Карта по индексу из деталей раунда (cardIndex → {owner, prize}).
-  const byIndex = {};
-  (detail?.players || []).forEach((p) => { byIndex[p.cardIndex] = p; });
-  const rows = buildPvpRows(cardCount);
-
-  return (
-    <div className="dw-game-browser">
-      <div className="dw-game-browser-nav">
-        <button disabled={idx >= list.length - 1} onClick={() => setIdx((i) => Math.min(list.length - 1, i + 1))}>‹</button>
-        <span className="dw-game-browser-title">Игра #{round?.roundNumber ?? '—'}</span>
-        <button disabled={idx <= 0} onClick={() => setIdx((i) => Math.max(0, i - 1))}>›</button>
-      </div>
-
-      <div className="dw-game-browser-body">
-        <span className="dw-game-browser-meta">
-          {round?.players || 0} игроков · банк {formatCoins(round?.totalWon || 0)}
-        </span>
-        {wu && (
-          <div className="dw-game-browser-winner">
-            <span className="dw-round-row-avatar" style={{ width: 20, height: 20, fontSize: 10, ...(wu.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}) }}>
-              {wu.avatarUrl ? <img src={wu.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : wu.initial}
-            </span>
-            <span>{wu.displayName}</span>
-            <strong className="gold">+{formatCoins(winner.amount)}</strong>
-          </div>
-        )}
-      </div>
-
-      {/* Поле прошлой игры: моя ячейка синяя, чужие жёлтые/пустые, у занятых — аватар */}
-      {loading ? (
-        <div className="dw-pay-loading" style={{ padding: 12 }}><div className="dw-pay-spinner" /></div>
-      ) : (
-        <div className="dw-pvp-grid-36 dw-game-browser-grid">
-          {rows.map((row, ri) => (
-            <div key={ri} className={`dw-pvp-row ${row.type}`}>
-              {row.indices.map((i) => {
-                const p = byIndex[i];
-                const mine = p && String(p.userId) === String(myUserId);
-                const prize = p ? p.prize : 0;
-                const win = prize > 0;
-                const cls = [
-                  'dw-pvp-card', 'dw-pvp-card--locked', 'revealed',
-                  win && mine ? 'win-mine' : '',
-                  win && !mine ? 'win-other' : '',
-                  !win ? 'empty' : ''
-                ].filter(Boolean).join(' ');
-                const u = p ? userDisplay(p) : null;
-                return (
-                  <div key={i} className={cls}>
-                    {u && (
-                      <button className="dw-pvp-avatar-btn" onClick={(e) => { e.stopPropagation(); onOpenPlayerProfile?.(p.userId); }}
-                        style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
-                        {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span className="dw-pvp-avatar">{u.initial}</span>}
-                      </button>
-                    )}
-                    {win && <span className="dw-pvp-card-big">{prize}</span>}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 
