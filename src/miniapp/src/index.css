@@ -1891,12 +1891,22 @@ h2, .dw-panel h2 {
   perspective: 1000px;
 }
 
+/* Контейнер веера: фиксированная высота, overflow скрыт — карты не вылетают */
+.dw-splash-fan {
+  position: relative;
+  width: 200px;
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .dw-splash-card {
   position: absolute;
   inset: 0;
   margin: auto;
-  width: 84px;
-  height: 124px;
+  width: 78px;
+  height: 112px;
   border-radius: 8px;
   background:
     linear-gradient(180deg, rgba(216,200,154,0.04), transparent 40%),
@@ -1937,9 +1947,17 @@ h2, .dw-panel h2 {
 
 .dw-splash-bar-fill {
   position: absolute;
-  inset: 0;
+  left: 0; top: 0; bottom: 0;
+  width: 0;
   background: linear-gradient(90deg, var(--gold-deep), var(--gold-bright), var(--gold));
   box-shadow: 0 0 12px rgba(212,175,55,0.55);
+}
+
+.dw-splash-progress {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .dw-splash-status {
@@ -2738,7 +2756,7 @@ h2, .dw-panel h2 {
   width: min(calc(100% - 16px), 440px);
   z-index: 20;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
   padding: 8px;
   border-radius: 22px;
@@ -2764,9 +2782,11 @@ h2, .dw-panel h2 {
   font-family: var(--font-display);
   font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
+.bottom-item > span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 
 .bottom-item.active {
   color: var(--gold);

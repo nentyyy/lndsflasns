@@ -4,6 +4,7 @@ const labels = {
   home:     'Холл',
   play:     'ПВП',
   shop:     'МАГАЗИН',
+  clans:    'КЛАНЫ',
   profile:  'ПРОФИЛЬ'
 };
 
@@ -32,6 +33,15 @@ function Icon({ name }) {
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
         <path d="M4 8h16l-1.4 11.2A2 2 0 0 1 16.6 21H7.4a2 2 0 0 1-2-1.8L4 8Z" />
         <path d="M8 8V6a4 4 0 0 1 8 0v2" />
+      </svg>
+    );
+  }
+  if (name === 'clans') {
+    return (
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M5 21V8l7-4 7 4v13" />
+        <path d="M9 21v-6h6v6" />
+        <path d="M5 11h14" />
       </svg>
     );
   }

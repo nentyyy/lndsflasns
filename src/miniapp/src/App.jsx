@@ -36,7 +36,7 @@ function mapResult(r) {
   };
 }
 
-const tabs = ['play', 'shop', 'profile'];
+const tabs = ['play', 'shop', 'clans', 'profile'];
 const shopTabs = ['nft'];
 const PREMIUM_CARDS = 5;
 
@@ -775,7 +775,7 @@ function App() {
           {tab === 'clans' && (
             <ClansTab
               player={state.player}
-              onBack={() => setTab('profile')}
+              onBack={() => setTab('play')}
               onNotify={notify}
             />
           )}
