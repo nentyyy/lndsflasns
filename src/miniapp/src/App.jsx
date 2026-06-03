@@ -1670,8 +1670,11 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
             <small>{pastRound?.players || 0} игроков · банк {formatCoins(pastRound?.totalWon || 0)}</small>
           </div>
         ) : (
-          <div className={`dw-pvp-timer ${urgent ? 'urgent' : idle || settled ? 'idle' : ''}`}>
-            {settled ? '00' : timer ?? '30'}<span style={{ fontSize: 11, marginLeft: 4, opacity: 0.7 }}>с</span>
+          <div className="dw-pvp-timer-wrap">
+            <div className={`dw-pvp-timer ${urgent ? 'urgent' : idle || settled ? 'idle' : ''}`}>
+              {settled ? '00' : timer ?? '30'}<span style={{ fontSize: 11, marginLeft: 4, opacity: 0.7 }}>с</span>
+            </div>
+            {lobby?.gameNum && <small className="dw-pvp-gamenum">Игра #{lobby.gameNum}</small>}
           </div>
         )}
         {pastList.length > 0 && (
@@ -2821,11 +2824,7 @@ function ProfileTab({ player, filters, activeFilter, onFilterChange, history, to
       <PersonalStats player={player} onOpenMyRounds={onOpenMyRounds} />
 
       <div className="dw-home-strip">
-        <button className="dw-panel dw-nav-card" onClick={onOpenClans}>
-          <span className="dw-kicker">кланы</span>
-          <strong>Кланы</strong>
-        </button>
-        <button className="dw-panel dw-nav-card" onClick={onOpenRef}>
+        <button className="dw-panel dw-nav-card" onClick={onOpenRef} style={{ gridColumn: '1 / -1' }}>
           <span className="dw-kicker">реферал</span>
           <strong>10%</strong>
         </button>
