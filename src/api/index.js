@@ -420,7 +420,7 @@ app.post('/api/lucky-buy',
   }
 );
 app.get('/api/lucky-buy/feed', async (req, res, next) => {
-  try { res.json({ feed: await getLuckyFeed(10) }); } catch (e) { next(e); }
+  try { res.json({ feed: await getLuckyFeed(1) }); } catch (e) { next(e); }
 });
 
 app.get('/api/tournament', async (req, res, next) => {
