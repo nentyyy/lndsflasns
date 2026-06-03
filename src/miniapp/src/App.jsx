@@ -758,6 +758,7 @@ function App() {
               pvpTotalReveals={state.player.pvpTotalReveals || 0}
               pvpState={pvpState}
               pvpBuying={pvpBuying}
+              myUserId={state.player.id}
               lastWinner={liveWins[0] || null}
               onOpenRounds={() => setRoundsOpen(true)}
               onArmRound={armRound}
@@ -1525,7 +1526,7 @@ function PvpWinnerStat({ label, winner, amount, right, onClick }) {
   );
 }
 
-function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvpTotalReveals, lastWinner = null, onOpenRounds, onBuyPvpCard, onBetRandom, onOpenDeposit, onOpenPlayerProfile }) {
+function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvpTotalReveals, myUserId, lastWinner = null, onOpenRounds, onBuyPvpCard, onBetRandom, onOpenDeposit, onOpenPlayerProfile }) {
   const [tick, setTick] = useState(0);
   const [shuffling, setShuffling] = useState(false);
   const [revealStep, setRevealStep] = useState(9999); // сколько ячеек уже раскрыто (9999 = все)
@@ -1715,7 +1716,7 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
       )}
 
       {/* Перелистывание прошлых игр с результатами */}
-      <GameBrowser currentGameNum={lobby?.gameNum || null} />
+      <GameBrowser currentGameNum={lobby?.gameNum || null} cardCount={cardCount} myUserId={myUserId} onOpenPlayerProfile={onOpenPlayerProfile} />
 
       {settled && (
         <div className="dw-pvp-empty">
@@ -1726,11 +1727,12 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   );
 }
 
-// Листалка прошлых раундов: ‹ Игра #N › с итогами (победитель + банк).
-function GameBrowser({ currentGameNum }) {
+// Листалка прошлых раундов: ‹ Игра #N › открывает поле прошлой игры с результатами.
+function GameBrowser({ currentGameNum, cardCount = 36, myUserId, onOpenPlayerProfile }) {
   const [list, setList] = useState([]);
   const [idx, setIdx] = useState(0);
   const [detail, setDetail] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     api.rounds('all', 0, 50).then((d) => { setList(d.rounds || []); setIdx(0); }).catch(() => {});
@@ -1740,13 +1742,19 @@ function GameBrowser({ currentGameNum }) {
   useEffect(() => {
     if (!round) { setDetail(null); return; }
     let cancelled = false;
-    api.roundDetail(round.lobbyId).then((d) => { if (!cancelled) setDetail(d); }).catch(() => {});
+    setLoading(true);
+    api.roundDetail(round.lobbyId).then((d) => { if (!cancelled) setDetail(d); }).catch(() => {}).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [round?.lobbyId]);
 
   if (!list.length) return null;
   const winner = round?.winner;
   const wu = winner ? userDisplay(winner) : null;
+
+  // Карта по индексу из деталей раунда (cardIndex → {owner, prize}).
+  const byIndex = {};
+  (detail?.players || []).forEach((p) => { byIndex[p.cardIndex] = p; });
+  const rows = buildPvpRows(cardCount);
 
   return (
     <div className="dw-game-browser">
@@ -1755,26 +1763,54 @@ function GameBrowser({ currentGameNum }) {
         <span className="dw-game-browser-title">Игра #{round?.roundNumber ?? '—'}</span>
         <button disabled={idx <= 0} onClick={() => setIdx((i) => Math.max(0, i - 1))}>›</button>
       </div>
+
       <div className="dw-game-browser-body">
         <span className="dw-game-browser-meta">
           {round?.players || 0} игроков · банк {formatCoins(round?.totalWon || 0)}
         </span>
-        {wu ? (
+        {wu && (
           <div className="dw-game-browser-winner">
-            <span className="dw-round-row-avatar" style={{ width: 22, height: 22, fontSize: 11, ...(wu.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}) }}>
+            <span className="dw-round-row-avatar" style={{ width: 20, height: 20, fontSize: 10, ...(wu.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}) }}>
               {wu.avatarUrl ? <img src={wu.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : wu.initial}
             </span>
             <span>{wu.displayName}</span>
             <strong className="gold">+{formatCoins(winner.amount)}</strong>
           </div>
-        ) : (
-          <span className="dw-game-browser-meta">Без победителя</span>
         )}
       </div>
-      {detail && detail.players?.length > 0 && (
-        <div className="dw-game-browser-cards">
-          {detail.players.filter((p) => p.prize > 0).slice(0, 8).map((p, i) => (
-            <span key={i} className="dw-game-browser-chip">#{p.cardIndex + 1}: +{formatCoins(p.prize)}</span>
+
+      {/* Поле прошлой игры: моя ячейка синяя, чужие жёлтые/пустые, у занятых — аватар */}
+      {loading ? (
+        <div className="dw-pay-loading" style={{ padding: 12 }}><div className="dw-pay-spinner" /></div>
+      ) : (
+        <div className="dw-pvp-grid-36 dw-game-browser-grid">
+          {rows.map((row, ri) => (
+            <div key={ri} className={`dw-pvp-row ${row.type}`}>
+              {row.indices.map((i) => {
+                const p = byIndex[i];
+                const mine = p && String(p.userId) === String(myUserId);
+                const prize = p ? p.prize : 0;
+                const win = prize > 0;
+                const cls = [
+                  'dw-pvp-card', 'dw-pvp-card--locked', 'revealed',
+                  win && mine ? 'win-mine' : '',
+                  win && !mine ? 'win-other' : '',
+                  !win ? 'empty' : ''
+                ].filter(Boolean).join(' ');
+                const u = p ? userDisplay(p) : null;
+                return (
+                  <div key={i} className={cls}>
+                    {u && (
+                      <button className="dw-pvp-avatar-btn" onClick={(e) => { e.stopPropagation(); onOpenPlayerProfile?.(p.userId); }}
+                        style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+                        {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span className="dw-pvp-avatar">{u.initial}</span>}
+                      </button>
+                    )}
+                    {win && <span className="dw-pvp-card-big">{prize}</span>}
+                  </div>
+                );
+              })}
+            </div>
           ))}
         </div>
       )}

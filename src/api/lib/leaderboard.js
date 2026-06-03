@@ -58,24 +58,22 @@ export async function getPersonalStats(userId) {
   const p = await db('players').where({ user_id: userId }).first();
   if (!p) return null;
 
-  // «Игра» = ЗАВЕРШЁННЫЙ раунд, в котором участвовал игрок. PvP считаем по
-  // УНИКАЛЬНЫМ settled-лобби (совпадает с историей «Мои»); solo — по revealed.
-  // Победа PvP = settled-лобби, где есть хоть одна карта с призом > 0.
-  const [soloPlayed, soloWins, pvpPlayed, pvpWinLobbies, fav] = await Promise.all([
-    db('rounds').where({ user_id: userId, status: 'revealed' }).count('* as n').first(),
-    db('rounds').where({ user_id: userId, status: 'revealed' }).where('credit', '>', 0).count('* as n').first(),
+  // «Игра» = PvP-раунд, в котором участвовал игрок. Считаем по УНИКАЛЬНЫМ
+  // settled-лобби с round_number — ТОЧНО как история «Мои» (listRounds sort:mine),
+  // чтобы счётчик совпадал. Победа = settled-лобби с картой приза > 0.
+  const [pvpPlayed, pvpWinLobbies, fav] = await Promise.all([
     db('pvp_cards as c').join('pvp_lobbies as l', 'c.lobby_id', 'l.id')
-      .where('c.user_id', userId).where('l.status', 'settled')
+      .where('c.user_id', userId).where('l.status', 'settled').whereNotNull('l.round_number')
       .countDistinct('c.lobby_id as n').first(),
     db('pvp_cards as c').join('pvp_lobbies as l', 'c.lobby_id', 'l.id')
-      .where('c.user_id', userId).where('l.status', 'settled').where('c.credit', '>', 0)
+      .where('c.user_id', userId).where('l.status', 'settled').whereNotNull('l.round_number').where('c.credit', '>', 0)
       .countDistinct('c.lobby_id as n').first(),
     db('portals_purchases').where({ user_id: userId }).groupBy('gift_name').orderBy('n', 'desc')
       .select('gift_name').count('* as n').first()
   ]);
 
-  const roundsPlayed = Number(soloPlayed?.n || 0) + Number(pvpPlayed?.n || 0);
-  const wins = Number(soloWins?.n || 0) + Number(pvpWinLobbies?.n || 0);
+  const roundsPlayed = Number(pvpPlayed?.n || 0);
+  const wins = Number(pvpWinLobbies?.n || 0);
   return {
     roundsPlayed,
     wins,
