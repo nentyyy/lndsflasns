@@ -2617,6 +2617,10 @@ function LuckyBuyModal({ gift, player, onClose }) {
             ))}
           </div>
         )}
+
+        <button className="dw-btn ghost full" style={{ marginTop: 14 }} disabled={spinning} onClick={onClose}>
+          Закрыть
+        </button>
       </motion.div>
     </motion.div>
   );
