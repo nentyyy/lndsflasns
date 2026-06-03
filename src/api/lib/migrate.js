@@ -316,6 +316,10 @@ export async function migrate() {
   if (ppCols && !ppCols.idempotency_key) {
     await db.schema.alterTable('portals_purchases', (t) => t.string('idempotency_key').nullable().unique());
   }
+  // source: shop | lucky | points | clan — откуда подарок попал в инвентарь.
+  // gift_file — для отрисовки в инвентаре. Новый статус 'owned' (в инвентаре).
+  if (ppCols && !ppCols.source)    await db.schema.alterTable('portals_purchases', (t) => t.string('source').notNullable().defaultTo('shop'));
+  if (ppCols && !ppCols.gift_file) await db.schema.alterTable('portals_purchases', (t) => t.string('gift_file').nullable());
 
   // Аудит админских действий
   if (!(await db.schema.hasTable('admin_log'))) {

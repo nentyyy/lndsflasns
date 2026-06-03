@@ -115,6 +115,7 @@ function App() {
   const [shopTab, setShopTab] = useState('nft');
   const [historyFilter, setHistoryFilter] = useState('all');
   const [toast, setToast] = useState(null);
+  const [cardsModalOpen, setCardsModalOpen] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('stars');
   const [payPending, setPayPending] = useState(false);
@@ -739,7 +740,7 @@ function App() {
 
       <div className="dw-phone-shell">
         <main className="dw-app">
-          <TopBar player={state.player} tonWallet={tonWallet} onOpenDeposit={() => { setDepositOpen(true); setDepositView('main'); setTonIntent(null); }} onOpenTutorial={() => setTutorialOpen(true)} />
+          <TopBar player={state.player} tonWallet={tonWallet} onOpenDeposit={() => { setDepositOpen(true); setDepositView('main'); setTonIntent(null); }} onOpenTutorial={() => setTutorialOpen(true)} onOpenCards={() => setCardsModalOpen(true)} />
 
           {tab === 'play' && (
             <WillTab
@@ -814,6 +815,8 @@ function App() {
               onOpenRef={() => setTab('referral')}
               onOpenWheel={() => setWheelOpen(true)}
               onOpenMyRounds={() => setRoundsOpen('mine')}
+              onNotify={notify}
+              onBalance={(coins) => setState((c) => ({ ...c, player: { ...c.player, coins } }))}
             />
           )}
         </main>
@@ -865,6 +868,10 @@ function App() {
 
       {roundsOpen && (
         <RoundsHistory myId={state.player.id} initialSort={typeof roundsOpen === 'string' ? roundsOpen : 'all'} onClose={() => setRoundsOpen(false)} />
+      )}
+
+      {cardsModalOpen && (
+        <CardsModal player={state.player} onBuy={buyCardsCount} onClose={() => setCardsModalOpen(false)} />
       )}
 
       {tutorialOpen && (
@@ -1156,39 +1163,64 @@ function WheelModal({ onClose, onReward }) {
 
 /* ─── Top bar ─────────────────────────────────────────────── */
 
-function TopBar({ player, tonWallet, onOpenDeposit, onOpenTutorial }) {
+function TopBar({ player, tonWallet, onOpenDeposit, onOpenTutorial, onOpenCards }) {
   const u = userDisplay(player);
+  const cards = player?.tickets?.cheap || 0;
   return (
     <motion.header className="dw-topbar"
       initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: [0.2, 0, 0, 1] }}>
-      <div className="dw-profile-compact">
-        <div className="dw-avatar" style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
-          {u.avatarUrl
-            ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-            : u.initial}
-        </div>
-        <div className="dw-profile-copy-compact">
-          <strong>
-            {u.displayName}
-            {u.badge && <span className="dw-badge" style={{ fontSize: 10, marginLeft: 6, verticalAlign: 'middle' }}>{u.badge}</span>}
-          </strong>
-          {tonWallet && (
-            <motion.span className="dw-ton-status"
-              initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.25 }}>
-              <span className="dw-ton-dot" />
-              <span className="dw-ton-addr">{tonWallet.address.slice(0, 4)}…{tonWallet.address.slice(-4)}</span>
-            </motion.span>
-          )}
-        </div>
+      <div className="dw-avatar" style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+        {u.avatarUrl
+          ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+          : u.initial}
       </div>
       <button className="dw-help-btn" onClick={onOpenTutorial} aria-label="Как играть">?</button>
+      <button className="dw-cards-pill" onClick={onOpenCards}>
+        🎴 <strong>{formatCoins(cards)}</strong>
+      </button>
+      <div style={{ flex: 1 }} />
       <button className="dw-balance-pill" onClick={onOpenDeposit}>
         <span className="dw-coin-dot" />
         <strong className="dw-balance-num">{formatCoins(player.coins)}</strong>
         <span className="dw-plus-sign">+</span>
       </button>
     </motion.header>
+  );
+}
+
+/* Модал покупки PvP-карт из топбара */
+function CardsModal({ player, onBuy, onClose }) {
+  const [count, setCount] = useState(1);
+  const cards = player?.tickets?.cheap || 0;
+  const PRICE = 5;
+  const total = count * PRICE;
+  const canAfford = (player?.coins || 0) >= total;
+  return (
+    <motion.div className="dw-sheet-backdrop" onClick={onClose}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <motion.div className="dw-cards-modal" onClick={(e) => e.stopPropagation()}
+        initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
+        <div className="dw-round-result-header">
+          <h2>🎴 Карты</h2>
+          <button className="dw-icon-btn" onClick={onClose}>×</button>
+        </div>
+        <p style={{ fontSize: 14, margin: '0 0 4px' }}>PvP-карты: <strong>{formatCoins(cards)}</strong> шт.</p>
+        <p style={{ fontSize: 13, color: 'var(--bone-soft)', margin: '0 0 14px' }}>Стоимость: {PRICE} дбл./карта</p>
+        <div className="dw-bet-control">
+          <div className="dw-bet-stepper">
+            <button onClick={() => setCount(Math.max(1, count - 1))} disabled={count <= 1}>−</button>
+            <span className="dw-bet-count">{count}</span>
+            <button onClick={() => setCount(Math.min(500, count + 1))} disabled={count >= 500}>+</button>
+          </div>
+          <button className={`dw-btn ${canAfford ? 'primary' : 'ghost'} dw-bet-go`}
+            disabled={!canAfford}
+            onClick={async () => { await onBuy('cheap', count); onClose(); }}>
+            {canAfford ? `Купить — ${formatCoins(total)} дбл.` : 'Мало дублонов'}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -1635,14 +1667,6 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
             ))}
           </div>
         ))}
-      </div>
-
-      {/* Free spin counter */}
-      <div className="dw-pvp-free-counter">
-        {isFreeNext
-          ? <span className="dw-free-next">Следующее открытие — <strong>бесплатное!</strong></span>
-          : <span>Ещё <strong>{tillFree}</strong> открытий до бесплатного</span>
-        }
       </div>
 
       {/* Управление ставкой */}
@@ -2444,8 +2468,8 @@ function LuckyBuyModal({ gift, player, onClose }) {
   const touchStartY = React.useRef(null);
 
   const price = Number(gift.priceCoins) || 0;
-  // bet = price * chance/100 * 0.95 — точность до 0.01 (не округляем до целого).
-  const bet = Math.max(0.01, Math.round(price * chance / 100 * 0.95 * 100) / 100);
+  // bet = price * chance/100 * 0.70 (RTP 70%) — точность до 0.01.
+  const bet = Math.max(0.01, Math.round(price * chance / 100 * 0.70 * 100) / 100);
   // Показываем дробные с 2 знаками, целые — без хвоста.
   const fmtBet = (b) => Number.isInteger(b) ? formatCoins(b) : b.toFixed(2);
   const mult = price > 0 && bet > 0 ? (price / bet).toFixed(1) : '—';
@@ -2598,9 +2622,119 @@ function LuckyBuyModal({ gift, player, onClose }) {
   );
 }
 
+/* ─── Инвентарь ───────────────────────────────────────────── */
+
+function Inventory({ onNotify, onBalance }) {
+  const [data, setData] = useState(null);
+  const [tab, setTab] = useState('all'); // all | gifts | artifacts
+  const [confirm, setConfirm] = useState(null); // { kind, action, item }
+  const [busy, setBusy] = useState(false);
+
+  const load = () => api.inventory().then(setData).catch(() => setData({ gifts: [], artifacts: [] }));
+  useEffect(() => { load(); }, []);
+
+  if (!data) return <article className="dw-panel" style={{ marginBottom: 12 }}><p style={{ color: 'var(--bone-soft)', textAlign: 'center', fontSize: 13 }}>Загрузка…</p></article>;
+
+  const gifts = data.gifts || [];
+  const arts = data.artifacts || [];
+  const empty = gifts.length === 0 && arts.length === 0;
+  const showGifts = tab === 'all' || tab === 'gifts';
+  const showArts = tab === 'all' || tab === 'artifacts';
+
+  const doSell = async (item) => {
+    setBusy(true);
+    try {
+      const res = await api.sellInvItem(item.id, item.kind);
+      if (res.player) onBalance?.(res.player.coins);
+      onNotify?.(`Продано: ${item.name} (+${formatCoins(res.payout)} дбл.)`, 'success');
+      setConfirm(null); await load();
+    } catch (e) { onNotify?.('Не удалось продать', 'danger'); }
+    finally { setBusy(false); }
+  };
+  const doWithdraw = async (item) => {
+    setBusy(true);
+    try {
+      await api.withdrawInvItem(item.id);
+      onNotify?.('Заявка на вывод создана — жди подтверждения', 'success');
+      setConfirm(null); await load();
+    } catch (e) { onNotify?.('Не удалось создать заявку', 'danger'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <article className="dw-panel" style={{ marginBottom: 12 }}>
+      <div className="dw-panel-head" style={{ marginBottom: 10 }}><h2>Инвентарь</h2></div>
+      <div className="dw-shop-tabs" style={{ marginBottom: 12 }}>
+        <button className={tab === 'all' ? 'active' : ''} onClick={() => setTab('all')}>Всё</button>
+        <button className={tab === 'gifts' ? 'active' : ''} onClick={() => setTab('gifts')}>Подарки</button>
+        <button className={tab === 'artifacts' ? 'active' : ''} onClick={() => setTab('artifacts')}>Артефакты</button>
+      </div>
+
+      {empty && <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: '16px 0', fontSize: 14 }}>Здесь пока пусто — загляни в магазин</p>}
+
+      {showGifts && gifts.map((g) => (
+        <div key={g.id} className="dw-inv-row">
+          <div className="dw-inv-img">{g.file ? <img src={`/gifts/${g.file}`} alt="" /> : '🎁'}</div>
+          <div className="dw-inv-info">
+            <strong>{g.name}</strong>
+            <small>{g.sourceLabel} · {formatCoins(g.priceCoins)} дбл.</small>
+          </div>
+          <div className="dw-inv-actions">
+            <button className="dw-btn ghost small" onClick={() => setConfirm({ action: 'sell', item: g })}>Продать</button>
+            <button className="dw-btn primary small" onClick={() => setConfirm({ action: 'withdraw', item: g })}>Вывести</button>
+          </div>
+        </div>
+      ))}
+
+      {showArts && arts.map((a) => (
+        <div key={a.id} className="dw-inv-row">
+          <div className="dw-inv-img">{artIcon(a.artifactId)}</div>
+          <div className="dw-inv-info">
+            <strong>{a.name} ×{a.quantity}</strong>
+            <small>{a.description}</small>
+          </div>
+          <div className="dw-inv-actions">
+            <button className="dw-btn ghost small" onClick={() => setConfirm({ action: 'sell', item: a })}>Продать</button>
+          </div>
+        </div>
+      ))}
+
+      {confirm && (
+        <div className="dw-sheet-backdrop" onClick={() => !busy && setConfirm(null)} style={{ zIndex: 50 }}>
+          <div className="dw-cards-modal" onClick={(e) => e.stopPropagation()}>
+            {confirm.action === 'sell' ? (
+              <>
+                <h2 style={{ fontSize: 17, marginBottom: 10 }}>Продать?</h2>
+                <p style={{ fontSize: 14, color: 'var(--bone-soft)', marginBottom: 14 }}>
+                  Продать «{confirm.item.name}» за {formatCoins(confirm.item.kind === 'gift' ? Math.round(confirm.item.priceCoins * 0.7) : Math.round(confirm.item.price * 0.5))} дбл.?
+                </p>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button className="dw-btn ghost" style={{ flex: 1 }} disabled={busy} onClick={() => setConfirm(null)}>Отмена</button>
+                  <button className="dw-btn primary" style={{ flex: 1 }} disabled={busy} onClick={() => doSell(confirm.item)}>Продать</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 style={{ fontSize: 17, marginBottom: 10 }}>Вывести подарок</h2>
+                <p style={{ fontSize: 13, color: 'var(--bone-soft)', marginBottom: 14 }}>
+                  «{confirm.item.name}» будет отправлен через Telegram после подтверждения админом. Заявка уйдёт в обработку.
+                </p>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button className="dw-btn ghost" style={{ flex: 1 }} disabled={busy} onClick={() => setConfirm(null)}>Отмена</button>
+                  <button className="dw-btn primary" style={{ flex: 1 }} disabled={busy} onClick={() => doWithdraw(confirm.item)}>Вывести</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </article>
+  );
+}
+
 /* ─── Profile tab ─────────────────────────────────────────── */
 
-function ProfileTab({ player, filters, activeFilter, onFilterChange, history, tonWallet, onConnectTon, onDisconnectTon, onOpenAdmin, onOpenClans, onOpenRef, onOpenWheel, onOpenMyRounds }) {
+function ProfileTab({ player, filters, activeFilter, onFilterChange, history, tonWallet, onConnectTon, onDisconnectTon, onOpenAdmin, onOpenClans, onOpenRef, onOpenWheel, onOpenMyRounds, onNotify, onBalance }) {
   const u = userDisplay(player);
   const [showId, setShowId] = useState(false);
   return (
@@ -2641,6 +2775,8 @@ function ProfileTab({ player, filters, activeFilter, onFilterChange, history, to
           <WheelBanner bonusPct={player.wheelDepositBonusPct} onOpen={onOpenWheel} />
         </div>
       )}
+
+      <Inventory onNotify={onNotify} onBalance={onBalance} />
 
       <article className="dw-panel" style={{ marginBottom: 12 }}>
         <div className="dw-panel-head" style={{ marginBottom: 10 }}>

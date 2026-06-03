@@ -2,18 +2,16 @@ import { randomUUID } from 'node:crypto';
 import { db } from './db.js';
 import { debit, round2 } from './wallet.js';
 import { getGiftFromCache } from './portals.js';
-import { notifyAdminsPurchase } from './admin-notify.js';
 import { addPoints } from './points.js';
 
 export class LuckyError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
 
-// Ставка в ДУБЛОНАХ: за шанс X% выиграть подарок ценой P ты платишь P*X/100*0.95.
-// (Больший шанс = больше платишь, но чаще выигрываешь. Меньший шанс = лотерея.)
-// Точность до 0.01 — НЕ округляем до целого (иначе дешёвые подарки = 1 дбл.).
+// Ставка в ДУБЛОНАХ: за шанс X% выиграть подарок ценой P ты платишь P*X/100*0.70.
+// RTP 70%. Точность до 0.01 — НЕ округляем до целого.
 export function luckyBet(priceCoins, chancePercent) {
-  return Math.max(0.01, round2(priceCoins * chancePercent / 100 * 0.95));
+  return Math.max(0.01, round2(priceCoins * chancePercent / 100 * 0.70));
 }
 // Множитель = приз / ставка (показывает "в сколько раз приз больше ставки").
 export function luckyMultiplier(priceCoins, chancePercent) {
@@ -44,18 +42,15 @@ export async function playLuckyBuy(userId, giftId, chancePercentRaw) {
     });
     if (won) {
       purchaseId = randomUUID();
+      // Выигранный подарок падает в ИНВЕНТАРЬ (owned), цена = полная стоимость подарка.
       await trx('portals_purchases').insert({
         id: purchaseId, user_id: String(userId),
-        gift_id: gift.id, gift_name: gift.name, price_coins: bet,
-        idempotency_key: `lucky:${attemptId}`, status: 'pending'
+        gift_id: gift.id, gift_name: gift.name, gift_file: gift.file || null,
+        price_coins: priceCoins, idempotency_key: `lucky:${attemptId}`,
+        source: 'lucky', status: 'owned'
       });
     }
   });
-
-  if (won) {
-    notifyAdminsPurchase({ id: purchaseId, user_id: String(userId), gift_id: gift.id, gift_name: gift.name, price_coins: bet })
-      .catch((e) => console.error('lucky notify err', e.message));
-  }
 
   return {
     won, betCoins: bet, chance,

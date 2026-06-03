@@ -180,20 +180,15 @@ bot.on('callback_query:data', async (ctx) => {
     return ctx.answerCallbackQuery({ text: 'Одобрено' });
   }
 
-  // reject → возврат дублонов покупателю
-  try {
-    await db.transaction(async (trx) => {
-      await credit(trx, purchase.user_id, Number(purchase.price_coins), 'portals_refund', `refund:${purchaseId}`);
-    });
-  } catch (e) { console.error('refund err', e.message); }
-  await db('portals_purchases').where({ id: purchaseId }).update({ status: 'rejected' });
+  // reject → подарок возвращается в инвентарь игрока (не списываем, не рефандим).
+  await db('portals_purchases').where({ id: purchaseId }).update({ status: 'owned' });
 
-  await ctx.editMessageText(`${baseText}\n\n❌ ОТКЛОНЕНО (${by}) — дублоны возвращены`).catch(() => {});
+  await ctx.editMessageText(`${baseText}\n\n❌ ОТКЛОНЕНО (${by}) — подарок вернулся в инвентарь`).catch(() => {});
   try {
     await ctx.api.sendMessage(purchase.user_id,
-      `Заявка на подарок «${purchase.gift_name}» отклонена. ${purchase.price_coins} дублонов возвращены на баланс.`);
+      `Заявка на вывод «${purchase.gift_name}» отклонена. Подарок остался в твоём инвентаре.`);
   } catch (e) { console.warn('notify buyer err', e.message); }
-  return ctx.answerCallbackQuery({ text: 'Отклонено, возврат сделан' });
+  return ctx.answerCallbackQuery({ text: 'Отклонено, подарок в инвентаре' });
 });
 
 bot.on('message:successful_payment', async (ctx) => {

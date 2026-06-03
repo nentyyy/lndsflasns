@@ -810,7 +810,8 @@ app.post('/api/portals/buy',
 
       const purchaseId = randomUUID();
 
-      // Одна транзакция: проверка баланса (FOR UPDATE внутри debit) → списание → запись покупки.
+      // Одна транзакция: списание → подарок падает в ИНВЕНТАРЬ (status 'owned').
+      // Вывод/продажа — отдельные действия из инвентаря.
       await db.transaction(async (trx) => {
         await walletDebit(trx, req.user.id, price, 'portals_buy', `portals:${purchaseId}`);
         await trx('portals_purchases').insert({
@@ -818,25 +819,50 @@ app.post('/api/portals/buy',
           user_id: req.user.id,
           gift_id: gift.id,
           gift_name: gift.name,
+          gift_file: gift.file || null,
           price_coins: price,
           idempotency_key: idemKey,
-          status: 'pending'
+          source: 'shop',
+          status: 'owned'
         });
       });
 
-      // Заявка на вывод → уведомляем админов с кнопками Одобрить/Отклонить.
-      // Подарок выдаётся только после одобрения (см. bot callback_query).
-      const purchaseRow = { id: purchaseId, user_id: String(req.user.id), gift_id: gift.id, gift_name: gift.name, price_coins: price };
-      notifyAdminsPurchase(purchaseRow).catch((e) => console.error('admin notify err', e.message));
-
       const player = await db('players').where({ user_id: req.user.id }).first();
-      res.json({ purchaseId, status: 'pending', priceCoins: price, player: playerView(player) });
+      res.json({ purchaseId, status: 'owned', priceCoins: price, player: playerView(player) });
     } catch (e) {
       if (e instanceof InsufficientFunds) return res.status(400).json({ error: 'insufficient_balance' });
       next(e);
     }
   }
 );
+
+// ─── Инвентарь ───
+import { getInventory, sellGift, withdrawGift, sellArtifact, InventoryError } from './lib/inventory.js';
+
+app.get('/api/player/inventory', async (req, res, next) => {
+  try { res.json(await getInventory(req.user.id)); } catch (e) { next(e); }
+});
+app.post('/api/player/inventory/:id/sell', async (req, res, next) => {
+  try {
+    const kind = req.body?.kind === 'artifact' ? 'artifact' : 'gift';
+    const out = kind === 'artifact'
+      ? await sellArtifact(req.user.id, String(req.params.id))
+      : await sellGift(req.user.id, String(req.params.id));
+    const player = await db('players').where({ user_id: req.user.id }).first();
+    res.json({ ...out, player: playerView(player) });
+  } catch (e) {
+    if (e instanceof InventoryError) return res.status(e.status).json({ error: e.message });
+    next(e);
+  }
+});
+app.post('/api/player/inventory/:id/withdraw', async (req, res, next) => {
+  try {
+    res.json(await withdrawGift(req.user.id, String(req.params.id)));
+  } catch (e) {
+    if (e instanceof InventoryError) return res.status(e.status).json({ error: e.message });
+    next(e);
+  }
+});
 
 // ─── Clans ───
 import { listClans, getMyClan, createClan, joinClan, leaveClan, kickMember, setRole, deleteClan, contributeToChest, withdrawChest, getClanLeaderboard, getChatMessages, sendChatMessage, requestArtifact, requestCard, giveTrade, ClanError } from './lib/clans.js';

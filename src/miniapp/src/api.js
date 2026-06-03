@@ -157,6 +157,10 @@ export const api = {
   // Lucky Buy
   luckyBuy: (giftId, chancePercent) => request('/api/lucky-buy', { method: 'POST', body: { giftId, chancePercent } }),
   luckyFeed: () => request('/api/lucky-buy/feed'),
+  // Inventory
+  inventory: () => request('/api/player/inventory'),
+  sellInvItem: (id, kind) => request(`/api/player/inventory/${id}/sell`, { method: 'POST', body: { kind } }),
+  withdrawInvItem: (id) => request(`/api/player/inventory/${id}/withdraw`, { method: 'POST', body: {} }),
   // Clans
   clans: () => request('/api/clans'),
   myClan: () => request('/api/clans/my'),

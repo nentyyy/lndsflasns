@@ -3,7 +3,6 @@ import { db } from './db.js';
 import { debit } from './wallet.js';
 import { getPoints, spendPoints } from './points.js';
 import { getGiftFromCache } from './portals.js';
-import { notifyAdminsPurchase } from './admin-notify.js';
 
 export class ArtifactError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -230,12 +229,12 @@ export async function spendPointsShop(userId, itemId, targetId) {
   const purchaseId = randomUUID();
   await db.transaction(async (trx) => {
     await spendPoints(trx, userId, item.cost);
+    // НФТ за поинты падает в ИНВЕНТАРЬ (owned); вывод — отдельным действием.
     await trx('portals_purchases').insert({
       id: purchaseId, user_id: String(userId), gift_id: gift.id, gift_name: gift.name,
-      price_coins: Number(gift.priceCoins) || 0, idempotency_key: `pts:${purchaseId}`, status: 'pending'
+      gift_file: gift.file || null, price_coins: Number(gift.priceCoins) || 0,
+      idempotency_key: `pts:${purchaseId}`, source: 'points', status: 'owned'
     });
   });
-  notifyAdminsPurchase({ id: purchaseId, user_id: String(userId), gift_id: gift.id, gift_name: gift.name, price_coins: Number(gift.priceCoins) || 0 })
-    .catch((e) => console.error('pts nft notify err', e.message));
   return { ok: true, granted: { type: 'nft', id: gift.id, name: gift.name }, purchaseId };
 }

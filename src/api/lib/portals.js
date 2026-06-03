@@ -37,6 +37,7 @@ export async function getGiftFromCache(giftId) {
   return {
     id: row.id,
     name: row.name,
+    file: row.file,
     priceCoins: Number(row.priceCoins),
     priceTon: Number(row.priceTon),
     stock: Number(row.stock),
