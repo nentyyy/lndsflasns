@@ -3880,3 +3880,136 @@ button:disabled, [disabled] { cursor: not-allowed; }
 /* Lucky Buy slider */
 .dw-lucky-slider { -webkit-appearance: none; height: 6px; border-radius: 3px; background: var(--surface-3); outline: none; }
 .dw-lucky-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--gold); cursor: pointer; }
+
+/* ═══════════ РЕДИЗАЙН: АТМОСФЕРА И ЗОЛОТО ═══════════ */
+:root { --ink: #0A0800; --ink-2: #0A0800; }
+body {
+  background:
+    radial-gradient(1100px 600px at 50% -120px, rgba(255,200,60,0.06), transparent 60%),
+    radial-gradient(900px 700px at 50% 110%, rgba(120,60,10,0.10), transparent 60%),
+    #0A0800;
+}
+/* тонкий noise поверх фона */
+body::after {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 1; opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Золотые кнопки с shimmer */
+.dw-btn.primary {
+  color: #2a1c00 !important;
+  background: linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #CC8800 100%) !important;
+  background-size: 200% auto !important;
+  box-shadow: 0 4px 20px rgba(255,165,0,0.4), 0 0 40px rgba(255,165,0,0.10) !important;
+}
+.dw-btn.primary:not(:disabled):hover,
+.dw-btn.primary:not(:disabled):active { animation: dw-shimmer 2s infinite linear; }
+.dw-btn.primary:active:not(:disabled) { transform: scale(0.97); box-shadow: 0 2px 10px rgba(255,165,0,0.3) !important; }
+@keyframes dw-shimmer { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
+
+/* Карточки-стекло */
+.dw-panel, .dw-nft-tile, .dw-artifact-tile, .dw-inv-row, .dw-clan-row, .dw-clan-lb-row {
+  border: 1px solid rgba(255,215,0,0.15) !important;
+  background: rgba(255,255,255,0.03) !important;
+  backdrop-filter: blur(10px);
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+.dw-nft-tile:hover, .dw-artifact-tile:hover, .dw-panel:hover {
+  border-color: rgba(255,215,0,0.4) !important;
+  box-shadow: 0 0 20px rgba(255,215,0,0.10);
+}
+
+/* Топбар: монета и баланс */
+.dw-balance-num { font-weight: 800 !important; letter-spacing: 0.02em; }
+.dw-coin-dot, .dw-coin-ico {
+  background: radial-gradient(circle at 35% 30%, #fff3c4, #FFD700 40%, #FFA500 70%, #CC8800) !important;
+  box-shadow: 0 0 8px rgba(255,200,60,0.6) !important;
+}
+
+/* Незанятые карты ПВП — тёмные с золотой рамкой, hover свечение */
+.dw-pvp-card { transition: border-color 200ms ease, box-shadow 200ms ease, transform 120ms ease; }
+.dw-pvp-card--pick:hover { border-color: var(--gold) !important; box-shadow: 0 0 12px rgba(255,215,0,0.3); }
+
+/* 🍀 lucky icon — золотой круг */
+.dw-lucky-icon {
+  width: 28px; height: 28px; font-size: 16px;
+  background: radial-gradient(circle at 35% 30%, #FFD700, #CC8800) !important;
+  color: #2a1c00 !important; box-shadow: 0 0 10px rgba(255,200,60,0.5);
+}
+
+/* Общие появления/модалки */
+.dw-sheet-backdrop { animation: dw-fade-in 150ms ease both; }
+@keyframes dw-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* Тряска экрана при проигрыше */
+@keyframes dw-shake {
+  0%,100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); } 40% { transform: translateX(4px); }
+  60% { transform: translateX(-4px); } 80% { transform: translateX(4px); }
+}
+.dw-shake { animation: dw-shake 400ms ease; }
+
+/* Частицы выигрыша */
+.dw-particles { position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 5; }
+.dw-particle {
+  position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--gold-bright); will-change: transform, opacity;
+  animation: dw-particle-fly 800ms ease-out forwards;
+}
+.dw-particle.blue { background: #4FC3F7; box-shadow: 0 0 6px #4FC3F7; }
+.dw-particle.gold { background: #FFD700; box-shadow: 0 0 6px #FFD700; }
+.dw-particle.big { width: 9px; height: 9px; }
+@keyframes dw-particle-fly {
+  0% { transform: translate(-50%,-50%) scale(0.3); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translate(var(--px,0), var(--py,-90px)) scale(1); opacity: 0; }
+}
+
+/* Белая вспышка при флипе выигрышной карты */
+.dw-pvp-card.flash::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  background: #fff; animation: dw-flash 450ms ease-out forwards; z-index: 4; pointer-events: none;
+}
+@keyframes dw-flash { 0% { opacity: 0.9; } 100% { opacity: 0; } }
+
+/* Пульс синей рамки моей выигрышной */
+.dw-pvp-card.win-mine { animation: dw-mine-pulse 1.4s ease-in-out infinite; }
+@keyframes dw-mine-pulse {
+  0%,100% { box-shadow: 0 0 7px rgba(79,195,247,0.28); }
+  50% { box-shadow: 0 0 18px rgba(79,195,247,0.7); }
+}
+
+/* Появление числа приза */
+.dw-pvp-card-big { animation: dw-num-pop 400ms cubic-bezier(0.34,1.56,0.64,1) both; }
+@keyframes dw-num-pop { 0% { transform: scale(0); } 60% { transform: scale(1.2); } 100% { transform: scale(1); } }
+
+/* MAX-приз: золотые кольца + надпись */
+.dw-pvp-card.maxprize .dw-ring {
+  position: absolute; inset: 0; border: 2px solid #FFD700; border-radius: inherit;
+  pointer-events: none; animation: dw-ripple 1s ease-out forwards;
+}
+@keyframes dw-ripple { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(3); opacity: 0; } }
+.dw-max-label {
+  position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+  font-family: var(--font-display); font-size: 10px; font-weight: 900; color: #FFD700;
+  text-shadow: 0 0 8px rgba(255,215,0,0.8); z-index: 6; animation: dw-max-blink 0.5s steps(1) 3;
+}
+@keyframes dw-max-blink { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
+
+/* Result modal градиент по краям */
+.dw-round-result.win-glow { box-shadow: inset 0 0 60px rgba(255,215,0,0.18), 0 -10px 40px rgba(0,0,0,0.6); }
+.dw-round-result.lose-glow { box-shadow: inset 0 0 60px rgba(160,26,38,0.22), 0 -10px 40px rgba(0,0,0,0.6); }
+.dw-round-row { animation: dw-row-in 0.4s ease both; }
+@keyframes dw-row-in { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
+
+/* Колесо: проигрыш — тускнеет */
+.dw-wheel-svg.dimmed { opacity: 0.7; transition: opacity 300ms; }
+.dw-wheel-svg.shake { animation: dw-shake 400ms ease; }
+
+/* Вспышка баланса при пополнении */
+.dw-balance-bump { animation: dw-balance-bump 0.6s ease; }
+@keyframes dw-balance-bump {
+  0% { transform: scale(1); color: var(--vellum); }
+  50% { transform: scale(1.3); color: #FFD700; text-shadow: 0 0 12px rgba(255,215,0,0.8); }
+  100% { transform: scale(1); }
+}

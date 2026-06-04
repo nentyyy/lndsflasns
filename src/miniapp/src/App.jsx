@@ -766,7 +766,7 @@ function App() {
               onResetRound={resetRound}
               onBuyPvpCard={buyPvpCard}
               onBetRandom={buyRandomCells}
-              onOpenDeposit={() => { setDepositOpen(true); setDepositView('main'); setTonIntent(null); }}
+              onOpenDeposit={() => { setDepositOpen(true); setDepositView('cards'); setTonIntent(null); }}
               onOpenShopTickets={() => { setTab('shop'); setShopTab('tickets'); }}
               onOpenPlayerProfile={openPlayerProfile}
             />
@@ -1167,6 +1167,26 @@ function WheelModal({ onClose, onReward }) {
 function TopBar({ player, tonWallet, onOpenDeposit, onOpenTutorial, onOpenCards }) {
   const u = userDisplay(player);
   const cards = player?.tickets?.cheap || 0;
+
+  // Count-up + вспышка при изменении баланса.
+  const [shown, setShown] = React.useState(player.coins);
+  const [bump, setBump] = React.useState(false);
+  const prevBal = React.useRef(player.coins);
+  React.useEffect(() => {
+    const from = prevBal.current, to = player.coins;
+    prevBal.current = to;
+    if (from === to) { setShown(to); return; }
+    if (to > from) { setBump(true); window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light'); setTimeout(() => setBump(false), 600); }
+    let raf; const start = performance.now(); const dur = 600;
+    const step = (now) => {
+      const p = Math.min(1, (now - start) / dur);
+      setShown(Math.round((from + (to - from) * (1 - Math.pow(1 - p, 3))) * 100) / 100);
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [player.coins]);
+
   return (
     <motion.header className="dw-topbar"
       initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
@@ -1183,7 +1203,7 @@ function TopBar({ player, tonWallet, onOpenDeposit, onOpenTutorial, onOpenCards 
       <div style={{ flex: 1 }} />
       <button className="dw-balance-pill" onClick={onOpenDeposit}>
         <span className="dw-coin-dot" />
-        <strong className="dw-balance-num">{formatCoins(player.coins)}</strong>
+        <strong className={`dw-balance-num${bump ? ' dw-balance-bump' : ''}`}>{formatCoins(shown)}</strong>
         <span className="dw-plus-sign">+</span>
       </button>
     </motion.header>
@@ -1456,11 +1476,33 @@ function PvpCard({ card, idx, settled, revealOpen = true, pickable = false, artP
   const credit = isRevealed ? (card.outcome.credit || 0) : 0;
   const win = isRevealed && credit > 0;
   const empty = isRevealed && credit === 0;
+  const isMax = credit >= 65; // максимальный приз — спецэффект
   // Монетка по номиналу: золото >=20, серебро 8-19, бронза 1-7, скрыта при 0.
   const coinTier = credit >= 20 ? 'gold' : credit >= 8 ? 'silver' : credit >= 1 ? 'bronze' : null;
   // Цвет рамки выигрышной: моя — синяя, чужая — жёлтая.
   const winMine = win && card.mine;
   const winOther = win && !card.mine;
+
+  // Эффект однократно при появлении выигрыша: вспышка + частицы + вибрация.
+  const [fx, setFx] = React.useState(false);
+  const firedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (win && !firedRef.current) {
+      firedRef.current = true;
+      setFx(true);
+      const h = window.Telegram?.WebApp?.HapticFeedback;
+      if (isMax) { h?.impactOccurred?.('heavy'); setTimeout(() => h?.impactOccurred?.('heavy'), 120); setTimeout(() => h?.impactOccurred?.('rigid'), 260); }
+      else if (winMine) h?.impactOccurred?.('heavy');
+      else h?.impactOccurred?.('medium');
+      const t = setTimeout(() => setFx(false), 900);
+      return () => clearTimeout(t);
+    }
+    if (!win) firedRef.current = false;
+  }, [win, winMine, isMax]);
+
+  // Частицы: моя — синие, остальные золотые. MAX — больше и ярче.
+  const particleCount = isMax ? 18 : 12;
+  const particleClass = winMine ? 'blue' : 'gold';
 
   const cls = [
     'dw-pvp-card',
@@ -1472,6 +1514,8 @@ function PvpCard({ card, idx, settled, revealOpen = true, pickable = false, artP
     winMine ? 'win-mine' : '',
     winOther ? 'win-other' : '',
     empty ? 'empty' : '',
+    isMax ? 'maxprize' : '',
+    fx ? 'flash' : '',
     shuffling ? 'shuffling' : ''
   ].filter(Boolean).join(' ');
 
@@ -1486,6 +1530,22 @@ function PvpCard({ card, idx, settled, revealOpen = true, pickable = false, artP
       transition={{ duration: 0.18, delay: 0.008 * idx }}
       whileTap={handleClick ? { scale: 0.95 } : undefined}
     >
+      {isMax && win && <span className="dw-max-label">MAX</span>}
+      {isMax && win && fx && [0, 1, 2].map((k) => (
+        <span key={k} className="dw-ring" style={{ animationDelay: `${k * 0.2}s` }} />
+      ))}
+      {win && fx && (
+        <span className="dw-particles">
+          {Array.from({ length: particleCount }).map((_, k) => {
+            const ang = (Math.PI * 2 * k) / particleCount + (Math.random() - 0.5);
+            const dist = (isMax ? 90 : 60) + Math.random() * (isMax ? 40 : 40);
+            return (
+              <span key={k} className={`dw-particle ${particleClass}${isMax ? ' big' : ''}`}
+                style={{ '--px': `${Math.cos(ang) * dist}px`, '--py': `${-Math.abs(Math.sin(ang)) * dist - 20}px`, animationDelay: `${Math.random() * 0.15}s` }} />
+            );
+          })}
+        </span>
+      )}
       {card.owner && !isRevealed && (() => { const u = userDisplay(card.owner); return (
         <button className="dw-pvp-avatar-btn"
           onClick={(e) => { e.stopPropagation(); onOpenPlayerProfile(card.owner.userId); }}
@@ -1576,21 +1636,28 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   useEffect(() => {
     const status = pvpState?.lobby?.status;
     const total = pvpState?.lobby?.cardCount ?? 36;
-    let iv;
+    let timers = [];
     if (prevStatus.current === 'open' && status === 'settled') {
       setShuffling(true);
       setRevealStep(0); // прячем все исходы на время анимации
       const shuffleT = setTimeout(() => {
         setShuffling(false);
+        // Каскад: задержка стартует с 30ms и ускоряется к концу (тиканье нарастает).
         let n = 0;
-        iv = setInterval(() => {
+        const step = () => {
           n += 1;
           setRevealStep(n);
-          if (n >= total) clearInterval(iv);
-        }, 42);
+          if (n < total) {
+            const progress = n / total;
+            const delay = Math.max(8, 30 * (1 - progress * 0.75)); // 30ms → ~8ms
+            timers.push(setTimeout(step, delay));
+          }
+        };
+        step();
       }, 450);
+      timers.push(shuffleT);
       prevStatus.current = status;
-      return () => { clearTimeout(shuffleT); if (iv) clearInterval(iv); };
+      return () => { timers.forEach(clearTimeout); };
     }
     if (status === 'open') setRevealStep(9999); // новое лобби — сбрасываем
     else if (status === 'settled') setRevealStep(9999); // зашли в готовый раунд — всё открыто
@@ -1745,16 +1812,20 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
               <button className="dw-btn ghost small" style={{ marginLeft: 8 }} onClick={() => { setArtPending(null); setArtHints(null); }}>Отмена</button>
             </div>
           ) : (
-            <div className="dw-bet-control" style={{ marginTop: 8 }}>
-              <div className="dw-bet-stepper">
-                <button onClick={() => setBet(Math.max(1, betClamped - 1))} disabled={pvpBuying || betClamped <= 1}>−</button>
-                <span className="dw-bet-count">{betClamped}</span>
-                <button onClick={() => setBet(Math.min(maxBet, betClamped + 1))} disabled={pvpBuying || betClamped >= maxBet}>+</button>
+            <>
+              <div className="dw-bet-control" style={{ marginTop: 8 }}>
+                <div className="dw-bet-stepper">
+                  <button onClick={() => setBet(Math.max(1, betClamped - 1))} disabled={pvpBuying || betClamped <= 1}>−</button>
+                  <span className="dw-bet-count">{betClamped}</span>
+                  <button onClick={() => setBet(Math.min(maxBet, betClamped + 1))} disabled={pvpBuying || betClamped >= maxBet}>+</button>
+                </div>
+                <button className="dw-btn primary dw-bet-go" disabled={pvpBuying} onClick={() => onBetRandom(betClamped)}>
+                  🎲 РАНДОМ ×{betClamped}
+                </button>
               </div>
-              <button className="dw-btn primary dw-bet-go" disabled={pvpBuying} onClick={() => onBetRandom(betClamped)}>
-                🎲 РАНДОМ ×{betClamped}
-              </button>
-            </div>
+              {/* Докупить карты можно всегда, даже если они уже есть */}
+              <button className="dw-btn ghost full" style={{ marginTop: 6 }} onClick={onOpenDeposit}>🎴 Купить ещё карт</button>
+            </>
           )}
         </>
       )}
@@ -2520,10 +2591,13 @@ function LuckyBuyModal({ gift, player, onClose }) {
   const [chance, setChance] = useState(20);
   const [spinning, setSpinning] = useState(false);
   const [rotation, setRotation] = useState(0);
+  const [spinDur, setSpinDur] = useState(3.4); // длительность текущей фазы вращения (сек)
+  const [spinEase, setSpinEase] = useState('cubic-bezier(0.16,1,0.3,1)');
   const [result, setResult] = useState(null);
   const [demoResult, setDemoResult] = useState(null);
   const [error, setError] = useState(null);
   const [feed, setFeed] = useState([]);
+  const [wheelFx, setWheelFx] = useState(''); // '' | 'dimmed shake' | 'win'
   const rotRef = React.useRef(0);
   const touchStartY = React.useRef(null);
 
@@ -2546,35 +2620,83 @@ function LuckyBuyModal({ gift, player, onClose }) {
 
   useEffect(() => { api.luckyFeed().then((d) => setFeed(d.feed || [])).catch(() => {}); }, []);
 
+  const haptic = (kind = 'light') => window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.(kind);
+
+  // Абсолютный угол поворота, чтобы стрелка (вверху) села на θ внутри сектора.
+  // R = N*360 + (360 − θ). goldDeg — золотой сектор [0..goldDeg].
+  const angleFor = (theta, extraSpins) => {
+    const base = Math.ceil(rotRef.current / 360) * 360 + 360 * extraSpins;
+    return base + ((360 - (theta % 360)) % 360);
+  };
+
+  const animateTo = (deg, dur, ease = 'cubic-bezier(0.16,1,0.3,1)') => new Promise((res) => {
+    setSpinDur(dur); setSpinEase(ease);
+    rotRef.current = deg; setRotation(deg);
+    setTimeout(res, dur * 1000 + 30);
+  });
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const finishWin = (out) => {
+    setSpinning(false); setResult(out || { won: true });
+    setWheelFx('win'); haptic('heavy');
+  };
+  const finishLose = (out) => {
+    setSpinning(false); setResult(out || { won: false });
+    setWheelFx('dimmed shake');
+    window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('error');
+  };
+
+  const runScenario = async (won, finalize) => {
+    const goldDeg = chance / 100 * 360;
+    const pad = Math.min(3, goldDeg * 0.2);
+    const inGold = () => pad + Math.random() * Math.max(0.0001, goldDeg - 2 * pad);
+    const inGrey = () => goldDeg + 3 + Math.random() * Math.max(0.0001, (360 - goldDeg) - 6);
+
+    if (won) {
+      const scenario = Math.random() > 0.3 ? 'quick' : 'reverse';
+      if (scenario === 'quick') {
+        const dur = 3 + Math.random();
+        await animateTo(angleFor(inGold(), 4), dur);
+      } else {
+        // reverse: останавливаемся на сером, пауза, доворот назад на золото
+        await animateTo(angleFor(inGrey(), 4), 4 + Math.random());
+        await wait(800);
+        haptic('medium');
+        const back = rotRef.current - (20 + Math.random() * 10);
+        await animateTo(back, 0.7, 'ease-out');
+      }
+      finalize();
+      return;
+    }
+    // lose
+    const scenario = Math.random() > 0.4 ? 'near' : 'long';
+    if (scenario === 'near') {
+      // золото проходит мимо на 5-15°, лёгкая пауза, затем серое
+      const nearTheta = Math.max(0, goldDeg + 5 + Math.random() * 10);
+      await animateTo(angleFor(nearTheta, 3), 3.5 + Math.random() * 0.5);
+      await wait(600);
+      haptic('light');
+      await animateTo(angleFor(inGrey(), 0), 0.5, 'ease-out');
+    } else {
+      // долгое вращение 6-8с
+      await animateTo(angleFor(inGrey(), 8 + Math.floor(Math.random() * 3)), 6 + Math.random() * 2);
+    }
+    finalize();
+  };
+
   const spinWheel = async (demo) => {
-    setSpinning(true); setResult(null); setDemoResult(null); setError(null);
-    const goldDeg = chance / 100 * 360; // золотой сектор: [0..goldDeg] по часовой от верха (стрелки)
-    const spins = 360 * 5;
-    // Стрелка вверху. Локальный угол θ (по часовой от верха) после поворота на R
-    // оказывается под стрелкой при θ + R ≡ 0, т.е. R = (360 − θ). Чтобы стрелка
-    // села в золото — берём θ внутри [0..goldDeg], в проигрыш — внутри остального.
-    const landFor = (won) => {
-      const pad = Math.min(2, goldDeg * 0.15); // отступ от краёв, чтобы не на стыке
-      const theta = won
-        ? pad + Math.random() * Math.max(0.0001, goldDeg - 2 * pad)
-        : goldDeg + 2 + Math.random() * Math.max(0.0001, (360 - goldDeg) - 4);
-      return (360 - (theta % 360)) % 360;
-    };
+    setSpinning(true); setResult(null); setDemoResult(null); setError(null); setWheelFx('');
 
     if (demo) {
       const won = Math.random() * 100 < chance;
-      rotRef.current = Math.ceil(rotRef.current / 360) * 360 + spins + landFor(won);
-      setRotation(rotRef.current);
-      setTimeout(() => { setSpinning(false); setDemoResult(won ? 'win' : 'lose'); }, 3500);
+      await runScenario(won, () => { setSpinning(false); setDemoResult(won ? 'win' : 'lose'); if (won) { setWheelFx('win'); haptic('heavy'); } else { setWheelFx('dimmed shake'); } });
       return;
     }
 
-    // Реальная игра — крутим только после ответа сервера, чтобы колесо совпало.
+    // Реальная игра: бэкенд решает результат ДО анимации.
     try {
       const out = await api.luckyBuy(gift.id, chance);
-      rotRef.current = Math.ceil(rotRef.current / 360) * 360 + spins + landFor(out.won);
-      setRotation(rotRef.current);
-      setTimeout(() => { setSpinning(false); setResult(out); }, 3500);
+      await runScenario(out.won, () => (out.won ? finishWin(out) : finishLose(out)));
     } catch (e) {
       console.error('lucky-buy failed', e);
       setSpinning(false);
@@ -2612,9 +2734,19 @@ function LuckyBuyModal({ gift, player, onClose }) {
         {error && <div className="dw-lucky-result lose" style={{ marginBottom: 10 }}>{error}</div>}
 
         <div className="dw-wheel-stage">
+          {wheelFx.includes('win') && (
+            <span className="dw-particles" style={{ zIndex: 8 }}>
+              {Array.from({ length: 20 }).map((_, k) => {
+                const ang = (Math.PI * 2 * k) / 20;
+                const dist = 70 + Math.random() * 50;
+                return <span key={k} className="dw-particle gold big"
+                  style={{ '--px': `${Math.cos(ang) * dist}px`, '--py': `${Math.sin(ang) * dist}px`, animationDelay: `${Math.random() * 0.1}s` }} />;
+              })}
+            </span>
+          )}
           <div className="dw-wheel-pointer" />
-          <svg viewBox="0 0 200 200" className="dw-wheel-svg">
-            <g style={{ transition: spinning ? 'transform 3.4s cubic-bezier(0.16,1,0.3,1)' : 'none', transform: `rotate(${rotation}deg)`, transformOrigin: `${cx}px ${cy}px` }}>
+          <svg viewBox="0 0 200 200" className={`dw-wheel-svg ${wheelFx}`}>
+            <g style={{ transition: `transform ${spinDur}s ${spinEase}`, transform: `rotate(${rotation}deg)`, transformOrigin: `${cx}px ${cy}px` }}>
               {/* Grey zone (loss) */}
               <circle cx={cx} cy={cy} r={r} fill="#2a2520" />
               {/* Gold zone (win) */}
@@ -2647,7 +2779,7 @@ function LuckyBuyModal({ gift, player, onClose }) {
           <span>Ставка: <strong style={{ color: 'var(--gold)' }}>{fmtBet(bet)} дбл.</strong></span>
         </div>
         <input type="range" min={1} max={80} step={1} value={chance}
-          onChange={(e) => { setChance(Number(e.target.value)); setResult(null); setDemoResult(null); setError(null); }}
+          onChange={(e) => { setChance(Number(e.target.value)); setResult(null); setDemoResult(null); setError(null); setWheelFx(''); }}
           className="dw-lucky-slider" disabled={spinning} />
         <div className="dw-lucky-meta">
           <span>Множитель: ×{mult}</span>
@@ -2718,11 +2850,25 @@ function Inventory({ onNotify, onBalance }) {
   const doWithdraw = async (item) => {
     setBusy(true);
     try {
-      await api.withdrawInvItem(item.id);
-      onNotify?.('Заявка на вывод создана — жди подтверждения', 'success');
-      setConfirm(null); await load();
-    } catch (e) { onNotify?.('Не удалось создать заявку', 'danger'); }
-    finally { setBusy(false); }
+      const res = await api.withdrawInvItem(item.id); // создаёт счёт на 25 Stars
+      const webApp = window.Telegram?.WebApp;
+      if (res.invoiceLink && webApp?.openInvoice) {
+        webApp.openInvoice(res.invoiceLink, async (status) => {
+          if (status === 'paid') {
+            onNotify?.('Оплачено — подарок выводится в течение 24ч', 'success');
+            await load();
+          } else if (status === 'failed') {
+            onNotify?.('Оплата не прошла', 'danger');
+          }
+          setConfirm(null); setBusy(false);
+        });
+        return;
+      }
+      if (res.invoiceLink) { window.open(res.invoiceLink, '_blank', 'noopener,noreferrer'); setConfirm(null); }
+      else onNotify?.('Stars не настроены на сервере', 'danger');
+    } catch (e) {
+      onNotify?.('Не удалось создать счёт на вывод', 'danger');
+    } finally { setBusy(false); }
   };
 
   return (
@@ -2779,13 +2925,24 @@ function Inventory({ onNotify, onBalance }) {
               </>
             ) : (
               <>
-                <h2 style={{ fontSize: 17, marginBottom: 10 }}>Вывести подарок</h2>
-                <p style={{ fontSize: 13, color: 'var(--bone-soft)', marginBottom: 14 }}>
-                  «{confirm.item.name}» будет отправлен через Telegram после подтверждения админом. Заявка уйдёт в обработку.
+                <h2 style={{ fontSize: 17, marginBottom: 12 }}>Вывод подарка</h2>
+                {confirm.item.file && (
+                  <div className="dw-inv-img" style={{ width: 72, height: 72, margin: '0 auto 10px', fontSize: 34 }}>
+                    <img src={`/gifts/${confirm.item.file}`} alt="" />
+                  </div>
+                )}
+                <p style={{ textAlign: 'center', fontWeight: 700, marginBottom: 10 }}>{confirm.item.name}</p>
+                <p style={{ fontSize: 14, color: 'var(--vellum)', marginBottom: 4, textAlign: 'center' }}>
+                  Стоимость вывода: <strong style={{ color: 'var(--gold)' }}>25 ⭐️</strong>
                 </p>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <button className="dw-btn ghost" style={{ flex: 1 }} disabled={busy} onClick={() => setConfirm(null)}>Отмена</button>
-                  <button className="dw-btn primary" style={{ flex: 1 }} disabled={busy} onClick={() => doWithdraw(confirm.item)}>Вывести</button>
+                <p style={{ fontSize: 12, color: 'var(--bone-soft)', marginBottom: 14, textAlign: 'center' }}>
+                  Подарок будет отправлен в течение 24 часов
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <button className="dw-btn primary full" disabled={busy} onClick={() => doWithdraw(confirm.item)}>
+                    {busy ? '…' : 'Оплатить 25 ⭐️ и вывести'}
+                  </button>
+                  <button className="dw-btn ghost full" disabled={busy} onClick={() => setConfirm(null)}>Отмена</button>
                 </div>
               </>
             )}
@@ -3614,13 +3771,20 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
 
   const cardLabel = (nums) => nums.length > 1 ? `карты #${nums.join(', #')}` : `карта #${nums[0]}`;
 
+  // Вибрация при открытии итогов.
+  useEffect(() => {
+    const h = window.Telegram?.WebApp?.HapticFeedback;
+    if (isLoser) h?.notificationOccurred?.('error');
+    else if (myState === 'win') h?.notificationOccurred?.('success');
+  }, []);
+
   const Row = ({ r, i }) => {
     const u = userDisplay(r.owner);
     const cls = ['dw-round-row',
       r.mine ? 'dw-round-row--mine' : '',
       r.profit > 0 ? 'win' : (r.profit < 0 ? 'lose' : '')].filter(Boolean).join(' ');
     return (
-      <div key={r.userId + i} className={cls}>
+      <div key={r.userId + i} className={cls} style={{ animationDelay: `${i * 0.08}s` }}>
         <span className="dw-round-row-avatar" style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
           {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : u.initial}
         </span>
@@ -3635,12 +3799,14 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
     );
   };
 
+  const glowCls = myState === 'win' ? 'win-glow' : isLoser ? 'lose-glow' : '';
+
   return (
     <motion.div className="dw-sheet-backdrop" onClick={onClose}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
-      <motion.div className="dw-round-result" onClick={e => e.stopPropagation()}
-        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-        transition={{ duration: 0.35, ease: [0.32, 0, 0, 1] }}>
+      <motion.div className={`dw-round-result ${glowCls} ${isLoser ? 'dw-shake' : ''}`} onClick={e => e.stopPropagation()}
+        initial={{ y: '100%', scale: 0.96 }} animate={{ y: 0, scale: 1 }} exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 260, damping: 24 }}>
 
         <div className="dw-round-result-header">
           <h2>{result?.lobby?.gameNum ? `Раунд #${result.lobby.gameNum} завершён` : 'Раунд завершён'}</h2>

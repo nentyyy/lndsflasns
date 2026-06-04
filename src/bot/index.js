@@ -8,6 +8,7 @@ import { handleError } from './middleware/error.js';
 import { MINI_APP_URL, BOT_USERNAME } from './lib/config.js';
 import { db } from '../api/lib/db.js';
 import { settleStarsPayment } from '../api/lib/payments/stars.js';
+import { settleWithdrawPayment } from '../api/lib/inventory.js';
 import { makeRefCode } from '../api/lib/referral.js';
 import { credit } from '../api/lib/wallet.js';
 import { FOUNDER_IDS } from '../api/lib/config.js';
@@ -134,7 +135,7 @@ bot.command('help', async (ctx) => {
 bot.on('pre_checkout_query', async (ctx) => {
   try {
     const payload = ctx.preCheckoutQuery.invoice_payload;
-    const deposit = await db('deposits').where({ id: payload, method: 'stars', status: 'pending' }).first();
+    const deposit = await db('deposits').whereIn('method', ['stars', 'withdraw']).where({ id: payload, status: 'pending' }).first();
     if (!deposit) {
       await ctx.answerPreCheckoutQuery(false, 'Заказ не найден или уже оплачен');
       return;
@@ -193,6 +194,21 @@ bot.on('callback_query:data', async (ctx) => {
 
 bot.on('message:successful_payment', async (ctx) => {
   const sp = ctx.message.successful_payment;
+  // Определяем тип счёта: вывод подарка (withdraw) или пополнение (stars).
+  const dep = await db('deposits').where({ id: sp.invoice_payload }).first().catch(() => null);
+  if (dep?.method === 'withdraw') {
+    try {
+      const { name } = await settleWithdrawPayment(sp.invoice_payload);
+      await ctx.reply(
+        `✅ *Оплачено!*\n\nЗаявка на вывод «${name}» принята. Подарок будет отправлен в течение 24 часов.`,
+        { parse_mode: 'Markdown' }
+      );
+    } catch (e) {
+      console.error('settle withdraw error', e);
+      await ctx.reply('Оплата получена, заявка на вывод будет обработана.');
+    }
+    return;
+  }
   try {
     const { balance, coins } = await settleStarsPayment({
       payload: sp.invoice_payload,
