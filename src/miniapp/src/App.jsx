@@ -2675,18 +2675,8 @@ function LuckyBuyModal({ gift, player, onBalance, onNotify, onClose }) {
     const SMOOTH = 'cubic-bezier(0.12,0.72,0.16,1)'; // плавная глубокая деселерация
 
     if (won) {
-      const scenario = Math.random() > 0.3 ? 'quick' : 'reverse';
-      if (scenario === 'quick') {
-        // Чистая плавная остановка на золоте.
-        await animateTo(targetAngle(inGold(), { turns: 4 }), 3.4 + Math.random() * 0.8, SMOOTH);
-      } else {
-        // Reverse: плавно тормозим чуть ЗА золотом (в сером), пауза «проиграл»,
-        // затем мягкий доворот назад на золото.
-        await animateTo(targetAngle(goldDeg + 6 + Math.random() * 6, { turns: 4 }), 4 + Math.random() * 0.8, SMOOTH);
-        await wait(850);
-        haptic('medium');
-        await animateTo(targetAngle(goldDeg - 4 - Math.random() * (goldDeg * 0.4), { dir: 'back' }), 0.9, 'cubic-bezier(0.34,1.2,0.64,1)');
-      }
+      // Выигрыш всегда чисто и плавно останавливается на золоте — без отката.
+      await animateTo(targetAngle(inGold(), { turns: 5 }), 3.6 + Math.random() * 0.8, SMOOTH);
       finalize();
       return;
     }
