@@ -2734,7 +2734,6 @@ function LuckyBuyModal({ gift, player, onBalance, onNotify, onClose }) {
   return (
     <motion.div className="dw-sheet-backdrop" onClick={onClose}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      {wheelFx.includes('win') && <WinCelebration big />}
       <motion.div className="dw-wheel-sheet dw-lucky-sheet" onClick={(e) => e.stopPropagation()}
         onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}
         initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
@@ -3728,38 +3727,6 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
   );
 }
 
-/* ─── Праздник победы: «печать вскрыта, золото наружу» ──────── */
-
-function WinCelebration({ big }) {
-  // big — джекпот (крупный выигрыш): больше дублонов и ярче.
-  const coins = big ? 30 : 20;
-  return (
-    <div className="dw-win-cele" aria-hidden="true">
-      <div className="dw-win-rays" />
-      <div className="dw-win-shock" />
-      <div className="dw-win-shock dw-win-shock--2" />
-      <div className="dw-win-coins">
-        {Array.from({ length: coins }).map((_, i) => {
-          const left = Math.random() * 100;
-          const delay = Math.random() * 0.5;
-          const dur = 1.1 + Math.random() * 0.9;
-          const drift = (Math.random() - 0.5) * 80;
-          const size = 14 + Math.random() * (big ? 16 : 10);
-          const spin = (Math.random() - 0.5) * 720;
-          return (
-            <span key={i} className="dw-win-coin"
-              style={{
-                left: `${left}%`, width: size, height: size,
-                animationDelay: `${delay}s`, animationDuration: `${dur}s`,
-                '--drift': `${drift}px`, '--spin': `${spin}deg`
-              }} />
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 /* ─── PvP Round Result Modal ──────────────────────────────── */
 
 function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDeposit, onOpenShop }) {
@@ -3850,7 +3817,6 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
   return (
     <motion.div className="dw-sheet-backdrop" onClick={onClose}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
-      {myState === 'win' && <WinCelebration big={myProfit >= 50} />}
       <motion.div className={`dw-round-result ${glowCls} ${isLoser ? 'dw-shake' : ''}`} onClick={e => e.stopPropagation()}
         initial={{ y: '100%', scale: 0.96 }} animate={{ y: 0, scale: 1 }} exit={{ y: '100%' }}
         transition={{ type: 'spring', stiffness: 260, damping: 24 }}>

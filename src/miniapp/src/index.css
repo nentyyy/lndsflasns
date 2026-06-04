@@ -45,10 +45,11 @@
   --shadow-deep:   0 28px 80px rgba(0,0,0,0.78), 0 4px 14px rgba(0,0,0,0.6);
   --shadow-line:   inset 0 0 0 1px rgba(0,0,0,0.6);
 
-  /* Жирные шрифты (редизайн): Russo One для заголовков/цифр, Montserrat 800 для текста. */
-  --font-display:  'Russo One', 'Montserrat', system-ui, sans-serif;
-  --font-serif:    'Montserrat', system-ui, sans-serif;
-  --font-sans:     'Montserrat', system-ui, sans-serif;
+  /* Cinzel — гравированная «монетная» латиница для заголовков/цифр (тема печатей
+     и кладов). Manrope — чистый корпус для UI. */
+  --font-display:  'Cinzel', Georgia, serif;
+  --font-serif:    'Cinzel', Georgia, serif;
+  --font-sans:     'Manrope', system-ui, sans-serif;
 }
 
 /* ─── Reset ─────────────────────────────────────────────────────── */
@@ -4034,58 +4035,6 @@ body::after {
   100% { transform: scale(1); }
 }
 
-/* ═══════════ ПОБЕДА: «печать вскрыта» ═══════════ */
-.dw-win-cele {
-  position: fixed; inset: 0; z-index: 27; pointer-events: none; overflow: hidden;
-}
-/* Золотые лучи-веер из центра, медленно вращаются + дышат */
-.dw-win-rays {
-  position: absolute; left: 50%; top: 42%; width: 200vmax; height: 200vmax;
-  transform: translate(-50%, -50%);
-  background: repeating-conic-gradient(from 0deg,
-    rgba(255,200,60,0.16) 0deg 6deg, transparent 6deg 18deg);
-  -webkit-mask: radial-gradient(circle at center, #000 0%, rgba(0,0,0,0.5) 28%, transparent 62%);
-          mask: radial-gradient(circle at center, #000 0%, rgba(0,0,0,0.5) 28%, transparent 62%);
-  animation: dw-rays-spin 14s linear infinite, dw-rays-breathe 2.4s ease-in-out infinite;
-  will-change: transform, opacity;
-}
-@keyframes dw-rays-spin { to { transform: translate(-50%,-50%) rotate(360deg); } }
-@keyframes dw-rays-breathe { 0%,100% { opacity: 0.35; } 50% { opacity: 0.75; } }
-
-/* Ударная волна — золотое кольцо расходится */
-.dw-win-shock {
-  position: absolute; left: 50%; top: 42%; width: 80px; height: 80px;
-  margin: -40px 0 0 -40px; border-radius: 50%;
-  border: 3px solid rgba(255,215,0,0.9);
-  box-shadow: 0 0 30px rgba(255,200,60,0.6), inset 0 0 20px rgba(255,200,60,0.4);
-  animation: dw-shock 1s ease-out forwards;
-}
-.dw-win-shock--2 { animation-delay: 0.22s; border-color: rgba(255,180,40,0.7); }
-@keyframes dw-shock {
-  0% { transform: scale(0.2); opacity: 1; }
-  100% { transform: scale(7); opacity: 0; }
-}
-
-/* Ливень дублонов */
-.dw-win-coins { position: absolute; inset: 0; }
-.dw-win-coin {
-  position: absolute; top: -8%; border-radius: 50%;
-  background:
-    radial-gradient(circle at 36% 30%, #fff6d0 0%, #ffe27a 28%, #f4c130 55%, #b8801c 82%, #7a5210 100%);
-  box-shadow: 0 0 8px rgba(255,200,60,0.55), inset -2px -2px 4px rgba(120,80,10,0.6), inset 1px 1px 3px rgba(255,255,255,0.6);
-  animation-name: dw-coin-fall; animation-timing-function: cubic-bezier(0.45,0.05,0.55,0.95); animation-fill-mode: forwards;
-  will-change: transform, opacity;
-}
-.dw-win-coin::after {
-  content: ''; position: absolute; inset: 22%; border-radius: 50%;
-  border: 1px solid rgba(120,80,10,0.5);
-}
-@keyframes dw-coin-fall {
-  0%   { transform: translateY(0) translateX(0) rotate(0deg) scale(0.6); opacity: 0; }
-  12%  { opacity: 1; }
-  100% { transform: translateY(118vh) translateX(var(--drift,0)) rotate(var(--spin,360deg)) scale(1); opacity: 0.9; }
-}
-
 /* Заголовок «ТЫ ВЫИГРАЛ» — золотой шиммер */
 .dw-win-title {
   background: linear-gradient(100deg, #f4c130 10%, #fff6d0 35%, #ffd24a 50%, #fff6d0 65%, #f4c130 90%);
@@ -4094,3 +4043,40 @@ body::after {
   animation: dw-shimmer 2.2s linear infinite;
   letter-spacing: 0.06em;
 }
+
+/* ═══════════ ПОЛИРОВКА (Cinzel + тёплое золото) ═══════════ */
+/* Cinzel — гравированный, лучше смотрится плотным и чуть разреженным */
+h1, h2, h3, h4 { font-weight: 800; letter-spacing: 0.06em; }
+.dw-balance-num, .dw-pvp-timer, .dw-pvp-card-big { font-weight: 700; }
+
+/* Тёплый клад-вайб фона: глубже, с мягким золотым нимбом сверху */
+body {
+  background:
+    radial-gradient(900px 520px at 50% -140px, rgba(255,196,64,0.07), transparent 62%),
+    radial-gradient(700px 600px at 50% 116%, rgba(150,70,12,0.10), transparent 60%),
+    #0A0800 !important;
+}
+
+/* Панели: тонкая золотая «накладка» сверху для глубины */
+.dw-panel { position: relative; }
+.dw-panel::before {
+  content: ''; position: absolute; left: 14px; right: 14px; top: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,215,0,0.35), transparent);
+  pointer-events: none;
+}
+
+/* Кнопки: мягче и теплее золото, аккуратная тень */
+.dw-btn.primary {
+  background: linear-gradient(140deg, #ffe487 0%, #f3c33f 46%, #c98a1e 100%) !important;
+  box-shadow: 0 6px 22px rgba(220,150,30,0.32), inset 0 1px 0 rgba(255,250,220,0.6) !important;
+  text-shadow: none !important;
+}
+
+/* Топбар: пилюли чуть «дороже» */
+.dw-balance-pill, .dw-cards-pill {
+  background: rgba(255,255,255,0.035) !important;
+  border-color: rgba(255,215,0,0.28) !important;
+}
+
+/* Карты ПВП без заливки — тёмные с тёплой золотой кромкой */
+.dw-pvp-card { background: rgba(255,255,255,0.025); border-color: rgba(255,215,0,0.14); }
