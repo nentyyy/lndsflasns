@@ -3801,7 +3801,15 @@ button:disabled, [disabled] { cursor: not-allowed; }
 .dw-points-row:last-child { border-bottom: none; }
 
 /* ════ LUCKY BUY ════ */
-.dw-lucky-sheet { max-height: 90vh; overflow-y: auto; }
+/* Lucky Buy — по центру экрана, фиксированная позиция (не прыгает при смене контента) */
+.dw-lucky-sheet {
+  align-self: center;
+  margin-bottom: 0 !important;
+  max-height: 88vh; overflow-y: auto;
+}
+/* Фиксированная зона результата — колесо/модал не смещаются */
+.dw-lucky-result-slot { min-height: 44px; display: flex; align-items: center; justify-content: center; margin-bottom: 8px; }
+.dw-lucky-result-slot .dw-lucky-result { margin-bottom: 0; }
 .dw-lucky-result { text-align: center; padding: 12px; border-radius: 12px; font-weight: 800; margin-bottom: 12px; }
 .dw-lucky-result.win { background: rgba(74,138,94,0.2); color: #6dbe88; }
 .dw-lucky-result.lose { background: rgba(107,16,24,0.2); color: var(--crimson-glow); }
@@ -3930,11 +3938,12 @@ body::after {
 .dw-pvp-card { transition: border-color 200ms ease, box-shadow 200ms ease, transform 120ms ease; }
 .dw-pvp-card--pick:hover { border-color: var(--gold) !important; box-shadow: 0 0 12px rgba(255,215,0,0.3); }
 
-/* 🍀 lucky icon — золотой круг */
+/* 🍀 lucky icon — тёмный полупрозрачный кружок (без жёлтого) */
 .dw-lucky-icon {
-  width: 28px; height: 28px; font-size: 16px;
-  background: radial-gradient(circle at 35% 30%, #FFD700, #CC8800) !important;
-  color: #2a1c00 !important; box-shadow: 0 0 10px rgba(255,200,60,0.5);
+  width: 28px; height: 28px; font-size: 15px;
+  background: rgba(0,0,0,0.55) !important;
+  border: 1px solid rgba(255,215,0,0.25) !important;
+  box-shadow: none !important;
 }
 
 /* Общие появления/модалки */

@@ -186,6 +186,17 @@ function App() {
     }
   }, [bootReady, state.player?.welcomeAvailable]);
 
+  // Глобальное обновление баланса/инвентаря раз в 12с — баланс свежий ВЕЗДЕ.
+  useEffect(() => {
+    if (!bootReady) return undefined;
+    const id = setInterval(() => {
+      api.me().then((m) => {
+        if (m?.player) setState((c) => ({ ...c, player: { ...c.player, ...m.player } }));
+      }).catch(() => {});
+    }, 12000);
+    return () => clearInterval(id);
+  }, [bootReady]);
+
   // Polling PvP лобби пока пользователь на Will/pvp.
   useEffect(() => {
     let cancelled = false;
@@ -798,6 +809,8 @@ function App() {
               player={state.player}
               onBuyNft={buyNft}
               portalsGifts={portalsGifts}
+              onNotify={notify}
+              onBalance={(coins) => setState((c) => ({ ...c, player: { ...c.player, coins } }))}
             />
           )}
 
@@ -2371,7 +2384,7 @@ function ReferralTab({ referral, player, onCopy, onShare, onClaimReward, onBack,
 
 /* ─── Shop tab ────────────────────────────────────────────── */
 
-function ShopTab({ shop, player, onBuyNft, portalsGifts }) {
+function ShopTab({ shop, player, onBuyNft, portalsGifts, onNotify, onBalance }) {
   const [sortDir, setSortDir] = useState('asc');
   const [luckyGift, setLuckyGift] = useState(null); // gift открытый в Lucky Buy
   const [shopView, setShopView] = useState('gifts'); // gifts | artifacts | points
@@ -2423,11 +2436,11 @@ function ShopTab({ shop, player, onBuyNft, portalsGifts }) {
         </>
       )}
 
-      {shopView === 'artifacts' && <ArtifactsShop player={player} />}
+      {shopView === 'artifacts' && <ArtifactsShop player={player} onBalance={onBalance} />}
       {shopView === 'points' && <PointsShop player={player} catalog={catalog} />}
 
       {luckyGift && (
-        <LuckyBuyModal gift={luckyGift} player={player} onClose={() => setLuckyGift(null)} />
+        <LuckyBuyModal gift={luckyGift} player={player} onBalance={onBalance} onNotify={onNotify} onClose={() => setLuckyGift(null)} />
       )}
     </section>
   );
@@ -2435,7 +2448,7 @@ function ShopTab({ shop, player, onBuyNft, portalsGifts }) {
 
 /* ─── Лавка торговца (артефакты) ─────────────────────────── */
 
-function ArtifactsShop({ player }) {
+function ArtifactsShop({ player, onBalance }) {
   const [artifacts, setArtifacts] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [buying, setBuying] = useState(null);
@@ -2448,7 +2461,9 @@ function ArtifactsShop({ player }) {
   const buy = async (artifactId) => {
     setBuying(artifactId);
     try {
-      await api.buyArtifact(artifactId);
+      const res = await api.buyArtifact(artifactId);
+      if (typeof res.balance === 'number') onBalance?.(res.balance); // динамика баланса
+      else if (res.player) onBalance?.(res.player.coins);
       const [sh, inv] = await Promise.all([api.shopArtifacts(), api.myArtifacts()]);
       setArtifacts(sh.artifacts || []);
       setInventory(inv.artifacts || []);
@@ -2587,7 +2602,7 @@ function PointsShop({ player, catalog }) {
 
 /* ─── Lucky Buy колесо ────────────────────────────────────── */
 
-function LuckyBuyModal({ gift, player, onClose }) {
+function LuckyBuyModal({ gift, player, onBalance, onNotify, onClose }) {
   const [chance, setChance] = useState(20);
   const [spinning, setSpinning] = useState(false);
   const [rotation, setRotation] = useState(0);
@@ -2622,11 +2637,15 @@ function LuckyBuyModal({ gift, player, onClose }) {
 
   const haptic = (kind = 'light') => window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.(kind);
 
-  // Абсолютный угол поворота, чтобы стрелка (вверху) села на θ внутри сектора.
-  // R = N*360 + (360 − θ). goldDeg — золотой сектор [0..goldDeg].
-  const angleFor = (theta, extraSpins) => {
-    const base = Math.ceil(rotRef.current / 360) * 360 + 360 * extraSpins;
-    return base + ((360 - (theta % 360)) % 360);
+  // Абсолютный угол, чтобы стрелка (вверху) села на θ. dir:'back' — ближайший
+  // угол НАЗАД (мягкий доворот), иначе вперёд на turns полных оборотов.
+  const targetAngle = (theta, { turns = 0, dir = 'fwd' } = {}) => {
+    const targetMod = (((360 - (theta % 360)) % 360) + 360) % 360;
+    const current = rotRef.current;
+    const currentMod = ((current % 360) + 360) % 360;
+    const fwd = (((targetMod - currentMod) % 360) + 360) % 360; // 0..360 вперёд
+    if (dir === 'back') return current + (fwd - 360); // небольшой ход назад
+    return current + turns * 360 + fwd;
   };
 
   const animateTo = (deg, dur, ease = 'cubic-bezier(0.16,1,0.3,1)') => new Promise((res) => {
@@ -2639,31 +2658,34 @@ function LuckyBuyModal({ gift, player, onClose }) {
   const finishWin = (out) => {
     setSpinning(false); setResult(out || { won: true });
     setWheelFx('win'); haptic('heavy');
+    onNotify?.(`🎉 Вы выиграли ${gift.name}!`, 'success');
   };
   const finishLose = (out) => {
     setSpinning(false); setResult(out || { won: false });
     setWheelFx('dimmed shake');
     window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('error');
+    onNotify?.('Удача отвернулась — попробуй ещё раз', 'danger');
   };
 
   const runScenario = async (won, finalize) => {
     const goldDeg = chance / 100 * 360;
-    const pad = Math.min(3, goldDeg * 0.2);
+    const pad = Math.min(4, goldDeg * 0.25);
     const inGold = () => pad + Math.random() * Math.max(0.0001, goldDeg - 2 * pad);
-    const inGrey = () => goldDeg + 3 + Math.random() * Math.max(0.0001, (360 - goldDeg) - 6);
+    const inGrey = () => goldDeg + 6 + Math.random() * Math.max(0.0001, (360 - goldDeg) - 12);
+    const SMOOTH = 'cubic-bezier(0.12,0.72,0.16,1)'; // плавная глубокая деселерация
 
     if (won) {
       const scenario = Math.random() > 0.3 ? 'quick' : 'reverse';
       if (scenario === 'quick') {
-        const dur = 3 + Math.random();
-        await animateTo(angleFor(inGold(), 4), dur);
+        // Чистая плавная остановка на золоте.
+        await animateTo(targetAngle(inGold(), { turns: 4 }), 3.4 + Math.random() * 0.8, SMOOTH);
       } else {
-        // reverse: останавливаемся на сером, пауза, доворот назад на золото
-        await animateTo(angleFor(inGrey(), 4), 4 + Math.random());
-        await wait(800);
+        // Reverse: плавно тормозим чуть ЗА золотом (в сером), пауза «проиграл»,
+        // затем мягкий доворот назад на золото.
+        await animateTo(targetAngle(goldDeg + 6 + Math.random() * 6, { turns: 4 }), 4 + Math.random() * 0.8, SMOOTH);
+        await wait(850);
         haptic('medium');
-        const back = rotRef.current - (20 + Math.random() * 10);
-        await animateTo(back, 0.7, 'ease-out');
+        await animateTo(targetAngle(goldDeg - 4 - Math.random() * (goldDeg * 0.4), { dir: 'back' }), 0.9, 'cubic-bezier(0.34,1.2,0.64,1)');
       }
       finalize();
       return;
@@ -2671,15 +2693,11 @@ function LuckyBuyModal({ gift, player, onClose }) {
     // lose
     const scenario = Math.random() > 0.4 ? 'near' : 'long';
     if (scenario === 'near') {
-      // золото проходит мимо на 5-15°, лёгкая пауза, затем серое
-      const nearTheta = Math.max(0, goldDeg + 5 + Math.random() * 10);
-      await animateTo(angleFor(nearTheta, 3), 3.5 + Math.random() * 0.5);
-      await wait(600);
-      haptic('light');
-      await animateTo(angleFor(inGrey(), 0), 0.5, 'ease-out');
+      // «Почти выиграл»: золото медленно проходит под стрелкой и стоп чуть дальше.
+      await animateTo(targetAngle(goldDeg + 7 + Math.random() * 8, { turns: 4 }), 4 + Math.random() * 0.6, SMOOTH);
     } else {
-      // долгое вращение 6-8с
-      await animateTo(angleFor(inGrey(), 8 + Math.floor(Math.random() * 3)), 6 + Math.random() * 2);
+      // Долгое вращение 6-8с, несколько раз проходит золото на скорости.
+      await animateTo(targetAngle(inGrey(), { turns: 9 + Math.floor(Math.random() * 3) }), 6.5 + Math.random() * 1.5, SMOOTH);
     }
     finalize();
   };
@@ -2696,6 +2714,8 @@ function LuckyBuyModal({ gift, player, onClose }) {
     // Реальная игра: бэкенд решает результат ДО анимации.
     try {
       const out = await api.luckyBuy(gift.id, chance);
+      // Баланс обновляем сразу (ставка уже списана на сервере).
+      if (typeof out.balance === 'number') onBalance?.(out.balance);
       await runScenario(out.won, () => (out.won ? finishWin(out) : finishLose(out)));
     } catch (e) {
       console.error('lucky-buy failed', e);
@@ -2768,11 +2788,14 @@ function LuckyBuyModal({ gift, player, onClose }) {
           </svg>
         </div>
 
-        {outcome && (
-          <div className={`dw-lucky-result ${outcome.won ? 'win' : 'lose'}`}>
-            {outcome.won ? `🎉 Вы выиграли ${gift.name}!` : '💀 Удача отвернулась — попробуй ещё раз'}
-          </div>
-        )}
+        {/* Зона результата с фикс. высотой — модал не прыгает */}
+        <div className="dw-lucky-result-slot">
+          {outcome && (
+            <div className={`dw-lucky-result ${outcome.won ? 'win' : 'lose'}`}>
+              {outcome.won ? `🎉 Вы выиграли ${gift.name}!` : '💀 Удача отвернулась — попробуй ещё раз'}
+            </div>
+          )}
+        </div>
 
         <div className="dw-lucky-slider-row">
           <span>Шанс: <strong style={{ color: 'var(--gold)' }}>{chance}%</strong></span>
