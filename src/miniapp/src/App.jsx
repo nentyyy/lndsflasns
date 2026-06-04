@@ -2680,13 +2680,13 @@ function LuckyBuyModal({ gift, player, onBalance, onNotify, onClose }) {
       finalize();
       return;
     }
-    // lose
-    const scenario = Math.random() > 0.4 ? 'near' : 'long';
+    // lose — больше байта: почти всегда «почти выиграл», стоп вплотную к золоту.
+    const scenario = Math.random() > 0.85 ? 'long' : 'near';
     if (scenario === 'near') {
-      // «Почти выиграл»: золото медленно проходит под стрелкой и стоп чуть дальше.
-      await animateTo(targetAngle(goldDeg + 7 + Math.random() * 8, { turns: 4 }), 4 + Math.random() * 0.6, SMOOTH);
+      // Стрелка останавливается на 2-6° ЗА краем золота — выглядит как «чуть-чуть не хватило».
+      await animateTo(targetAngle(goldDeg + 2 + Math.random() * 4, { turns: 5 }), 4.2 + Math.random() * 0.8, SMOOTH);
     } else {
-      // Долгое вращение 6-8с, несколько раз проходит золото на скорости.
+      // Изредка — долгое вращение 6-8с, несколько раз проходит золото на скорости.
       await animateTo(targetAngle(inGrey(), { turns: 9 + Math.floor(Math.random() * 3) }), 6.5 + Math.random() * 1.5, SMOOTH);
     }
     finalize();
