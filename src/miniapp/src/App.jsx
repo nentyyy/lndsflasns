@@ -1692,6 +1692,7 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   const lobby = pvpState?.lobby;
   const cards = pvpState?.cards || [];
   const settled = lobby && lobby.status === 'settled';
+  const viewingPast = pastIdx !== null; // объявлено до эффектов, что им пользуются (TDZ-fix)
   const timer = lobby ? pvpTimer(lobby.endsAt) : null;
   const secs = timer !== null ? Number(timer) : null;
   const urgent = secs !== null && secs <= 10 && secs > 0; // последние 10с — красный пульс
@@ -1788,7 +1789,6 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   };
 
   // Просмотр прошлой игры на поле: данные из pastDetail (cardIndex → {owner, prize}).
-  const viewingPast = pastIdx !== null;
   const pastRound = viewingPast ? pastList[pastIdx] : null;
   const pastByIndex = {};
   (pastDetail?.players || []).forEach((p) => { pastByIndex[p.cardIndex] = p; });
