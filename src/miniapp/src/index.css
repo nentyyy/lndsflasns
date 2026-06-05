@@ -4080,3 +4080,66 @@ body {
 
 /* Карты ПВП без заливки — тёмные с тёплой золотой кромкой */
 .dw-pvp-card { background: rgba(255,255,255,0.025); border-color: rgba(255,215,0,0.14); }
+
+/* ═══════════ РЕФЕРАЛКА 2.0 ═══════════ */
+.dw-ref2-hero {
+  position: relative; overflow: hidden;
+  border-radius: 18px; padding: 22px 18px; margin-bottom: 12px; text-align: center;
+  border: 1px solid color-mix(in srgb, var(--tier) 45%, transparent);
+  background:
+    radial-gradient(120% 130% at 50% -10%, color-mix(in srgb, var(--tier) 22%, transparent), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.2));
+}
+.dw-ref2-hero-glow {
+  position: absolute; left: 50%; top: -40%; width: 160%; height: 160%; transform: translateX(-50%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--tier) 30%, transparent), transparent 55%);
+  filter: blur(20px); pointer-events: none; animation: dw-rays-breathe 3s ease-in-out infinite;
+}
+.dw-ref2-tier-name {
+  position: relative; font-family: var(--font-display); font-size: 30px; font-weight: 900;
+  color: var(--tier); text-shadow: 0 0 22px color-mix(in srgb, var(--tier) 60%, transparent);
+  margin: 2px 0 10px; letter-spacing: 0.06em;
+}
+.dw-ref2-pct-row { position: relative; display: flex; gap: 10px; justify-content: center; margin-bottom: 12px; }
+.dw-ref2-pct { font-size: 12px; color: var(--bone-soft); background: rgba(0,0,0,0.3); border: 1px solid var(--border-strong); border-radius: 20px; padding: 5px 11px; }
+.dw-ref2-pct strong { color: var(--vellum); }
+.dw-ref2-prog { position: relative; height: 7px; border-radius: 5px; background: rgba(0,0,0,0.4); overflow: hidden; margin: 4px 0 6px; }
+.dw-ref2-prog span { display: block; height: 100%; border-radius: 5px; background: linear-gradient(90deg, var(--tier), color-mix(in srgb, var(--tier) 60%, #fff)); transition: width 0.5s ease; }
+.dw-ref2-next { position: relative; font-size: 12px; color: var(--bone-soft); }
+
+.dw-ref2-link { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--gold-line); background: rgba(255,255,255,0.03); }
+.dw-ref2-link-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dw-ref2-link-text strong { font-size: 12px; color: var(--gold-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.dw-ref2-income { display: flex; gap: 10px; margin-top: 12px; }
+.dw-ref2-income-cell { flex: 1; border-radius: 14px; border: 1px solid var(--gold-line); background: linear-gradient(160deg, rgba(255,200,60,0.08), rgba(0,0,0,0.15)); padding: 12px; text-align: center; }
+.dw-ref2-income-cell span { display: block; font-size: 12px; color: var(--bone-soft); margin-bottom: 4px; }
+.dw-ref2-income-cell strong { font-family: var(--font-display); font-size: 18px; color: var(--gold-bright); }
+
+.dw-ref2-claim { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 14px; border-radius: 14px; border: 1px solid var(--gold-line); background: rgba(255,255,255,0.03); }
+.dw-ref2-claim-amount { display: block; font-family: var(--font-display); font-size: 24px; color: var(--gold-bright); }
+
+.dw-ref2-stats { display: flex; gap: 10px; margin: 12px 0; }
+.dw-ref2-stats > div { flex: 1; text-align: center; border-radius: 12px; border: 1px solid var(--border-strong); background: rgba(255,255,255,0.025); padding: 10px 4px; }
+.dw-ref2-stats span { display: block; font-family: var(--font-display); font-size: 20px; font-weight: 800; color: var(--vellum); }
+.dw-ref2-stats small { font-size: 10px; color: var(--bone-soft); text-transform: uppercase; letter-spacing: 0.1em; }
+
+.dw-ref2-ms-list { display: flex; flex-direction: column; gap: 8px; }
+.dw-ref2-ms { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 12px; border: 1px solid var(--border-strong); background: rgba(255,255,255,0.02); }
+.dw-ref2-ms.ready { border-color: var(--gold-line); background: rgba(255,200,60,0.07); }
+.dw-ref2-ms.claimed { opacity: 0.55; }
+.dw-ref2-ms.locked { opacity: 0.6; }
+.dw-ref2-ms-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; background: var(--surface-3); font-size: 18px; flex-shrink: 0; }
+.dw-ref2-ms.ready .dw-ref2-ms-icon { background: linear-gradient(140deg, #ffe487, #c98a1e); }
+.dw-ref2-ms-info { flex: 1; display: flex; flex-direction: column; }
+.dw-ref2-ms-info strong { font-size: 14px; color: var(--gold-bright); }
+.dw-ref2-ms-info small { font-size: 11px; color: var(--bone-soft); }
+.dw-ref2-ms-lock { font-size: 12px; color: var(--bone-soft); font-family: var(--font-display); }
+
+.dw-ref2-tiers { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.dw-ref2-tier { flex-shrink: 0; min-width: 74px; text-align: center; padding: 10px 6px; border-radius: 12px; border: 1px solid var(--border-strong); background: rgba(255,255,255,0.02); opacity: 0.55; }
+.dw-ref2-tier.reached { opacity: 1; }
+.dw-ref2-tier.current { border-color: var(--tc); box-shadow: 0 0 16px color-mix(in srgb, var(--tc) 35%, transparent); background: color-mix(in srgb, var(--tc) 12%, transparent); }
+.dw-ref2-tier strong { display: block; font-size: 12px; color: var(--tc); font-family: var(--font-display); }
+.dw-ref2-tier small { display: block; font-size: 9px; color: var(--bone-soft); margin: 2px 0 4px; }
+.dw-ref2-tier span { font-size: 14px; font-weight: 800; color: var(--vellum); }

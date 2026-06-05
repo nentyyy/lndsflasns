@@ -44,6 +44,8 @@ export async function migrate() {
     if (!cols.ref_code)              await db.schema.alterTable('players', (t) => t.string('ref_code').nullable());
     if (!cols.ref_earned)            await db.schema.alterTable('players', (t) => t.bigInteger('ref_earned').notNullable().defaultTo(0));
     if (!cols.ref_pending)           await db.schema.alterTable('players', (t) => t.bigInteger('ref_pending').notNullable().defaultTo(0));
+    if (!cols.ref_wager_earned)      await db.schema.alterTable('players', (t) => t.bigInteger('ref_wager_earned').notNullable().defaultTo(0));
+    if (!cols.ref_milestones)        await db.schema.alterTable('players', (t) => t.text('ref_milestones').nullable());
     if (!cols.cheap_tickets)         await db.schema.alterTable('players', (t) => t.bigInteger('cheap_tickets').notNullable().defaultTo(0));
     if (!cols.premium_tickets)       await db.schema.alterTable('players', (t) => t.bigInteger('premium_tickets').notNullable().defaultTo(0));
     if (!cols.pvp_zero_streak)       await db.schema.alterTable('players', (t) => t.integer('pvp_zero_streak').notNullable().defaultTo(0));

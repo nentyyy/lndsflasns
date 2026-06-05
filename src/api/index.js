@@ -248,6 +248,21 @@ app.post('/api/referral/claim',
   }
 );
 
+app.post('/api/referral/milestone',
+  rateLimit({ bucket: 'ref_ms', max: 20, windowMs: 60_000 }),
+  async (req, res, next) => {
+    try {
+      const result = await claimMilestone(req.user.id, String(req.body?.milestoneId || ''));
+      const player = await db('players').where({ user_id: req.user.id }).first();
+      res.json({ ...result, player: playerView(player) });
+    } catch (e) {
+      const map = { not_enough_invites: 400, already_claimed: 409, unknown_milestone: 404 };
+      if (map[e.message]) return res.status(map[e.message]).json({ error: e.message });
+      next(e);
+    }
+  }
+);
+
 app.post('/api/tickets/buy',
   rateLimit({ bucket: 'tickets_buy', max: 30, windowMs: 60_000 }),
   async (req, res, next) => {

@@ -115,6 +115,7 @@ export const api = {
   referral: () => request('/api/referral'),
   bindReferral: (code) => request('/api/referral/bind', { method: 'POST', body: { code } }),
   claimReferral: () => request('/api/referral/claim', { method: 'POST', body: {} }),
+  claimMilestone: (milestoneId) => request('/api/referral/milestone', { method: 'POST', body: { milestoneId } }),
   pvpState: (mode = 'cheap') => request(`/api/pvp/state?mode=${encodeURIComponent(mode)}`),
   pvpBuy: (mode, cardIndex) => request('/api/pvp/buy', { method: 'POST', body: { mode, cardIndex, idempotencyKey: uuid() } }),
   pvpBuyRandom: (mode, count) => request('/api/pvp/buy-random', { method: 'POST', body: { mode, count, idempotencyKey: uuid() } }),

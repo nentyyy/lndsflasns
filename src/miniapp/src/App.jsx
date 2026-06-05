@@ -352,7 +352,7 @@ function App() {
       const res = await api.claimReferral();
       if (res.claimed > 0) {
         setState((c) => ({ ...c, player: { ...c.player, coins: res.balance, refPending: 0 } }));
-        setRefData((r) => r ? { ...r, pending: 0 } : r);
+        api.referral().then(setRefData).catch(() => setRefData((r) => r ? { ...r, pending: 0 } : r));
         notify(`+${formatCoins(res.claimed)} дублонов реферальных`, 'success');
       } else {
         notify('Нет начислений для вывода', 'default');
@@ -682,23 +682,17 @@ function App() {
     notify('Открываем Telegram', 'violet');
   };
 
-  const claimRefReward = (level) => {
-    const reward = state.referral.rewards.find((r) => r.level === level);
-    if (!reward || reward.state !== 'claimable') return;
-    const creditMatch = reward.reward.match(/[\d\s]+/);
-    const credit = creditMatch ? parseInt(creditMatch[0].replace(/\s/g, ''), 10) : 0;
-    setState((current) => ({
-      ...current,
-      referral: {
-        ...current.referral,
-        earned: current.referral.earned + credit,
-        rewards: current.referral.rewards.map((r) =>
-          r.level === level ? { ...r, state: 'claimed' } : r
-        )
-      },
-      player: { ...current.player, coins: current.player.coins + credit }
-    }));
-    notify(credit > 0 ? `+${formatCoins(credit)} дублонов — реферальная награда` : `Награда за реферала #${level} получена`, 'success');
+  // Забрать майлстоун-награду (новая реф-система).
+  const claimRefMilestone = async (milestoneId) => {
+    try {
+      const res = await api.claimMilestone(milestoneId);
+      if (res.player) setState((c) => ({ ...c, player: { ...c.player, coins: res.player.coins } }));
+      const fresh = await api.referral().catch(() => null);
+      if (fresh) setRefData(fresh);
+      notify(`+${formatCoins(res.reward)} дублонов — награда за друзей`, 'success');
+    } catch (e) {
+      notify(e.message === 'already_claimed' ? 'Уже получено' : e.message === 'not_enough_invites' ? 'Недостаточно друзей' : 'Ошибка', 'danger');
+    }
   };
 
   const adminApproveTransfer = (id) => {
@@ -797,7 +791,7 @@ function App() {
               player={state.player}
               onCopy={copyRefLink}
               onShare={shareRef}
-              onClaimReward={claimRefReward}
+              onClaimMilestone={claimRefMilestone}
               onClaimRef={claimRef}
               onBack={() => setTab('profile')}
             />
@@ -826,7 +820,7 @@ function App() {
               onDisconnectTon={disconnectTonWallet}
               onOpenAdmin={() => setAdminOpen(true)}
               onOpenClans={() => setTab('clans')}
-              onOpenRef={() => setTab('referral')}
+              onOpenRef={() => { setTab('referral'); api.referral().then(setRefData).catch(() => {}); }}
               onOpenWheel={() => setWheelOpen(true)}
               onOpenMyRounds={() => setRoundsOpen('mine')}
               onNotify={notify}
@@ -2231,152 +2225,129 @@ function ClansTab({ onBack, player, onNotify }) {
 
 /* ─── Referral tab ────────────────────────────────────────── */
 
-function ReferralTab({ referral, player, onCopy, onShare, onClaimReward, onBack, onClaimRef }) {
+function ReferralTab({ referral, player, onCopy, onShare, onBack, onClaimRef, onClaimMilestone }) {
+  const tier = referral.tier || { name: '—', depositPct: 0, color: '#999' };
+  const next = referral.nextTier;
   const tiers = referral.tiers || [];
-  const currentTier = tiers.find((t) => t.name === referral.tier) || tiers[0] || null;
-  const code = referral.code;
+  // Прогресс до следующего тира.
+  const prog = next ? Math.min(100, Math.round((referral.invites / next.min) * 100)) : 100;
 
   return (
     <section className="dw-page dw-referral-page">
       <button className="dw-back-link" onClick={onBack}>‹ профиль</button>
 
-      {/* Hero */}
-      <div className="dw-ref-hero">
-        <div className="dw-ref-hero-glow" />
-        <div className="dw-ref-hero-corner tl" />
-        <div className="dw-ref-hero-corner tr" />
-        <div className="dw-ref-hero-corner bl" />
-        <div className="dw-ref-hero-corner br" />
-
-        <span className="dw-kicker">Реферальная программа</span>
-        <h1>Зови друзей,<br />получай дублоны</h1>
-        <p>{referral.structure || `${referral.pct || 7}% с каждого пополнения реферала`}</p>
-
-        <div className="dw-ref-link-box">
-          <div className="dw-ref-link-text">
-            <span className="dw-kicker" style={{ marginBottom: 2 }}>Твоя ссылка</span>
-            <strong>t.me/deadwill_bot?start={code}</strong>
-          </div>
-          <button className="dw-btn primary small" onClick={onCopy}>Копировать</button>
+      {/* Hero — тир-карта */}
+      <div className="dw-ref2-hero" style={{ '--tier': tier.color }}>
+        <div className="dw-ref2-hero-glow" />
+        <span className="dw-kicker">Реферальный ранг</span>
+        <h1 className="dw-ref2-tier-name">{tier.name}</h1>
+        <div className="dw-ref2-pct-row">
+          <span className="dw-ref2-pct"><strong>{tier.depositPct}%</strong> с депозитов</span>
+          <span className="dw-ref2-pct"><strong>{referral.wagerPct}%</strong> со ставок</span>
         </div>
-
-        <button className="dw-btn secondary" style={{ width: '100%', marginTop: 10 }} onClick={onShare}>
-          поделиться в Telegram
-        </button>
+        {next ? (
+          <>
+            <div className="dw-ref2-prog"><span style={{ width: `${prog}%` }} /></div>
+            <p className="dw-ref2-next">Ещё {Math.max(0, next.min - referral.invites)} друзей до ранга «{next.name}» ({next.depositPct}%)</p>
+          </>
+        ) : (
+          <p className="dw-ref2-next">Максимальный ранг достигнут 👑</p>
+        )}
       </div>
 
-      {/* Stats + Claim */}
-      <div className="dw-ref-stats-row">
-        <div className="dw-ref-stat">
-          <span>Приглашено</span>
-          <strong>{referral.invites}</strong>
+      {/* Ссылка */}
+      <div className="dw-ref2-link">
+        <div className="dw-ref2-link-text">
+          <span className="dw-kicker">Твоя ссылка</span>
+          <strong>{(referral.link || '').replace('https://', '')}</strong>
         </div>
-        <div className="dw-ref-stat accent">
-          <span>Активных</span>
-          <strong>{referral.activeInvites}</strong>
+        <button className="dw-btn primary small" onClick={onCopy}>Копировать</button>
+      </div>
+      <button className="dw-btn secondary full" style={{ marginTop: 8 }} onClick={onShare}>Поделиться в Telegram</button>
+
+      {/* Доход: два потока */}
+      <div className="dw-ref2-income">
+        <div className="dw-ref2-income-cell">
+          <span>💰 С депозитов</span>
+          <strong>{formatCoins(referral.fromDeposits || 0)}</strong>
         </div>
-        <div className="dw-ref-stat gold">
-          <span>Заработано</span>
-          <strong>{formatCompact(referral.earned)}</strong>
+        <div className="dw-ref2-income-cell">
+          <span>🎴 Со ставок</span>
+          <strong>{formatCoins(referral.fromWager || 0)}</strong>
         </div>
       </div>
 
-      {/* Кнопка «Забрать реферальные» */}
-      <div className="dw-ref-claim-block">
-        <div className="dw-ref-claim-info">
-          <span className="dw-kicker">Доступно к получению</span>
-          <strong className="dw-large-value">{formatCoins(referral.pending || 0)}</strong>
+      {/* Claim pending */}
+      <div className="dw-ref2-claim">
+        <div>
+          <span className="dw-kicker">Доступно к выводу</span>
+          <strong className="dw-ref2-claim-amount">{formatCoins(referral.pending || 0)}</strong>
         </div>
-        <button
-          className={`dw-btn ${(referral.pending || 0) > 0 ? 'primary' : 'ghost'}`}
-          onClick={onClaimRef}
-          disabled={!(referral.pending > 0)}
-        >
-          Забрать реферальные
-        </button>
+        <button className={`dw-btn ${(referral.pending || 0) > 0 ? 'primary' : 'ghost'}`}
+          onClick={onClaimRef} disabled={!(referral.pending > 0)}>Забрать</button>
       </div>
 
-      {currentTier && (
-        <article className="dw-panel dw-ref-tier-card">
-          <div className="dw-panel-head">
-            <div>
-              <span className="dw-kicker">Текущий уровень</span>
-              <h2>Tier: {referral.tier}</h2>
-            </div>
-            <span className="dw-badge premium">{currentTier.bonus} бонус</span>
-          </div>
-          <div className="dw-ledger-line" style={{ margin: '12px 0 8px' }}>
-            <div className="dw-ledger-fill" style={{ width: `${referral.tierProgress || 0}%` }} />
-          </div>
-          <p style={{ color: 'var(--bone-soft)', fontSize: 12 }}>
-            {referral.invites} из {referral.tierNextAt} рефералов до {referral.tierNext}
-          </p>
+      {/* Статы */}
+      <div className="dw-ref2-stats">
+        <div><span>{referral.invites}</span><small>приглашено</small></div>
+        <div><span>{referral.activeInvites}</span><small>активных</small></div>
+        <div><span>{formatCompact(referral.earned || 0)}</span><small>всего</small></div>
+      </div>
 
-          <div className="dw-ref-tiers">
-            {tiers.map((t) => (
-              <div key={t.name} className={`dw-ref-tier-chip ${t.name === referral.tier ? 'active' : ''}`}>
-                <strong>{t.name}</strong>
-                <span>{t.bonus}</span>
-              </div>
-            ))}
-          </div>
-        </article>
-      )}
-
-      {/* Reward milestones */}
-      {referral.rewards && referral.rewards.length > 0 && (
+      {/* Майлстоуны */}
       <article className="dw-panel">
-        <div className="dw-panel-head">
-          <h2>Награды за рефералов</h2>
-          <span className="dw-panel-sub">Единовременные</span>
-        </div>
-        <div className="dw-ref-rewards-list">
-          {referral.rewards.map((r) => (
-            <div className={`dw-ref-reward-row ${r.state}`} key={r.level}>
-              <div className={`dw-ref-reward-num ${r.state === 'claimed' ? 'done' : r.state === 'claimable' ? 'ready' : ''}`}>
-                {r.state === 'claimed' ? '·' : r.level}
+        <div className="dw-panel-head"><h2>Награды за друзей</h2></div>
+        <div className="dw-ref2-ms-list">
+          {(referral.milestones || []).map((m) => (
+            <div key={m.id} className={`dw-ref2-ms ${m.claimed ? 'claimed' : m.reached ? 'ready' : 'locked'}`}>
+              <div className="dw-ref2-ms-icon">{m.claimed ? '✓' : '🎁'}</div>
+              <div className="dw-ref2-ms-info">
+                <strong>{m.label}</strong>
+                <small>{m.invites} друзей</small>
               </div>
-              <div className="dw-history-copy">
-                <strong>{r.reward}</strong>
-                <p>За {r.level} {r.level === 1 ? 'реферала' : 'рефералов'}</p>
-              </div>
-              {r.state === 'claimable' ? (
-                <button className="dw-btn primary small" onClick={() => onClaimReward(r.level)}>
-                  Забрать
-                </button>
-              ) : (
-                <span className={`dw-badge ${r.state === 'claimed' ? 'accent' : ''}`} style={{ opacity: r.state === 'locked' ? 0.4 : 1 }}>
-                  {r.state === 'claimed' ? 'Получено' : 'Закрыто'}
-                </span>
-              )}
+              {m.claimed ? <span className="dw-badge accent">Получено</span>
+                : m.reached ? <button className="dw-btn primary small" onClick={() => onClaimMilestone(m.id)}>Забрать</button>
+                : <span className="dw-ref2-ms-lock">{referral.invites}/{m.invites}</span>}
             </div>
           ))}
         </div>
       </article>
-      )}
 
-      {/* Invite history */}
+      {/* Тир-лестница */}
       <article className="dw-panel">
-        <div className="dw-panel-head">
-          <h2>Мои рефералы</h2>
-          <span className="dw-panel-sub">{referral.invites} игроков</span>
-        </div>
-        <div className="dw-history-list">
-          {(referral.inviteHistory || []).map((item) => (
-            <div className="dw-history-row" key={item.id}>
-              <div className="dw-feed-avatar" style={{ width: 34, height: 34, fontSize: 12 }}>{item.name[0]}</div>
-              <div className="dw-history-copy">
-                <strong>{item.name}</strong>
-                <p>{item.date} · {item.active ? <span style={{ color: 'var(--success)' }}>активен</span> : <span style={{ color: 'var(--muted)' }}>неактивен</span>}</p>
-              </div>
-              {item.earned > 0 ? (
-                <span className="pos">+{formatCoins(item.earned)}</span>
-              ) : (
-                <span style={{ color: 'var(--bone-soft)', fontSize: 12 }}>—</span>
-              )}
+        <div className="dw-panel-head"><h2>Ранги</h2></div>
+        <div className="dw-ref2-tiers">
+          {tiers.map((t) => (
+            <div key={t.id} className={`dw-ref2-tier ${t.current ? 'current' : ''} ${t.reached ? 'reached' : ''}`} style={{ '--tc': t.color }}>
+              <strong>{t.name}</strong>
+              <small>{t.min}+ друзей</small>
+              <span>{t.depositPct}%</span>
             </div>
           ))}
         </div>
+      </article>
+
+      {/* Список рефералов */}
+      <article className="dw-panel">
+        <div className="dw-panel-head"><h2>Мои друзья</h2><span className="dw-panel-sub">{referral.invites}</span></div>
+        {(referral.inviteHistory || []).length === 0 ? (
+          <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: '14px 0', fontSize: 13 }}>Пока никого — поделись ссылкой!</p>
+        ) : (
+          <div className="dw-history-list">
+            {(referral.inviteHistory || []).map((item) => (
+              <div className="dw-history-row" key={item.id}>
+                <span className="dw-round-row-avatar" style={{ width: 34, height: 34, fontSize: 13, ...(item.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}) }}>
+                  {item.avatarUrl ? <img src={item.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : item.name[0]?.toUpperCase()}
+                </span>
+                <div className="dw-history-copy">
+                  <strong>{item.name}</strong>
+                  <p>{item.active ? <span style={{ color: 'var(--emerald-glow)' }}>● активен</span> : <span style={{ color: 'var(--muted)' }}>○ неактивен</span>}</p>
+                </div>
+                {item.earned > 0 ? <span className="pos">+{formatCoins(item.earned)}</span> : <span style={{ color: 'var(--bone-soft)', fontSize: 12 }}>—</span>}
+              </div>
+            ))}
+          </div>
+        )}
       </article>
     </section>
   );

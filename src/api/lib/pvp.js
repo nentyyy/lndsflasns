@@ -7,6 +7,7 @@ import { addTournamentScore } from './tournaments.js';
 import { consumeTicket } from './tickets.js';
 import { addPoints } from './points.js';
 import { addClanXp } from './clans.js';
+import { rewardReferralForWager } from './referral.js';
 
 export class PvpError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -288,9 +289,10 @@ export async function buyCard(userId, mode, cardIndex, idempotencyKey) {
       pvp_total_reveals: trx.raw('pvp_total_reveals + 1')
     });
 
-    // Поинты лояльности + XP клана.
+    // Поинты лояльности + XP клана + реферальный рейк.
     await addPoints(trx, userId, Number(lobby.entry_coins));
     addClanXp(userId, Number(lobby.entry_coins)).catch(() => {});
+    rewardReferralForWager(userId, Number(lobby.entry_coins)).catch(() => {});
 
     // Запустить таймер при первой покупке
     if (!lobby.opened_at) {
@@ -371,6 +373,7 @@ export async function buyRandomCards(userId, mode, countRaw, idempotencyKey) {
       await applyLossProtection(trx, lobby.id, idx, player);
       await trx('players').where({ user_id: userId }).update({ pvp_total_reveals: trx.raw('pvp_total_reveals + 1') });
       await addPoints(trx, userId, Number(lobby.entry_coins));
+      rewardReferralForWager(userId, Number(lobby.entry_coins)).catch(() => {});
       cells.push(idx);
     }
 
