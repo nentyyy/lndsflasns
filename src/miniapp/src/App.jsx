@@ -5,6 +5,7 @@ import BottomBar from './components/BottomBar';
 import AdminPanel from './components/AdminPanel';
 import Splash from './components/Splash';
 import { api } from './api.js';
+import * as sfx from './sfx.js';
 import {
   createInitialState,
   formatCoins,
@@ -116,6 +117,7 @@ function App() {
   const [historyFilter, setHistoryFilter] = useState('all');
   const [toast, setToast] = useState(null);
   const [cardsModalOpen, setCardsModalOpen] = useState(false);
+  const [winStreak, setWinStreak] = useState(0); // >0 победы подряд, <0 поражения
   const [depositOpen, setDepositOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('stars');
   const [payPending, setPayPending] = useState(false);
@@ -215,10 +217,18 @@ function App() {
               if (!cancelled && m?.player) setState((c) => ({ ...c, player: { ...c.player, ...m.player } }));
             }).catch(() => {});
             api.liveFeed().then((f) => { if (!cancelled && Array.isArray(f?.feed || f)) setLiveWins(f.feed || f); }).catch(() => {});
-            if ((s.cards || []).some((c) => c.mine)) {
-              // Даём доиграть последовательному открытию ячеек (~2с) + пауза,
+            const myCards = (s.cards || []).filter((c) => c.mine);
+            if (myCards.length) {
+              // Стрик: победа = суммарный приз > суммарной ставки.
+              const won = myCards.reduce((sum, c) => sum + (c.outcome?.credit || 0), 0)
+                > myCards.length * (s.lobby?.entryCoins || 5);
+              setWinStreak((v) => {
+                const next = won ? (v > 0 ? v + 1 : 1) : (v < 0 ? v - 1 : -1);
+                return next;
+              });
+              // Даём доиграть каскадному открытию (~4с) + пауза,
               // поле с раскрытыми картами остаётся видимым, затем итоговый экран.
-              setTimeout(() => { if (!cancelled) setPvpRoundResult(s); }, 3200);
+              setTimeout(() => { if (!cancelled) setPvpRoundResult(s); }, 4600);
             }
           }
           prevStatus = s?.lobby?.status || prevStatus;
@@ -745,7 +755,7 @@ function App() {
 
       <div className="dw-phone-shell">
         <main className="dw-app">
-          <TopBar player={state.player} tonWallet={tonWallet} onOpenDeposit={() => { setDepositOpen(true); setDepositView('main'); setTonIntent(null); }} onOpenTutorial={() => setTutorialOpen(true)} onOpenCards={() => setCardsModalOpen(true)} />
+          <TopBar player={state.player} tonWallet={tonWallet} streak={Math.max(0, winStreak)} onOpenDeposit={() => { setDepositOpen(true); setDepositView('main'); setTonIntent(null); }} onOpenTutorial={() => setTutorialOpen(true)} onOpenCards={() => setCardsModalOpen(true)} />
 
           {tab === 'play' && (
             <WillTab
@@ -1171,9 +1181,10 @@ function WheelModal({ onClose, onReward }) {
 
 /* ─── Top bar ─────────────────────────────────────────────── */
 
-function TopBar({ player, tonWallet, onOpenDeposit, onOpenTutorial, onOpenCards }) {
+function TopBar({ player, tonWallet, onOpenDeposit, onOpenTutorial, onOpenCards, streak = 0 }) {
   const u = userDisplay(player);
   const cards = player?.tickets?.cheap || 0;
+  const [muted, setMuted] = React.useState(sfx.isMuted());
 
   // Count-up + вспышка при изменении баланса.
   const [shown, setShown] = React.useState(player.coins);
@@ -1204,6 +1215,12 @@ function TopBar({ player, tonWallet, onOpenDeposit, onOpenTutorial, onOpenCards 
           : u.initial}
       </div>
       <button className="dw-help-btn" onClick={onOpenTutorial} aria-label="Как играть">?</button>
+      <button className="dw-help-btn" onClick={() => { sfx.setMuted(!sfx.isMuted()); setMuted(sfx.isMuted()); }} aria-label="Звук">{muted ? '🔇' : '🔊'}</button>
+      {streak >= 3 && (
+        <span className={`dw-streak-badge ${streak >= 7 ? 's7' : streak >= 5 ? 's5' : ''}`}>
+          {streak >= 7 ? '💀' : '🔥'} ×{streak}
+        </span>
+      )}
       <button className="dw-cards-pill" onClick={onOpenCards}>
         🎴 <strong>{formatCoins(cards)}</strong>
       </button>
@@ -1497,6 +1514,7 @@ function PvpCard({ card, idx, settled, revealOpen = true, pickable = false, artP
     if (win && !firedRef.current) {
       firedRef.current = true;
       setFx(true);
+      sfx.revealSound(credit); // звон по уровню приза
       const h = window.Telegram?.WebApp?.HapticFeedback;
       if (isMax) { h?.impactOccurred?.('heavy'); setTimeout(() => h?.impactOccurred?.('heavy'), 120); setTimeout(() => h?.impactOccurred?.('rigid'), 260); }
       else if (winMine) h?.impactOccurred?.('heavy');
@@ -1649,14 +1667,14 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
       setRevealStep(0); // прячем все исходы на время анимации
       const shuffleT = setTimeout(() => {
         setShuffling(false);
-        // Каскад: задержка стартует с 30ms и ускоряется к концу (тиканье нарастает).
+        // Каскад с нарастающим напряжением: первые карты быстро (50ms),
+        // середина медленнее (80ms), последние очень медленно (150ms).
         let n = 0;
         const step = () => {
           n += 1;
           setRevealStep(n);
           if (n < total) {
-            const progress = n / total;
-            const delay = Math.max(8, 30 * (1 - progress * 0.75)); // 30ms → ~8ms
+            const delay = n < 10 ? 50 : n < 26 ? 80 : 150;
             timers.push(setTimeout(step, delay));
           }
         };
@@ -1675,8 +1693,20 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   const cards = pvpState?.cards || [];
   const settled = lobby && lobby.status === 'settled';
   const timer = lobby ? pvpTimer(lobby.endsAt) : null;
-  const urgent = timer !== null && Number(timer) <= 7 && Number(timer) > 0;
+  const secs = timer !== null ? Number(timer) : null;
+  const urgent = secs !== null && secs <= 10 && secs > 0; // последние 10с — красный пульс
+  const critical = secs !== null && secs <= 5 && secs > 0; // последние 5с — крупнее + вибра
   const idle = !lobby?.openedAt && lobby?.status === 'open';
+
+  // Тиканье + вибрация в последние 10 секунд (громче к концу).
+  const lastTickRef = React.useRef(null);
+  React.useEffect(() => {
+    if (secs === null || secs > 10 || secs <= 0 || settled) { lastTickRef.current = null; return; }
+    if (lastTickRef.current === secs) return;
+    lastTickRef.current = secs;
+    sfx.tick((10 - secs) / 10); // 0→1 громкость
+    if (secs <= 5) window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light');
+  }, [secs, settled]);
 
   const cardCount = lobby?.cardCount ?? 36;
   const hasTicket = (tickets?.cheap || 0) > 0;
@@ -1694,9 +1724,42 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   // Сколько ячеек можно поставить рандомно: ограничено свободными ячейками и
   // доступными «входами» (welcome + free spin + cheap-карты).
   const freeCount = cards.filter((c) => !c.taken).length || cardCount;
+  const takenCount = cards.filter((c) => c.taken).length;
+  const playerCount = new Set(cards.filter((c) => c.owner).map((c) => c.owner.userId)).size;
   const entriesAvail = (welcomeFree ? 1 : 0) + (isFreeNext ? 1 : 0) + (tickets?.cheap || 0);
   const maxBet = Math.max(1, Math.min(freeCount, entriesAvail || 1, 15));
   const betClamped = Math.min(Math.max(1, bet), maxBet);
+
+  // Live-попап «игрок взял карту» (соц. давление). Очередь из 1 элемента.
+  const [livePop, setLivePop] = React.useState(null);
+  const seenTakenRef = React.useRef(null);
+  React.useEffect(() => {
+    if (settled || viewingPast) return;
+    const taken = cards.filter((c) => c.owner && !c.mine).map((c) => `${c.index}:${c.owner.userId}`);
+    const seen = seenTakenRef.current;
+    if (seen === null) { seenTakenRef.current = new Set(taken); return; }
+    const fresh = cards.find((c) => c.owner && !c.mine && !seen.has(`${c.index}:${c.owner.userId}`));
+    taken.forEach((k) => seen.add(k));
+    if (fresh) {
+      const u = userDisplay(fresh.owner);
+      setLivePop({ name: u.displayName, avatarUrl: u.avatarUrl, initial: u.initial, idx: fresh.index, key: Date.now() });
+    }
+  }, [cards, settled, viewingPast]);
+  React.useEffect(() => {
+    if (!livePop) return undefined;
+    const t = setTimeout(() => setLivePop(null), 1800);
+    return () => clearTimeout(t);
+  }, [livePop]);
+
+  // Вибрация при пересечении порогов «мало карт».
+  const freeWarnRef = React.useRef(99);
+  React.useEffect(() => {
+    if (settled) { freeWarnRef.current = 99; return; }
+    const h = window.Telegram?.WebApp?.HapticFeedback;
+    if (freeCount <= 1 && freeWarnRef.current > 1) h?.impactOccurred?.('heavy');
+    else if (freeCount < 5 && freeWarnRef.current >= 5) h?.impactOccurred?.('medium');
+    freeWarnRef.current = freeCount;
+  }, [freeCount, settled]);
 
   const rows = buildPvpRows(cardCount);
   const getCard = (i) => cards.find((c) => c.index === i) || { index: i, status: 'free', mine: false, taken: false, outcome: null, owner: null };
@@ -1745,10 +1808,12 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
           </div>
         ) : (
           <div className="dw-pvp-timer-wrap">
-            <div className={`dw-pvp-timer ${urgent ? 'urgent' : idle || settled ? 'idle' : ''}`}>
+            <div className={`dw-pvp-timer ${critical ? 'critical' : urgent ? 'urgent' : idle || settled ? 'idle' : ''}`}>
               {settled ? '00' : timer ?? '30'}<span style={{ fontSize: 11, marginLeft: 4, opacity: 0.7 }}>с</span>
             </div>
-            {lobby?.gameNum && <small className="dw-pvp-gamenum">Игра #{lobby.gameNum}</small>}
+            <small className="dw-pvp-gamenum">
+              {lobby?.gameNum ? `Игра #${lobby.gameNum} · ` : ''}👁 {playerCount} в раунде
+            </small>
           </div>
         )}
         {pastList.length > 0 && (
@@ -1808,6 +1873,13 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
         ))}
       </div>
 
+      {/* Мало свободных карт — нарастающее давление */}
+      {!settled && !viewingPast && freeCount <= 10 && freeCount > 0 && (
+        <div className={`dw-free-warn ${freeCount <= 1 ? 'last' : freeCount < 5 ? 'crit' : ''}`}>
+          {freeCount <= 1 ? 'Последняя карта!' : `Осталось ${freeCount} карт${freeCount < 5 ? '!' : ''}`}
+        </div>
+      )}
+
       {/* Управление ставкой (скрыто при просмотре прошлой игры) */}
       {!settled && !viewingPast && (
         <>
@@ -1864,6 +1936,20 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
           Раунд завершён. Новое лобби откроется — поставь ячейки в следующий.
         </div>
       )}
+
+      {/* Live-попап: кто-то взял карту */}
+      <AnimatePresence>
+        {livePop && !viewingPast && (
+          <motion.div className="dw-live-pop" key={livePop.key}
+            initial={{ x: -120, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 26 }}>
+            <span className="dw-live-pop-ava" style={livePop.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+              {livePop.avatarUrl ? <img src={livePop.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : livePop.initial}
+            </span>
+            <span className="dw-live-pop-txt">{livePop.name} взял карту #{livePop.idx + 1}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }
@@ -2584,6 +2670,9 @@ function LuckyBuyModal({ gift, player, onBalance, onNotify, onClose }) {
   const [error, setError] = useState(null);
   const [feed, setFeed] = useState([]);
   const [wheelFx, setWheelFx] = useState(''); // '' | 'dimmed shake' | 'win'
+  const [attempts, setAttempts] = useState(0); // попыток за сессию
+  const [loseStreak, setLoseStreak] = useState(0); // проигрышей подряд
+  const [confetti, setConfetti] = useState(false);
   const rotRef = React.useRef(0);
   const touchStartY = React.useRef(null);
 
@@ -2628,13 +2717,16 @@ function LuckyBuyModal({ gift, player, onBalance, onNotify, onClose }) {
 
   const finishWin = (out) => {
     setSpinning(false); setResult(out || { won: true });
-    setWheelFx('win'); haptic('heavy');
+    setWheelFx('win'); haptic('heavy'); setLoseStreak(0);
+    setConfetti(true); setTimeout(() => setConfetti(false), 3000);
+    sfx.winFanfare();
     onNotify?.(`🎉 Вы выиграли ${gift.name}!`, 'success');
   };
   const finishLose = (out) => {
     setSpinning(false); setResult(out || { won: false });
-    setWheelFx('dimmed shake');
+    setWheelFx('dimmed shake'); setLoseStreak((v) => v + 1);
     window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('error');
+    sfx.loseSound();
     onNotify?.('Удача отвернулась — попробуй ещё раз', 'danger');
   };
 
@@ -2675,6 +2767,7 @@ function LuckyBuyModal({ gift, player, onBalance, onNotify, onClose }) {
     // Реальная игра: бэкенд решает результат ДО анимации.
     try {
       const out = await api.luckyBuy(gift.id, chance);
+      setAttempts((v) => v + 1);
       // Баланс обновляем сразу (ставка уже списана на сервере).
       if (typeof out.balance === 'number') onBalance?.(out.balance);
       await runScenario(out.won, () => (out.won ? finishWin(out) : finishLose(out)));
@@ -2708,13 +2801,24 @@ function LuckyBuyModal({ gift, player, onBalance, onNotify, onClose }) {
       <motion.div className="dw-wheel-sheet dw-lucky-sheet" onClick={(e) => e.stopPropagation()}
         onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}
         initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
+        {confetti && (
+          <span className="dw-confetti">
+            {Array.from({ length: 40 }).map((_, k) => (
+              <span key={k} className="dw-confetti-bit" style={{
+                left: `${Math.random() * 100}%`,
+                background: ['#FFD700', '#4FC3F7', '#ff5ca8', '#6dbe88', '#fff6d0'][k % 5],
+                animationDelay: `${Math.random() * 0.6}s`, animationDuration: `${1.8 + Math.random() * 1.4}s`
+              }} />
+            ))}
+          </span>
+        )}
         <div className="dw-drawer-handle" />
         <div className="dw-round-result-header">
-          <h2 style={{ flex: 1, textAlign: 'center' }}>🍀 Lucky Buy</h2>
+          <h2 style={{ flex: 1, textAlign: 'center' }}>🍀 Lucky Buy{attempts > 0 ? ` · Попытка #${attempts}` : ''}</h2>
         </div>
         {error && <div className="dw-lucky-result lose" style={{ marginBottom: 10 }}>{error}</div>}
 
-        <div className="dw-wheel-stage">
+        <div className={`dw-wheel-stage${loseStreak >= 5 ? ' dw-wheel-magnet' : ''}`}>
           {wheelFx.includes('win') && (
             <span className="dw-particles" style={{ zIndex: 8 }}>
               {Array.from({ length: 20 }).map((_, k) => {
@@ -2751,11 +2855,15 @@ function LuckyBuyModal({ gift, player, onBalance, onNotify, onClose }) {
 
         {/* Зона результата с фикс. высотой — модал не прыгает */}
         <div className="dw-lucky-result-slot">
-          {outcome && (
+          {outcome ? (
             <div className={`dw-lucky-result ${outcome.won ? 'win' : 'lose'}`}>
               {outcome.won ? `🎉 Вы выиграли ${gift.name}!` : '💀 Удача отвернулась — попробуй ещё раз'}
             </div>
-          )}
+          ) : loseStreak >= 5 ? (
+            <div className="dw-lucky-tease strong">🔥 Подарок почти твой — ещё попытка!</div>
+          ) : loseStreak >= 3 ? (
+            <div className="dw-lucky-tease">😤 Ещё чуть-чуть...</div>
+          ) : null}
         </div>
 
         <div className="dw-lucky-slider-row">
@@ -3847,6 +3955,20 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
             {losers.slice(0, 10).map((r, i) => <Row r={r} i={i} key={r.userId} />)}
           </div>
         )}
+
+        {/* «Карта которую ты не взял» — подталкивает играть ещё */}
+        {(() => {
+          const myWon = myRow ? myRow.totalPrize : 0;
+          const freeBest = cards
+            .filter((c) => !c.taken && c.outcome && (c.outcome.credit || 0) > myWon)
+            .sort((a, b) => (b.outcome.credit || 0) - (a.outcome.credit || 0))[0];
+          if (!freeBest) return null;
+          return (
+            <div className="dw-missed-card">
+              😈 Карта #{freeBest.index + 1} которую ты не взял дала +{freeBest.outcome.credit} дублонов
+            </div>
+          );
+        })()}
 
         <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
           <button className="dw-btn primary" style={{ flex: 2 }} onClick={onClose}>

@@ -4143,3 +4143,50 @@ body {
 .dw-ref2-tier strong { display: block; font-size: 12px; color: var(--tc); font-family: var(--font-display); }
 .dw-ref2-tier small { display: block; font-size: 9px; color: var(--bone-soft); margin: 2px 0 4px; }
 .dw-ref2-tier span { font-size: 14px; font-weight: 800; color: var(--vellum); }
+
+/* ═══════════ АЗАРТ-ЭФФЕКТЫ ═══════════ */
+/* Таймер последних секунд */
+.dw-pvp-timer.urgent { color: #ff5a4a !important; animation: dw-timer-pulse 1s ease-in-out infinite; }
+.dw-pvp-timer.critical { color: #ff3020 !important; font-size: 52px !important; animation: dw-timer-pulse 0.5s ease-in-out infinite; text-shadow: 0 0 18px rgba(255,60,40,0.7); }
+@keyframes dw-timer-pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.12); opacity: 0.75; } }
+
+/* Стрик-бейдж в топбаре */
+.dw-streak-badge {
+  flex-shrink: 0; font-family: var(--font-display); font-size: 12px; font-weight: 800;
+  padding: 4px 9px; border-radius: 20px; color: #ffb347;
+  background: rgba(255,120,30,0.15); border: 1px solid rgba(255,140,40,0.5);
+  box-shadow: 0 0 12px rgba(255,120,30,0.4); white-space: nowrap;
+}
+.dw-streak-badge.s5 { color: #ff7a2a; box-shadow: 0 0 18px rgba(255,90,20,0.6); animation: dw-timer-pulse 1.2s ease-in-out infinite; }
+.dw-streak-badge.s7 { color: #ffd24a; background: rgba(255,200,40,0.18); border-color: rgba(255,215,0,0.7); box-shadow: 0 0 22px rgba(255,200,40,0.8); }
+
+/* Мало свободных карт */
+.dw-free-warn { text-align: center; font-family: var(--font-display); font-size: 13px; margin-top: 8px; color: #f3c33f; }
+.dw-free-warn.crit { color: #ff5a4a; animation: dw-timer-pulse 0.8s ease-in-out infinite; }
+.dw-free-warn.last { color: #ff3020; font-size: 15px; animation: dw-timer-pulse 0.5s ease-in-out infinite; }
+
+/* Live-попап «взял карту» */
+.dw-live-pop {
+  position: fixed; left: 12px; bottom: calc(150px + env(safe-area-inset-bottom)); z-index: 24;
+  display: flex; align-items: center; gap: 8px; max-width: 75vw;
+  padding: 8px 12px 8px 8px; border-radius: 24px;
+  background: rgba(20,16,10,0.92); border: 1px solid var(--gold-line);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5); backdrop-filter: blur(6px);
+}
+.dw-live-pop-ava { width: 26px; height: 26px; border-radius: 50%; background: var(--surface-3); display: grid; place-items: center; font-size: 12px; font-weight: 700; color: var(--gold); flex-shrink: 0; }
+.dw-live-pop-txt { font-size: 12px; color: var(--vellum); }
+
+/* Lucky Buy: тизеры + притяжение подарка + конфетти */
+.dw-lucky-tease { font-size: 13px; color: var(--bone-soft); text-align: center; }
+.dw-lucky-tease.strong { color: #ffb347; font-weight: 700; }
+.dw-wheel-magnet .dw-wheel-svg { animation: dw-magnet 1.6s ease-in-out infinite; }
+@keyframes dw-magnet { 0%,100% { filter: drop-shadow(0 0 14px rgba(212,175,55,0.4)); } 50% { filter: drop-shadow(0 0 28px rgba(255,200,60,0.85)); } }
+.dw-confetti { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 30; }
+.dw-confetti-bit { position: absolute; top: -10%; width: 9px; height: 14px; border-radius: 2px; animation-name: dw-confetti-fall; animation-timing-function: ease-in; animation-fill-mode: forwards; }
+@keyframes dw-confetti-fall { 0% { transform: translateY(0) rotate(0); opacity: 1; } 100% { transform: translateY(120vh) rotate(540deg); opacity: 0.7; } }
+
+/* «Карта которую ты не взял» */
+.dw-missed-card {
+  margin-top: 12px; padding: 10px 12px; border-radius: 10px; font-size: 13px; text-align: center;
+  color: #ff7a6a; background: rgba(160,26,38,0.12); border: 1px solid rgba(160,26,38,0.3);
+}
