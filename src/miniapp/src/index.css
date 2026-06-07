@@ -4252,3 +4252,18 @@ body {
 @keyframes dw-btn-sheen { 0%, 70% { left: -60%; } 100% { left: 130%; } }
 /* Искры на фоне поля ПВП */
 .dw-pvp-grid-36 { position: relative; }
+
+/* Депозит: быстрый выбор сумм */
+.dw-coins-presets { display: flex; gap: 6px; margin-bottom: 12px; }
+.dw-coins-preset {
+  flex: 1; padding: 11px 4px; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--gold-line); background: rgba(255,255,255,0.03);
+  color: var(--vellum); font-family: var(--font-display); font-size: 15px; font-weight: 700;
+  transition: all 0.18s ease;
+}
+.dw-coins-preset.active {
+  border-color: var(--gold); color: #2a1c00;
+  background: linear-gradient(140deg, #ffe487, #f3c33f 50%, #c98a1e);
+  box-shadow: 0 0 16px rgba(255,200,60,0.4);
+}
+.dw-coins-preset:active { transform: scale(0.95); }

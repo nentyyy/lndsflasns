@@ -3761,12 +3761,6 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
   const cheapPacks = ticketPacks?.cheap || [];
   const premPacks = (ticketPacks?.premium || []).slice(0, 5);
 
-  // Мы убрали manualTon и используем coins input:
-  const handleManualSend = () => {
-    const amt = parseFloat(manualTon);
-    if (!amt || amt <= 0) return;
-    onTonPay({ id: 'manual', nanoton: Math.round(amt * 1e9), coins: Math.floor(amt * 10), bonus: 0, title: amt + ' TON' });
-  };
   return (
     <motion.div className="dw-sheet-backdrop" onClick={onClose}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
@@ -3811,8 +3805,15 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
               <span>1 дублон</span><span className="dw-rate-eq">=</span>
               <span>20 ⭐</span><span className="dw-rate-eq">=</span><span>0.1 TON</span>
             </div>
+            {/* Быстрый выбор популярных сумм — в один тап */}
+            <div className="dw-coins-presets">
+              {[50, 100, 250, 500, 1000].map((v) => (
+                <button key={v} className={`dw-coins-preset${coinsNum === v ? ' active' : ''}`}
+                  onClick={() => setCoins(String(v))}>{v}</button>
+              ))}
+            </div>
             <div className="dw-coins-input-wrap">
-              <input className="dw-coins-input" type="number" min="1" placeholder="Сколько дублонов?"
+              <input className="dw-coins-input" type="number" min="1" placeholder="Своя сумма"
                 value={coins} onChange={e => setCoins(e.target.value)} />
               {coinsNum > 0 && (
                 <div className="dw-coins-preview">
