@@ -4018,7 +4018,8 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
             <span className="dw-round-result-emoji">😬</span>
             <div>
               <strong>Немного слило</strong>
-              <span className="dw-round-amount">−{Math.abs(myProfit)} дублонов <em> ×{myMult}</em></span>
+              <span className="dw-round-amount">−{myBet} дублонов <em> ставка</em></span>
+              <small className="dw-win-net">отбил +{myGross} · чистыми {myProfit}</small>
             </div>
           </div>
         )}
@@ -4027,7 +4028,8 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
             <span className="dw-round-result-emoji">💀</span>
             <div>
               <strong>В этот раз не повезло</strong>
-              <span className="dw-round-amount">−{Math.abs(myProfit)} дублонов</span>
+              <span className="dw-round-amount">−{myBet} дублонов <em> в труху</em></span>
+              <small className="dw-win-net">ставка сгорела полностью</small>
             </div>
           </div>
         )}
