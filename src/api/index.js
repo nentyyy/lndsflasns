@@ -482,7 +482,7 @@ app.post('/api/risk/play',
   rateLimit({ bucket: 'risk', max: 30, windowMs: 60_000 }),
   async (req, res, next) => {
     try {
-      const out = await playRisk(req.user.id, req.body?.cells);
+      const out = await playRisk(req.user.id, req.body?.cells, req.body?.pick);
       const player = await db('players').where({ user_id: req.user.id }).first();
       res.json({ ...out, player: playerView(player) });
     } catch (e) {

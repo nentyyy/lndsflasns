@@ -37,7 +37,7 @@ function mapResult(r) {
   };
 }
 
-const tabs = ['play', 'shop', 'clans', 'profile'];
+const tabs = ['play', 'solo', 'shop', 'clans', 'profile'];
 const shopTabs = ['nft'];
 const PREMIUM_CARDS = 5;
 
@@ -101,7 +101,6 @@ function App() {
   const [tab, setTab] = useState('play');
   const [pvpRoundResult, setPvpRoundResult] = useState(null); // итоговый экран после раунда
   const modeId = 'premium';
-  const [willView, setWillView] = useState('pvp'); // pvp | solo
   const [pvpState, setPvpState] = useState(null);
   const [pvpBuying, setPvpBuying] = useState(false);
   const [projectTonWallet, setProjectTonWallet] = useState(null);
@@ -203,7 +202,7 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     let timer;
-    if (tab !== 'play' || willView !== 'pvp') return undefined;
+    if (tab !== 'play') return undefined;
     let prevStatus = null;
     const tick = async () => {
       try {
@@ -244,7 +243,7 @@ function App() {
     };
     tick();
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [tab, willView]);
+  }, [tab]);
 
   const buyTickets = async (type, pack) => {
     try {
@@ -758,36 +757,44 @@ function App() {
           <TopBar player={state.player} tonWallet={tonWallet} streak={Math.max(0, winStreak)} onOpenDeposit={() => { setDepositOpen(true); setDepositView('main'); setTonIntent(null); }} onOpenTutorial={() => setTutorialOpen(true)} onOpenCards={() => setCardsModalOpen(true)} />
 
           {tab === 'play' && (
-            <WillTab
-              view={willView}
-              onViewChange={setWillView}
-              mode={state.wills.find((w) => w.id === 'premium') || state.wills[0]}
-              balance={state.player.coins}
-              multiplier={state.player.multiplier}
-              roundArmed={roundArmed}
-              revealing={revealing}
-              selectedClause={selectedClause}
-              result={result}
-              welcomeAvailable={state.player.welcomeAvailable}
-              tickets={state.player.tickets || { cheap: 0, premium: 0 }}
-              pvpTotalReveals={state.player.pvpTotalReveals || 0}
-              pvpState={pvpState}
-              pvpBuying={pvpBuying}
-              myUserId={state.player.id}
-              lastWinner={liveWins[0] || null}
-              onOpenRounds={() => setRoundsOpen(true)}
-              onArmRound={armRound}
-              onPickClause={playRound}
-              onResetRound={resetRound}
-              onBuyPvpCard={buyPvpCard}
-              onBetRandom={buyRandomCells}
-              onOpenDeposit={() => { setDepositOpen(true); setDepositView('cards'); setTonIntent(null); }}
-              onOpenShopTickets={() => { setTab('shop'); setShopTab('tickets'); }}
-              onOpenPlayerProfile={openPlayerProfile}
-              onNotify={notify}
-              onBalance={(coins) => setState((c) => ({ ...c, player: { ...c.player, coins } }))}
-              onTickets={(t) => setState((c) => ({ ...c, player: { ...c.player, tickets: t } }))}
-            />
+            <section className="dw-page dw-play-page">
+              <PvpPanel
+                welcomeAvailable={state.player.welcomeAvailable}
+                tickets={state.player.tickets || { cheap: 0, premium: 0 }}
+                pvpTotalReveals={state.player.pvpTotalReveals || 0}
+                pvpState={pvpState}
+                pvpBuying={pvpBuying}
+                balance={state.player.coins}
+                myUserId={state.player.id}
+                lastWinner={liveWins[0] || null}
+                onOpenRounds={() => setRoundsOpen(true)}
+                onBuyPvpCard={buyPvpCard}
+                onBetRandom={buyRandomCells}
+                onOpenDeposit={() => { setDepositOpen(true); setDepositView('cards'); setTonIntent(null); }}
+                onOpenPlayerProfile={openPlayerProfile}
+              />
+            </section>
+          )}
+
+          {tab === 'solo' && (
+            <section className="dw-page dw-play-page">
+              <SoloPanel
+                mode={state.wills.find((w) => w.id === 'premium') || state.wills[0]}
+                balance={state.player.coins}
+                roundArmed={roundArmed}
+                revealing={revealing}
+                selectedClause={selectedClause}
+                result={result}
+                tickets={state.player.tickets || { cheap: 0, premium: 0 }}
+                onArmRound={armRound}
+                onPickClause={playRound}
+                onResetRound={resetRound}
+                onOpenDeposit={() => { setDepositOpen(true); setDepositView('cards'); setTonIntent(null); }}
+                onNotify={notify}
+                onBalance={(coins) => setState((c) => ({ ...c, player: { ...c.player, coins } }))}
+                onTickets={(t) => setState((c) => ({ ...c, player: { ...c.player, tickets: t } }))}
+              />
+            </section>
           )}
 
           {tab === 'clans' && (
@@ -898,8 +905,8 @@ function App() {
       {tutorialOpen && (
         <Tutorial
           isNew={Boolean(state.player.welcomeAvailable)}
-          onNavigate={(t) => { setTab(t); setWillView('pvp'); }}
-          onPlayFree={() => { setTutorialOpen(false); setTab('play'); setWillView('pvp'); notify('Открой любую карту — первая бесплатно!', 'success'); }}
+          onNavigate={(t) => { setTab(t); }}
+          onPlayFree={() => { setTutorialOpen(false); setTab('play'); notify('Открой любую карту — первая бесплатно!', 'success'); }}
           onClose={() => setTutorialOpen(false)}
         />
       )}
@@ -1421,54 +1428,6 @@ function HomeTab({ player, liveWins, onOpenPlay, onOpenDeposit }) {
   );
 }
 /* ─── Play tab ────────────────────────────────────────────── */
-
-function WillTab(props) {
-  const { view, onViewChange } = props;
-  return (
-    <section className="dw-page dw-play-page">
-      <div className="dw-will-pager">
-        <button
-          className={`dw-will-pager-btn ${view === 'pvp' ? 'active' : ''}`}
-          onClick={() => onViewChange('pvp')}
-        >
-          ПВП
-          <small>5 дублонов · 36 карт</small>
-        </button>
-        <button
-          className={`dw-will-pager-btn ${view === 'solo' ? 'active' : ''}`}
-          onClick={() => onViewChange('solo')}
-        >
-          Соло · Премиум
-          <small>150 дублонов · 5 печатей</small>
-        </button>
-      </div>
-
-      <AnimatePresence mode="wait">
-        {view === 'pvp' ? (
-          <motion.div
-            key="pvp"
-            initial={{ opacity: 0, x: -16 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -16 }}
-            transition={{ duration: 0.25 }}
-          >
-            <PvpPanel {...props} />
-          </motion.div>
-        ) : (
-          <motion.div
-            key="solo"
-            initial={{ opacity: 0, x: 16 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 16 }}
-            transition={{ duration: 0.25 }}
-          >
-            <SoloPanel {...props} />
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </section>
-  );
-}
 
 function pvpTimer(endsAt) {
   if (!endsAt) return null;
@@ -2044,14 +2003,16 @@ function RiskPanel({ tickets, onOpenDeposit, onNotify, onBalance, onTickets }) {
     if (phase !== 'armed' || busy) return;
     setPick(idx); setBusy(true); setPhase('revealing');
     try {
-      const res = await api.riskPlay(cells);
+      const res = await api.riskPlay(cells, idx);
       if (res.player) { onBalance?.(res.player.coins); onTickets?.(res.player.tickets); }
       // Небольшая пауза «вскрытия».
       setTimeout(() => {
         setOutcome(res); setPhase('done'); setBusy(false);
         const h = window.Telegram?.WebApp?.HapticFeedback;
-        if (res.won) { sfx.winFanfare(); h?.notificationOccurred?.('success'); onNotify?.(`🎉 Угадал! Подарок ${res.gift?.name || ''} твой`, 'success'); }
-        else { sfx.loseSound(); h?.notificationOccurred?.('error'); }
+        if (res.won) {
+          sfx.winFanfare(); h?.notificationOccurred?.('success');
+          onNotify?.(res.gift ? `🎉 Угадал! Подарок ${res.gift.name} твой` : `🎉 Угадал! +${formatCoins(res.coinsWon)} дублонов`, 'success');
+        } else { sfx.loseSound(); h?.notificationOccurred?.('error'); }
       }, 700);
     } catch (e) {
       setBusy(false); setPhase('armed'); setPick(null);
@@ -2108,7 +2069,9 @@ function RiskPanel({ tickets, onOpenDeposit, onNotify, onBalance, onTickets }) {
           {phase === 'done' && (
             <div className={`dw-risk-result ${outcome.won ? 'win' : 'lose'}`}>
               {outcome.won
-                ? <>🎉 Угадал! <strong>{outcome.gift?.name || 'Подарок'}</strong> — в инвентаре</>
+                ? (outcome.gift
+                    ? <>🎉 Угадал! <strong>{outcome.gift.name}</strong> — в инвентаре</>
+                    : <>🎉 Угадал! <strong>+{formatCoins(outcome.coinsWon)}</strong> дублонов</>)
                 : <>💀 Мимо. Выигрышная была #{outcome.winning + 1}</>}
             </div>
           )}

@@ -3,6 +3,7 @@ import React from 'react';
 const labels = {
   home:     'Холл',
   play:     'ПВП',
+  solo:     'СОЛО',
   shop:     'МАГАЗИН',
   clans:    'КЛАНЫ',
   profile:  'ПРОФИЛЬ'
@@ -25,6 +26,15 @@ function Icon({ name }) {
         <rect x="4" y="3" width="16" height="18" rx="2" />
         <circle cx="12" cy="12" r="3.4" />
         <circle cx="12" cy="12" r="1" fill="currentColor" />
+      </svg>
+    );
+  }
+  if (name === 'solo') {
+    return (
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <circle cx="8.5" cy="9" r="1.3" fill="currentColor" stroke="none" />
+        <circle cx="15.5" cy="15" r="1.3" fill="currentColor" stroke="none" />
       </svg>
     );
   }

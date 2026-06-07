@@ -2756,11 +2756,11 @@ h2, .dw-panel h2 {
   left: 50%;
   bottom: max(10px, env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  width: min(calc(100% - 16px), 440px);
+  width: min(calc(100% - 16px), 460px);
   z-index: 20;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 3px;
   padding: 8px;
   border-radius: 22px;
   border: 1px solid var(--gold-line);
