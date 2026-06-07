@@ -69,21 +69,31 @@ export const MODES = {
     id: 'premium',
     title: 'Премиум завещание',
     entryCoins: 150,
-    // Фиксированные призы. Множителей БОЛЬШЕ НЕТ — каждая карта это
-    // независимый фикс-приз (credit), множитель между раундами не переносится.
-    // RTP ≈ 86%: EV = (150*1.7+250*0.8+450*0.35+1000*0.10)/5.55 ≈ 128 из 150.
+    // Фиксированные призы. Множителей нет — каждая карта независимый фикс-приз.
+    // RTP ≈ 78% (понижен): EV = (150*1.4+250*0.6+450*0.25+1000*0.07)/5.42 ≈ 117 из 150.
     outcomes: [
-      { key: 'win_s', type: 'coins', credit: 150,  weight: 1.7, stamp: '+150'  },
-      { key: 'win_m', type: 'coins', credit: 250,  weight: 0.8, stamp: '+250'  },
-      { key: 'win_l', type: 'coins', credit: 450,  weight: 0.35, stamp: '+450' },
-      { key: 'jack',  type: 'coins', credit: 1000, weight: 0.10, stamp: '+1000' },
-      { key: 'empty', type: 'empty', credit: 0,    weight: 1.7, stamp: 'Пусто' },
-      { key: 'debt',  type: 'debt',  credit: 0,    weight: 0.9, stamp: 'Долг'  }
+      { key: 'win_s', type: 'coins', credit: 150,  weight: 1.4,  stamp: '+150'  },
+      { key: 'win_m', type: 'coins', credit: 250,  weight: 0.6,  stamp: '+250'  },
+      { key: 'win_l', type: 'coins', credit: 450,  weight: 0.25, stamp: '+450' },
+      { key: 'jack',  type: 'coins', credit: 1000, weight: 0.07, stamp: '+1000' },
+      { key: 'empty', type: 'empty', credit: 0,    weight: 2.1,  stamp: 'Пусто' },
+      { key: 'debt',  type: 'debt',  credit: 0,    weight: 1.0,  stamp: 'Долг'  }
     ]
   }
 };
 
 export const getMode = (id) => MODES[id] || null;
+
+// ─── Solo Risk-режим ───
+// Игрок ставит 1 премиум-карту (= 150 дублонов стоимости), выбирает N закрытых
+// ячеек (2-10) и одну из них вскрывает. Угадал → приз = ставка × N (в подарок-НФТ).
+// Чем больше N, тем выше риск и множитель. Шанс угадать = 1/N.
+export const RISK_MODE = {
+  minCells: 2,
+  maxCells: 10,
+  betCoins: 150,           // стоимость премиум-карты (эквивалент ставки)
+  maxRewardCoins: 300 * 10 // потолок приза для подбора НФТ
+};
 
 // ─── Deposit catalog (server authoritative) ───
 // Калибровка: 1 монета = 20 Stars (XTR), 1 монета = 0.1 TON = 100_000_000 нанотон.

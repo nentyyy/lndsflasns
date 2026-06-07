@@ -4190,3 +4190,65 @@ body {
   margin-top: 12px; padding: 10px 12px; border-radius: 10px; font-size: 13px; text-align: center;
   color: #ff7a6a; background: rgba(160,26,38,0.12); border: 1px solid rgba(160,26,38,0.3);
 }
+
+/* ═══════════ СОЛО: переключатель + Risk ═══════════ */
+.dw-solo-switch { display: flex; gap: 8px; margin-bottom: 14px; }
+.dw-solo-switch button {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 10px; border-radius: 14px; cursor: pointer;
+  border: 1px solid var(--border-strong); background: rgba(255,255,255,0.025);
+  color: var(--bone-soft); font-family: var(--font-display); font-size: 14px; font-weight: 700;
+  transition: all 0.2s ease;
+}
+.dw-solo-switch button small { font-size: 10px; opacity: 0.7; font-family: var(--font-sans); }
+.dw-solo-switch button.active {
+  border-color: var(--gold); color: var(--gold-bright);
+  background: linear-gradient(160deg, rgba(255,200,60,0.14), rgba(0,0,0,0.2));
+  box-shadow: 0 0 18px rgba(255,200,60,0.25);
+}
+
+.dw-risk { display: flex; flex-direction: column; }
+.dw-risk-info { text-align: center; margin-bottom: 14px; }
+.dw-risk-lead { font-size: 13px; color: var(--bone-soft); margin-bottom: 8px; }
+.dw-risk-lead strong { color: var(--gold-bright); }
+.dw-risk-reward { font-size: 14px; color: var(--vellum); }
+.dw-risk-reward strong { color: var(--gold); font-family: var(--font-display); }
+.dw-risk-slider-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.dw-risk-cells-val { font-family: var(--font-display); font-size: 28px; color: var(--gold-bright); }
+.dw-risk-mult-scale { display: flex; justify-content: space-between; font-size: 11px; color: var(--bone-soft); margin-top: 4px; }
+.dw-risk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(56px, 1fr)); gap: 8px; margin: 8px 0 12px; }
+.dw-risk-cell {
+  aspect-ratio: 3/4; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--gold-line); background: linear-gradient(180deg, var(--surface-2), var(--ink-2));
+  color: var(--gold); font-family: var(--font-display); font-size: 26px; font-weight: 800;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.dw-risk-cell:not(:disabled):hover { border-color: var(--gold); box-shadow: 0 0 14px rgba(255,200,60,0.4); transform: translateY(-2px); }
+.dw-risk-cell.pick { border-color: #4FC3F7; box-shadow: 0 0 16px rgba(79,195,247,0.55); }
+.dw-risk-cell.win { border-color: #FFD700; background: rgba(255,215,0,0.18); box-shadow: 0 0 24px rgba(255,200,60,0.8); animation: dw-num-pop 0.5s ease; }
+.dw-risk-cell.miss { border-color: var(--crimson-line); background: rgba(160,26,38,0.18); color: var(--crimson-glow); }
+.dw-risk-cell.dim { opacity: 0.35; }
+.dw-risk-result { text-align: center; padding: 12px; border-radius: 12px; font-size: 14px; }
+.dw-risk-result.win { background: rgba(255,200,60,0.14); color: #ffe27a; border: 1px solid var(--gold-line); }
+.dw-risk-result.lose { background: rgba(160,26,38,0.14); color: var(--crimson-glow); border: 1px solid var(--crimson-line); }
+
+/* «чистыми» под грязным вином */
+.dw-win-net { display: block; font-size: 11px; color: var(--bone-soft); margin-top: 3px; }
+
+/* ═══════════ ЯРЧЕ В ЦЕЛОМ ═══════════ */
+/* Усиленные частицы выигрыша на карте */
+.dw-pvp-card.win-mine, .dw-pvp-card.win-other { z-index: 3; }
+.dw-pvp-card.win-other { box-shadow: 0 0 16px rgba(255,215,0,0.5) !important; }
+.dw-pvp-card.win-mine { box-shadow: 0 0 18px rgba(79,195,247,0.6) !important; }
+/* Золотой пульс таймера в норме (лёгкое свечение всегда) */
+.dw-pvp-timer { text-shadow: 0 0 14px rgba(255,200,60,0.4); }
+/* Кнопки primary — живой блеск по краю */
+.dw-btn.primary { position: relative; overflow: hidden; }
+.dw-btn.primary::after {
+  content: ''; position: absolute; top: 0; left: -60%; width: 50%; height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,0.45), transparent);
+  transform: skewX(-20deg); animation: dw-btn-sheen 3.4s ease-in-out infinite;
+}
+@keyframes dw-btn-sheen { 0%, 70% { left: -60%; } 100% { left: 130%; } }
+/* Искры на фоне поля ПВП */
+.dw-pvp-grid-36 { position: relative; }

@@ -17,6 +17,7 @@ import { getReferralView, bindReferrer, makeRefCode, claimReferralPending } from
 import { getTournamentView, ensureActiveTournament } from './lib/tournaments.js';
 import { getPvpState, buyCard, buyRandomCards, PvpError, getLiveFeed, sweepExpiredLobbies } from './lib/pvp.js';
 import { getWheelState, spinWheel, WheelError } from './lib/wheel.js';
+import { playRisk, RiskError } from './lib/risk.js';
 import { listArtifacts, buyArtifact, listInventory, useArtifact, getPointsShop, spendPointsShop, ArtifactError } from './lib/artifacts.js';
 import { getPoints } from './lib/points.js';
 import { playLuckyBuy, getLuckyFeed, luckyBet, luckyMultiplier, LuckyError } from './lib/lucky-buy.js';
@@ -471,6 +472,21 @@ app.post('/api/rounds/reveal',
       res.json(out);
     } catch (e) {
       if (e instanceof GameError) return res.status(e.status).json({ error: e.message });
+      next(e);
+    }
+  }
+);
+
+// ─── Solo Risk-режим ───
+app.post('/api/risk/play',
+  rateLimit({ bucket: 'risk', max: 30, windowMs: 60_000 }),
+  async (req, res, next) => {
+    try {
+      const out = await playRisk(req.user.id, req.body?.cells);
+      const player = await db('players').where({ user_id: req.user.id }).first();
+      res.json({ ...out, player: playerView(player) });
+    } catch (e) {
+      if (e instanceof RiskError) return res.status(e.status).json({ error: e.message });
       next(e);
     }
   }

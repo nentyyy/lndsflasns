@@ -784,6 +784,9 @@ function App() {
               onOpenDeposit={() => { setDepositOpen(true); setDepositView('cards'); setTonIntent(null); }}
               onOpenShopTickets={() => { setTab('shop'); setShopTab('tickets'); }}
               onOpenPlayerProfile={openPlayerProfile}
+              onNotify={notify}
+              onBalance={(coins) => setState((c) => ({ ...c, player: { ...c.player, coins } }))}
+              onTickets={(t) => setState((c) => ({ ...c, player: { ...c.player, tickets: t } }))}
             />
           )}
 
@@ -1954,7 +1957,24 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
   );
 }
 
-function SoloPanel({
+function SoloPanel(props) {
+  const [soloMode, setSoloMode] = useState('premium'); // premium | risk
+  return (
+    <>
+      <div className="dw-solo-switch">
+        <button className={soloMode === 'premium' ? 'active' : ''} onClick={() => setSoloMode('premium')}>
+          👑 Премиум<small>5 печатей</small>
+        </button>
+        <button className={soloMode === 'risk' ? 'active' : ''} onClick={() => setSoloMode('risk')}>
+          🎲 Риск<small>×2…×10 НФТ</small>
+        </button>
+      </div>
+      {soloMode === 'premium' ? <PremiumPanel {...props} /> : <RiskPanel {...props} />}
+    </>
+  );
+}
+
+function PremiumPanel({
   mode, balance, multiplier, roundArmed, revealing, selectedClause, result, tickets,
   onArmRound, onPickClause, onResetRound, onOpenDeposit
 }) {
@@ -2003,6 +2023,99 @@ function SoloPanel({
         )}
       </div>
     </>
+  );
+}
+
+/* ─── Соло Risk-режим: 2-10 закрытых, угадай → ×N в НФТ ─────── */
+
+function RiskPanel({ tickets, onOpenDeposit, onNotify, onBalance, onTickets }) {
+  const [cells, setCells] = useState(3);
+  const [phase, setPhase] = useState('setup'); // setup | armed | revealing | done
+  const [pick, setPick] = useState(null);
+  const [outcome, setOutcome] = useState(null); // {won, winning, gift, rewardCoins}
+  const [busy, setBusy] = useState(false);
+  const premium = tickets?.premium || 0;
+  const hasCard = premium > 0;
+  const reward = 150 * cells;
+
+  const arm = () => { if (!hasCard) { onOpenDeposit?.(); return; } setPhase('armed'); setPick(null); setOutcome(null); };
+
+  const choose = async (idx) => {
+    if (phase !== 'armed' || busy) return;
+    setPick(idx); setBusy(true); setPhase('revealing');
+    try {
+      const res = await api.riskPlay(cells);
+      if (res.player) { onBalance?.(res.player.coins); onTickets?.(res.player.tickets); }
+      // Небольшая пауза «вскрытия».
+      setTimeout(() => {
+        setOutcome(res); setPhase('done'); setBusy(false);
+        const h = window.Telegram?.WebApp?.HapticFeedback;
+        if (res.won) { sfx.winFanfare(); h?.notificationOccurred?.('success'); onNotify?.(`🎉 Угадал! Подарок ${res.gift?.name || ''} твой`, 'success'); }
+        else { sfx.loseSound(); h?.notificationOccurred?.('error'); }
+      }, 700);
+    } catch (e) {
+      setBusy(false); setPhase('armed'); setPick(null);
+      onNotify?.(e.message === 'need_premium_card' ? 'Нужна премиум-карта' : 'Ошибка', 'danger');
+    }
+  };
+
+  const reset = () => { setPhase('setup'); setPick(null); setOutcome(null); };
+
+  return (
+    <div className="dw-risk">
+      <div className="dw-risk-info">
+        <p className="dw-risk-lead">Выбери, сколько ячеек закрыто. Угадай 1 из {cells} — забери подарок <strong>×{cells}</strong>.</p>
+        <div className="dw-risk-reward">🎁 Приз: подарок до <strong>{formatCoins(reward)}</strong> дбл.</div>
+      </div>
+
+      {phase === 'setup' && (
+        <>
+          <div className="dw-risk-slider-row">
+            <span>Закрыто ячеек</span>
+            <strong className="dw-risk-cells-val">{cells}</strong>
+          </div>
+          <input className="dw-lucky-slider" type="range" min={2} max={10} step={1} value={cells}
+            onChange={(e) => setCells(Number(e.target.value))} />
+          <div className="dw-risk-mult-scale">
+            <span>×2 безопаснее</span><span>×10 рискованнее</span>
+          </div>
+          <button className={`dw-btn ${hasCard ? 'primary' : 'ghost'} full`} style={{ marginTop: 14 }} onClick={arm}>
+            {hasCard ? `Поставить премиум-карту (${premium})` : 'Нужна премиум-карта'}
+          </button>
+        </>
+      )}
+
+      {(phase === 'armed' || phase === 'revealing' || phase === 'done') && (
+        <>
+          <div className="dw-risk-grid">
+            {Array.from({ length: cells }).map((_, i) => {
+              const isPick = pick === i;
+              const revealed = phase === 'done';
+              const isWinning = outcome && i === outcome.winning;
+              const cls = ['dw-risk-cell',
+                isPick ? 'pick' : '',
+                revealed && isWinning ? 'win' : '',
+                revealed && isPick && !outcome.won ? 'miss' : '',
+                revealed && !isWinning && !isPick ? 'dim' : ''].filter(Boolean).join(' ');
+              return (
+                <button key={i} className={cls} disabled={phase !== 'armed'} onClick={() => choose(i)}>
+                  {revealed ? (isWinning ? '🎁' : '✗') : (phase === 'revealing' && isPick ? '…' : '?')}
+                </button>
+              );
+            })}
+          </div>
+          {phase === 'armed' && <p className="dw-play-hint">выбери ячейку — угадай {cells === 2 ? 'из 2' : `1 из ${cells}`}</p>}
+          {phase === 'done' && (
+            <div className={`dw-risk-result ${outcome.won ? 'win' : 'lose'}`}>
+              {outcome.won
+                ? <>🎉 Угадал! <strong>{outcome.gift?.name || 'Подарок'}</strong> — в инвентаре</>
+                : <>💀 Мимо. Выигрышная была #{outcome.winning + 1}</>}
+            </div>
+          )}
+          {phase === 'done' && <button className="dw-btn primary full" style={{ marginTop: 10 }} onClick={reset}>Играть ещё</button>}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -2727,7 +2840,7 @@ function LuckyBuyModal({ gift, player, onBalance, onNotify, onClose }) {
     setWheelFx('dimmed shake'); setLoseStreak((v) => v + 1);
     window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('error');
     sfx.loseSound();
-    onNotify?.('Удача отвернулась — попробуй ещё раз', 'danger');
+    // Тост не показываем — итог и так виден на колесе (без дубля).
   };
 
   const runScenario = async (won, finalize) => {
@@ -2737,9 +2850,21 @@ function LuckyBuyModal({ gift, player, onBalance, onNotify, onClose }) {
     const inGrey = () => goldDeg + 6 + Math.random() * Math.max(0.0001, (360 - goldDeg) - 12);
     const SMOOTH = 'cubic-bezier(0.12,0.72,0.16,1)'; // плавная глубокая деселерация
 
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
     if (won) {
-      // Выигрыш всегда чисто и плавно останавливается на золоте — без отката.
-      await animateTo(targetAngle(inGold(), { turns: 5 }), 3.6 + Math.random() * 0.8, SMOOTH);
+      // 45% — байт «вот-вот мимо»: тормозит у дальнего края золота, замирает,
+      // потом МЕДЛЕННО доползает вперёд и мягко встаёт в золото (без отката назад).
+      if (Math.random() < 0.45) {
+        const edge = Math.max(0.5, goldDeg - 1.5); // почти у выхода из золота
+        await animateTo(targetAngle(edge, { turns: 5 }), 3.8 + Math.random() * 0.6, SMOOTH);
+        await wait(550);
+        haptic('light');
+        await animateTo(targetAngle(inGold(), { turns: 1 }), 1.1, 'cubic-bezier(0.22,0.9,0.3,1)');
+      } else {
+        // Чистая плавная остановка на золоте.
+        await animateTo(targetAngle(inGold(), { turns: 5 }), 3.6 + Math.random() * 0.8, SMOOTH);
+      }
       finalize();
       return;
     }
@@ -3846,20 +3971,22 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
     : myProfit > -myBet ? 'partial'
     : 'lose';
   const isLoser = myState === 'partial' || myState === 'lose';
+  // «Грязный вин» — суммарный лут (все выпавшие дублоны), без вычета ставки.
+  const myGross = myRow ? myRow.totalPrize : 0;
 
-  // Анимированный «отсчёт» выигрыша — дублоны набегают, а не появляются разом.
+  // Анимированный «отсчёт» лута — дублоны набегают, а не появляются разом.
   const [shownWin, setShownWin] = useState(0);
   useEffect(() => {
-    if (!(myProfit > 0)) { setShownWin(0); return; }
+    if (!(myGross > 0)) { setShownWin(0); return; }
     let raf; const start = performance.now(); const dur = 850;
     const step = (now) => {
       const p = Math.min(1, (now - start) / dur);
-      setShownWin(Math.round(myProfit * (1 - Math.pow(1 - p, 3))));
+      setShownWin(Math.round(myGross * (1 - Math.pow(1 - p, 3))));
       if (p < 1) raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [myProfit]);
+  }, [myGross]);
 
   const cardLabel = (nums) => nums.length > 1 ? `карты #${nums.join(', #')}` : `карта #${nums[0]}`;
 
@@ -3912,6 +4039,7 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
             <div>
               <strong className="dw-win-title">ТЫ ВЫИГРАЛ</strong>
               <span className="dw-round-amount">+{shownWin} дублонов <em> ×{myMult}</em></span>
+              <small className="dw-win-net">чистыми +{myProfit} · ставка {myBet}</small>
             </div>
           </div>
         )}

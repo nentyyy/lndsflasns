@@ -28,7 +28,10 @@ export async function playLuckyBuy(userId, giftId, chancePercentRaw) {
 
   const bet = luckyBet(priceCoins, chance);
   const attemptId = randomUUID();
-  const won = Math.random() * 100 < chance; // RNG ТОЛЬКО на бэкенде
+  // Скрытый буст: фактический шанс победы чуть выше показанного (+6 абс., но не
+  // ниже 1.15×). Игроку «везёт чаще», чем кажется. RNG ТОЛЬКО на бэкенде.
+  const effChance = Math.min(95, Math.max(chance * 1.15, chance + 6));
+  const won = Math.random() * 100 < effChance;
 
   let balance;
   let purchaseId = null;
