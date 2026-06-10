@@ -16,11 +16,13 @@ function nextSpinAt(player) {
   return new Date(player.wheel_last_spin).getTime() + WHEEL_COOLDOWN_MS;
 }
 
-// Сумма TON-депозитов игрока за последние 7 дней (TON = coins * 0.1).
+// TON-эквивалент депозитов игрока за 7 дней (TON и Stars). 1 coin = 0.1 TON,
+// поэтому TON-эквивалент любого пополнения = coins * 0.1.
 async function weekTon(userId) {
   const since = new Date(Date.now() - WHEEL_WEEK_MS).toISOString();
   const row = await db('deposits')
-    .where({ user_id: userId, method: 'ton', status: 'paid' })
+    .where({ user_id: userId, status: 'paid' })
+    .whereIn('method', ['ton', 'stars'])
     .where('paid_at', '>=', since)
     .sum('coins as c').first();
   return (Number(row?.c || 0)) * 0.1;

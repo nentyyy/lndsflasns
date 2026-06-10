@@ -1220,8 +1220,8 @@ function WheelModal({ onClose, onReward }) {
           <div className="dw-wheel-result">🎉 Выпало: <strong>{result.label}</strong></div>
         ) : data?.unlocked === false ? (
           <div className="dw-wheel-locked">
-            🔒 Внеси ещё <strong>{data?.tonNeeded ?? '—'} TON</strong> за неделю, чтобы крутить
-            <small>За 7 дней: {data?.weekTon ?? 0} / {data?.requiredTon ?? 5} TON · потом колесо каждый день</small>
+            🔒 Пополни ещё на <strong>{data?.tonNeeded ?? '—'} TON</strong> за неделю, чтобы крутить
+            <small>Считаем TON и Stars · за 7 дней: {data?.weekTon ?? 0} / {data?.requiredTon ?? 5} TON · потом колесо каждый день</small>
           </div>
         ) : (
           <div className="dw-wheel-hint">Бесплатный спин раз в 24 часа · всю неделю</div>
