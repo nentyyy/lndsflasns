@@ -1663,10 +1663,10 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
     return () => { cancelled = true; };
   }, [pastIdx, pastList]);
 
-  // Артефакты игрока — обновляем при смене лобби.
-  useEffect(() => {
-    api.myArtifacts().then((d) => setArtifacts(d.artifacts || [])).catch(() => {});
-  }, [pvpState?.lobby?.status]);
+  // Артефакты временно отключены — панель в раунде не показываем.
+  // useEffect(() => {
+  //   api.myArtifacts().then((d) => setArtifacts(d.artifacts || [])).catch(() => {});
+  // }, [pvpState?.lobby?.status]);
 
   useEffect(() => {
     const t = setInterval(() => setTick((v) => v + 1), 500);
@@ -2611,11 +2611,7 @@ function ShopTab({ shop, player, onBuyNft, portalsGifts, onNotify, onBalance }) 
 
   return (
     <section className="dw-page dw-shop-page">
-      <div className="dw-shop-tabs">
-        <button className={shopView === 'gifts' ? 'active' : ''} onClick={() => setShopView('gifts')}>Подарки</button>
-        <button className={shopView === 'artifacts' ? 'active' : ''} onClick={() => setShopView('artifacts')}>Лавка</button>
-        <button className={shopView === 'points' ? 'active' : ''} onClick={() => setShopView('points')}>Поинты</button>
-      </div>
+      {/* Лавка (артефакты) и Поинты временно скрыты */}
 
       {shopView === 'gifts' && (
         <>
@@ -2652,8 +2648,8 @@ function ShopTab({ shop, player, onBuyNft, portalsGifts, onNotify, onBalance }) 
         </>
       )}
 
-      {shopView === 'artifacts' && <ArtifactsShop player={player} onBalance={onBalance} />}
-      {shopView === 'points' && <PointsShop player={player} catalog={catalog} />}
+      {/* {shopView === 'artifacts' && <ArtifactsShop player={player} onBalance={onBalance} />} */}
+      {/* {shopView === 'points' && <PointsShop player={player} catalog={catalog} />} */}
 
       {luckyGift && (
         <LuckyBuyModal gift={luckyGift} player={player} onBalance={onBalance} onNotify={onNotify} onClose={() => setLuckyGift(null)} />
@@ -3095,10 +3091,10 @@ function Inventory({ onNotify, onBalance }) {
   if (!data) return <article className="dw-panel" style={{ marginBottom: 12 }}><p style={{ color: 'var(--bone-soft)', textAlign: 'center', fontSize: 13 }}>Загрузка…</p></article>;
 
   const gifts = data.gifts || [];
-  const arts = data.artifacts || [];
-  const empty = gifts.length === 0 && arts.length === 0;
-  const showGifts = tab === 'all' || tab === 'gifts';
-  const showArts = tab === 'all' || tab === 'artifacts';
+  const arts = [];                 // артефакты временно скрыты
+  const empty = gifts.length === 0;
+  const showGifts = true;
+  const showArts = false;
 
   const doSell = async (item) => {
     setBusy(true);
@@ -3136,12 +3132,7 @@ function Inventory({ onNotify, onBalance }) {
 
   return (
     <article className="dw-panel" style={{ marginBottom: 12 }}>
-      <div className="dw-panel-head" style={{ marginBottom: 10 }}><h2>Инвентарь</h2></div>
-      <div className="dw-shop-tabs" style={{ marginBottom: 12 }}>
-        <button className={tab === 'all' ? 'active' : ''} onClick={() => setTab('all')}>Всё</button>
-        <button className={tab === 'gifts' ? 'active' : ''} onClick={() => setTab('gifts')}>Подарки</button>
-        <button className={tab === 'artifacts' ? 'active' : ''} onClick={() => setTab('artifacts')}>Артефакты</button>
-      </div>
+      <div className="dw-panel-head" style={{ marginBottom: 10 }}><h2>Инвентарь подарков</h2></div>
 
       {empty && <p style={{ color: 'var(--bone-soft)', textAlign: 'center', padding: '16px 0', fontSize: 14 }}>Здесь пока пусто — загляни в магазин</p>}
 
@@ -3599,7 +3590,6 @@ function StatsModal({ player, onClose, onOpenMyRounds }) {
           <Cell label="Поражений" value={formatCoins(losses)} />
           <Cell label="Винрейт" value={`${winRate}%`} accent />
           <Cell label="Рекорд" value={formatCompact(bestWin)} accent />
-          <Cell label="Поинты" value={pts !== null ? formatCoins(pts) : '…'} />
           <Cell label="Всего выиграно" value={formatCompact(totalWon)} />
           <Cell label="Всего поставлено" value={formatCompact(totalSpent)} />
         </div>
