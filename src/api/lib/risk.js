@@ -26,7 +26,8 @@ async function pickGiftForReward(reward) {
 export async function playRisk(userId, cellsRaw, pickRaw) {
   const cells = Math.max(RISK_MODE.minCells, Math.min(RISK_MODE.maxCells, Math.floor(Number(cellsRaw) || 0)));
   const pick = Math.max(0, Math.min(cells - 1, Math.floor(Number(pickRaw) || 0)));
-  const rewardCoins = RISK_MODE.betCoins * cells; // ×2..×10
+  // RTP 85%: приз = ставка × N × 0.85.
+  const rewardCoins = Math.round(RISK_MODE.betCoins * cells * RISK_MODE.rtp);
   const attemptId = randomUUID();
 
   const result = await db.transaction(async (trx) => {

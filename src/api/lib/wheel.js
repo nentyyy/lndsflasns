@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { db } from './db.js';
 import { credit } from './wallet.js';
-import { WHEEL_SEGMENTS, WHEEL_COOLDOWN_MS } from './config.js';
+import { WHEEL_SEGMENTS, WHEEL_COOLDOWN_MS, WHEEL_WEEK_TON, WHEEL_WEEK_MS } from './config.js';
+import { notifyAdminsPurchase } from './admin-notify.js';
 
 export class WheelError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
 
-// Публичный вид сегментов (без весов) — для отрисовки колеса.
 const publicSegments = () =>
   WHEEL_SEGMENTS.map((s) => ({ key: s.key, type: s.type, value: s.value, label: s.label }));
 
@@ -16,14 +16,28 @@ function nextSpinAt(player) {
   return new Date(player.wheel_last_spin).getTime() + WHEEL_COOLDOWN_MS;
 }
 
+// Сумма TON-депозитов игрока за последние 7 дней (TON = coins * 0.1).
+async function weekTon(userId) {
+  const since = new Date(Date.now() - WHEEL_WEEK_MS).toISOString();
+  const row = await db('deposits')
+    .where({ user_id: userId, method: 'ton', status: 'paid' })
+    .where('paid_at', '>=', since)
+    .sum('coins as c').first();
+  return (Number(row?.c || 0)) * 0.1;
+}
+
 export async function getWheelState(userId) {
   const player = await db('players').where({ user_id: userId }).first();
-  const unlocked = Boolean(player?.first_deposit_done);
+  const ton = await weekTon(userId);
+  const unlocked = ton >= WHEEL_WEEK_TON;
   const next = nextSpinAt(player);
   const canSpin = unlocked && Date.now() >= next;
   return {
     unlocked,
     canSpin,
+    weekTon: Math.round(ton * 100) / 100,
+    requiredTon: WHEEL_WEEK_TON,
+    tonNeeded: Math.max(0, Math.round((WHEEL_WEEK_TON - ton) * 100) / 100),
     nextSpinAt: next ? new Date(next).toISOString() : null,
     cooldownMs: WHEEL_COOLDOWN_MS,
     depositBonusPct: Number(player?.wheel_deposit_bonus_pct || 0),
@@ -31,7 +45,6 @@ export async function getWheelState(userId) {
   };
 }
 
-// Взвешенный выбор сегмента.
 function pickSegment() {
   const totalWeight = WHEEL_SEGMENTS.reduce((s, x) => s + x.weight, 0);
   let r = Math.random() * totalWeight;
@@ -42,26 +55,55 @@ function pickSegment() {
   return { index: WHEEL_SEGMENTS.length - 1, seg: WHEEL_SEGMENTS[WHEEL_SEGMENTS.length - 1] };
 }
 
+// Подобрать недорогой НФТ из каталога (для приза «НФТ»).
+async function pickWheelGift() {
+  const gifts = await db('portals_cache').where('available', true).andWhere('priceCoins', '>', 0)
+    .orderBy('priceCoins', 'asc').limit(6);
+  if (!gifts.length) return null;
+  return gifts[Math.floor(Math.random() * gifts.length)];
+}
+
 export async function spinWheel(userId) {
-  return db.transaction(async (trx) => {
+  // Проверка доступа вне транзакции (читает deposits).
+  const ton = await weekTon(userId);
+  if (ton < WHEEL_WEEK_TON) throw new WheelError('locked', 403);
+
+  const out = await db.transaction(async (trx) => {
     const player = await trx('players').where({ user_id: userId }).first();
     if (!player) throw new WheelError('player not found', 404);
-    if (!player.first_deposit_done) throw new WheelError('locked', 403);
     if (Date.now() < nextSpinAt(player)) throw new WheelError('cooldown', 429);
 
     const { index, seg } = pickSegment();
-
     let balance = Number(player.balance);
     const reward = { key: seg.key, type: seg.type, value: seg.value, label: seg.label };
+    let nftPurchaseId = null;
+    let nftGift = null;
 
     if (seg.type === 'coins') {
       balance = await credit(trx, userId, seg.value, 'wheel', `wheel:${randomUUID()}`);
     } else if (seg.type === 'tickets') {
       await trx('players').where({ user_id: userId }).update({ cheap_tickets: trx.raw('cheap_tickets + ?', [seg.value]) });
     } else if (seg.type === 'deposit_bonus') {
-      // Берём максимум из накопленного и нового (не складываем бесконечно).
       const pct = Math.max(Number(player.wheel_deposit_bonus_pct || 0), seg.value);
       await trx('players').where({ user_id: userId }).update({ wheel_deposit_bonus_pct: pct });
+    } else if (seg.type === 'nft') {
+      const gift = await pickWheelGift();
+      if (gift) {
+        nftPurchaseId = randomUUID();
+        await trx('portals_purchases').insert({
+          id: nftPurchaseId, user_id: String(userId),
+          gift_id: gift.id, gift_name: gift.name, gift_file: gift.file || null,
+          price_coins: Number(gift.priceCoins) || 0, idempotency_key: `wheel:${nftPurchaseId}`,
+          source: 'wheel', status: 'owned'
+        });
+        nftGift = gift;
+        reward.label = `НФТ: ${gift.name}`;
+      } else {
+        // Нет НФТ в каталоге — компенсируем дублонами.
+        balance = await credit(trx, userId, 50, 'wheel', `wheel:${randomUUID()}`);
+        reward.label = '+50 дублонов';
+        reward.type = 'coins'; reward.value = 50;
+      }
     }
 
     await trx('players').where({ user_id: userId }).update({
@@ -76,7 +118,15 @@ export async function spinWheel(userId) {
       balance,
       tickets: { cheap: Number(updated.cheap_tickets), premium: Number(updated.premium_tickets) },
       depositBonusPct: Number(updated.wheel_deposit_bonus_pct || 0),
-      nextSpinAt: new Date(nextSpinAt(updated)).toISOString()
+      nextSpinAt: new Date(nextSpinAt(updated)).toISOString(),
+      nft: nftGift ? { id: nftGift.id, name: nftGift.name, file: nftGift.file } : null,
+      nftPurchaseId
     };
   });
+
+  if (out.nftPurchaseId) {
+    notifyAdminsPurchase({ id: out.nftPurchaseId, user_id: String(userId), gift_id: out.nft.id, gift_name: out.nft.name, price_coins: 0 })
+      .catch((e) => console.error('wheel nft notify err', e.message));
+  }
+  return out;
 }

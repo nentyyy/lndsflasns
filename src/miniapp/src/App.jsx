@@ -1065,23 +1065,33 @@ function Tutorial({ isNew, onNavigate, onPlayFree, onClose }) {
 
 /* ─── Колесо бонусов ──────────────────────────────────────── */
 
-function WheelBanner({ bonusPct, onOpen }) {
+function WheelBanner({ bonusPct, onOpen, locked, tonNeeded }) {
   return (
-    <button className="dw-wheel-banner" onClick={onOpen}>
+    <button className={`dw-wheel-banner${locked ? ' locked' : ''}`} onClick={onOpen}>
       <span className="dw-wheel-banner-ico">🎡</span>
       <span className="dw-wheel-banner-txt">
         <strong>Колесо фортуны</strong>
-        <small>{bonusPct > 0 ? `Активен бонус +${bonusPct}% к депозиту` : 'Крути и забирай бонусы'}</small>
+        <small>
+          {locked ? `Внеси ещё ${tonNeeded} TON за неделю` : bonusPct > 0 ? `Активен бонус +${bonusPct}% к депозиту` : 'Крути каждый день — забирай призы'}
+        </small>
       </span>
-      <span className="dw-wheel-banner-go">›</span>
+      <span className="dw-wheel-banner-go">{locked ? '🔒' : '›'}</span>
     </button>
   );
 }
 
+// Цвет сектора по типу — для красочного колеса.
+const WHEEL_COLORS = {
+  deposit_bonus: ['#3a2a6e', '#5a4a96'],
+  coins: ['#7a5210', '#b8862b'],
+  tickets: ['#0e5a4a', '#15917a'],
+  nft: ['#7a1248', '#ff5ca8']
+};
 function wheelShort(seg) {
   if (seg.type === 'coins') return `+${seg.value}`;
   if (seg.type === 'deposit_bonus') return `+${seg.value}%`;
-  return `+${seg.value}🎴`;
+  if (seg.type === 'nft') return 'НФТ';
+  return '🎴';
 }
 
 function WheelModal({ onClose, onReward }) {
@@ -1107,23 +1117,42 @@ function WheelModal({ onClose, onReward }) {
     return h > 0 ? `${h}ч ${m}м` : `${m}м`;
   };
 
+  const [spinDur, setSpinDur] = useState(4.2);
+  const [confetti, setConfetti] = useState(false);
+
   const spin = async () => {
     if (spinning || !data?.canSpin) return;
-    setSpinning(true); setResult(null);
+    setSpinning(true); setResult(null); setConfetti(false);
     try {
       const out = await api.wheelSpin();
-      const target = 360 * 6 - (out.segmentIndex * seg + seg / 2);
-      const base = Math.ceil(rotRef.current / 360) * 360;
-      const next = base + target;
-      rotRef.current = next;
-      setRotation(next);
-      setTimeout(() => {
-        setResult(out.reward);
-        setSpinning(false);
-        setData((d) => ({ ...d, canSpin: false, nextSpinAt: out.nextSpinAt }));
-        onReward && onReward(out);
-        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
-      }, 4300);
+      // Целевой угол: указатель сверху над центром выпавшего сектора.
+      const aim = (idx, spins, jitter = 0) => Math.ceil(rotRef.current / 360) * 360 + 360 * spins + (360 - (idx * seg + seg / 2)) + jitter;
+
+      // Байт-прокрут: 55% — тормозим у соседнего сектора, замираем, доползаем.
+      const bait = Math.random() < 0.55;
+      if (bait) {
+        const neighbour = (out.segmentIndex + 1) % N;
+        const stop1 = aim(neighbour, 5, seg * 0.35);
+        rotRef.current = stop1; setSpinDur(3.6); setRotation(stop1); sfx.tick(0.5);
+        await new Promise((r) => setTimeout(r, 3700));
+        await new Promise((r) => setTimeout(r, 650)); // «замерло»
+        window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light');
+        const stop2 = aim(out.segmentIndex, 1);
+        rotRef.current = stop2; setSpinDur(1.2); setRotation(stop2);
+        await new Promise((r) => setTimeout(r, 1300));
+      } else {
+        const next = aim(out.segmentIndex, 6);
+        rotRef.current = next; setSpinDur(4.2); setRotation(next);
+        await new Promise((r) => setTimeout(r, 4300));
+      }
+
+      setResult(out.reward);
+      setSpinning(false);
+      setData((d) => ({ ...d, canSpin: false, nextSpinAt: out.nextSpinAt }));
+      onReward && onReward(out);
+      const big = out.reward?.type === 'nft' || out.reward?.type === 'deposit_bonus';
+      if (big) { setConfetti(true); setTimeout(() => setConfetti(false), 3000); sfx.winFanfare(); }
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
     } catch (e) {
       setSpinning(false);
       if (e.message === 'cooldown') setData((d) => ({ ...d, canSpin: false }));
@@ -1135,8 +1164,19 @@ function WheelModal({ onClose, onReward }) {
   return (
     <motion.div className="dw-sheet-backdrop" onClick={onClose}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
-      <motion.div className="dw-wheel-sheet" onClick={(e) => e.stopPropagation()}
+      <motion.div className="dw-wheel-sheet dw-wheel-sheet--rich" onClick={(e) => e.stopPropagation()}
         initial={{ y: 40, opacity: 0, scale: 0.96 }} animate={{ y: 0, opacity: 1, scale: 1 }} transition={{ duration: 0.3 }}>
+        {confetti && (
+          <span className="dw-confetti">
+            {Array.from({ length: 44 }).map((_, k) => (
+              <span key={k} className="dw-confetti-bit" style={{
+                left: `${Math.random() * 100}%`,
+                background: ['#FFD700', '#4FC3F7', '#ff5ca8', '#6dbe88', '#fff6d0'][k % 5],
+                animationDelay: `${Math.random() * 0.6}s`, animationDuration: `${1.8 + Math.random() * 1.4}s`
+              }} />
+            ))}
+          </span>
+        )}
         <div className="dw-round-result-header">
           <h2>🎡 Колесо фортуны</h2>
           <button className="dw-icon-btn" onClick={onClose}>×</button>
@@ -1145,44 +1185,60 @@ function WheelModal({ onClose, onReward }) {
         <div className="dw-wheel-stage">
           <div className="dw-wheel-pointer" />
           <svg viewBox="0 0 200 200" className="dw-wheel-svg">
-            <g style={{ transition: spinning ? 'transform 4.2s cubic-bezier(0.16,1,0.3,1)' : 'none', transform: `rotate(${rotation}deg)`, transformOrigin: '100px 100px' }}>
+            <defs>
+              <radialGradient id="dw-wheel-hub" cx="50%" cy="40%" r="60%">
+                <stop offset="0%" stopColor="#fff6d0" /><stop offset="55%" stopColor="#f3c33f" /><stop offset="100%" stopColor="#8a6c1c" />
+              </radialGradient>
+            </defs>
+            <g style={{ transition: spinning ? `transform ${spinDur}s cubic-bezier(0.16,1,0.3,1)` : 'none', transform: `rotate(${rotation}deg)`, transformOrigin: '100px 100px' }}>
               {segs.map((s, i) => {
                 const a0 = i * seg, a1 = (i + 1) * seg;
                 const [x0, y0] = xy(96, a0), [x1, y1] = xy(96, a1);
-                const [lx, ly] = xy(60, a0 + seg / 2);
-                const fill = i % 2 === 0 ? '#3a2e0c' : '#1c1710';
+                const [lx, ly] = xy(62, a0 + seg / 2);
+                const pal = WHEEL_COLORS[s.type] || ['#3a2e0c', '#1c1710'];
+                const fill = pal[i % 2];
                 const isWin = result && segs[i].key === result.key;
                 return (
                   <g key={i}>
                     <path d={`M100 100 L${x0} ${y0} A96 96 0 0 1 ${x1} ${y1} Z`}
-                      fill={isWin ? '#5a4410' : fill} stroke="#d4af37" strokeWidth="1" opacity={result && !isWin ? 0.5 : 1} />
-                    <text x={lx} y={ly} fill="#f0d98a" fontSize="11" fontWeight="800"
+                      fill={isWin ? pal[1] : fill} stroke="#ffe27a" strokeWidth={isWin ? 2 : 1}
+                      opacity={result && !isWin ? 0.45 : 1} />
+                    <text x={lx} y={ly} fill="#fff" fontSize="11" fontWeight="900"
                       textAnchor="middle" dominantBaseline="middle"
-                      transform={`rotate(${a0 + seg / 2} ${lx} ${ly})`}>{wheelShort(s)}</text>
+                      transform={`rotate(${a0 + seg / 2} ${lx} ${ly})`}
+                      style={{ paintOrder: 'stroke', stroke: 'rgba(0,0,0,0.5)', strokeWidth: 0.6 }}>{wheelShort(s)}</text>
                   </g>
                 );
               })}
-              <circle cx="100" cy="100" r="14" fill="#d4af37" stroke="#1c1710" strokeWidth="2" />
+              <circle cx="100" cy="100" r="96" fill="none" stroke="#ffe27a" strokeWidth="3" opacity="0.6" />
+              <circle cx="100" cy="100" r="16" fill="url(#dw-wheel-hub)" stroke="#1c1710" strokeWidth="2" />
             </g>
           </svg>
         </div>
 
         {result ? (
           <div className="dw-wheel-result">🎉 Выпало: <strong>{result.label}</strong></div>
+        ) : data?.unlocked === false ? (
+          <div className="dw-wheel-locked">
+            🔒 Внеси ещё <strong>{data?.tonNeeded ?? '—'} TON</strong> за неделю, чтобы крутить
+            <small>За 7 дней: {data?.weekTon ?? 0} / {data?.requiredTon ?? 5} TON · потом колесо каждый день</small>
+          </div>
         ) : (
-          <div className="dw-wheel-hint">Один бесплатный спин раз в 24 часа</div>
+          <div className="dw-wheel-hint">Бесплатный спин раз в 24 часа · всю неделю</div>
         )}
 
         {data?.canSpin ? (
           <button className="dw-btn primary full dw-wheel-spin" disabled={spinning} onClick={spin}>
-            {spinning ? 'Крутим…' : '🎲 Крутить'}
+            {spinning ? 'Крутим…' : '🎲 Крутить колесо'}
           </button>
         ) : onCooldown ? (
           <button className="dw-btn ghost full" disabled>Следующий спин через {waitLabel()}</button>
         ) : result ? (
           <button className="dw-btn primary full" onClick={onClose}>Забрать</button>
+        ) : data?.unlocked === false ? (
+          <button className="dw-btn primary full" onClick={() => { onClose(); }}>Пополнить</button>
         ) : (
-          <button className="dw-btn ghost full" disabled>{data?.unlocked === false ? 'Сделай первый депозит' : 'Недоступно'}</button>
+          <button className="dw-btn ghost full" disabled>Недоступно</button>
         )}
       </motion.div>
     </motion.div>
@@ -1787,6 +1843,15 @@ function PvpPanel({ pvpState, pvpBuying, balance, welcomeAvailable, tickets, pvp
         <button className="dw-pvp-return-live" onClick={() => setPastIdx(null)}>← Вернуться к текущей игре</button>
       )}
 
+      {/* Заметный счётчик до бесплатной ячейки */}
+      {!viewingPast && (
+        <div className={`dw-freecell-bar${isFreeNext ? ' ready' : ''}`}>
+          {isFreeNext
+            ? <>🎁 Следующая ячейка <strong>БЕСПЛАТНО!</strong></>
+            : <>До бесплатной ячейки ещё <strong>{tillFree}</strong> {tillFree === 1 ? 'открытие' : tillFree < 5 ? 'открытия' : 'открытий'}</>}
+        </div>
+      )}
+
       <div className="dw-pvp-grid-36">
         {rows.map((row, ri) => (
           <div key={ri} className={`dw-pvp-row ${row.type}`}>
@@ -1993,27 +2058,33 @@ function RiskPanel({ tickets, onOpenDeposit, onNotify, onBalance, onTickets }) {
   const [pick, setPick] = useState(null);
   const [outcome, setOutcome] = useState(null); // {won, winning, gift, rewardCoins}
   const [busy, setBusy] = useState(false);
+  const [confetti, setConfetti] = useState(false);
   const premium = tickets?.premium || 0;
   const hasCard = premium > 0;
-  const reward = 150 * cells;
+  const reward = Math.round(150 * cells * 0.85);
 
   const arm = () => { if (!hasCard) { onOpenDeposit?.(); return; } setPhase('armed'); setPick(null); setOutcome(null); };
 
   const choose = async (idx) => {
     if (phase !== 'armed' || busy) return;
     setPick(idx); setBusy(true); setPhase('revealing');
+    const h = window.Telegram?.WebApp?.HapticFeedback;
+    // Нарастающее напряжение перед результатом.
+    sfx.tick(0.4); h?.impactOccurred?.('light');
+    setTimeout(() => { sfx.tick(0.7); h?.impactOccurred?.('light'); }, 500);
+    setTimeout(() => { sfx.tick(1); h?.impactOccurred?.('medium'); }, 1000);
     try {
       const res = await api.riskPlay(cells, idx);
       if (res.player) { onBalance?.(res.player.coins); onTickets?.(res.player.tickets); }
-      // Небольшая пауза «вскрытия».
+      // Длиннее пауза «вскрытия» для саспенса.
       setTimeout(() => {
         setOutcome(res); setPhase('done'); setBusy(false);
-        const h = window.Telegram?.WebApp?.HapticFeedback;
         if (res.won) {
           sfx.winFanfare(); h?.notificationOccurred?.('success');
+          setConfetti(true); setTimeout(() => setConfetti(false), 3000);
           onNotify?.(res.gift ? `🎉 Угадал! Подарок ${res.gift.name} твой` : `🎉 Угадал! +${formatCoins(res.coinsWon)} дублонов`, 'success');
         } else { sfx.loseSound(); h?.notificationOccurred?.('error'); }
-      }, 700);
+      }, 1500);
     } catch (e) {
       setBusy(false); setPhase('armed'); setPick(null);
       onNotify?.(e.message === 'need_premium_card' ? 'Нужна премиум-карта' : 'Ошибка', 'danger');
@@ -2048,19 +2119,31 @@ function RiskPanel({ tickets, onOpenDeposit, onNotify, onBalance, onTickets }) {
 
       {(phase === 'armed' || phase === 'revealing' || phase === 'done') && (
         <>
-          <div className="dw-risk-grid">
+          {confetti && (
+            <span className="dw-confetti">
+              {Array.from({ length: 36 }).map((_, k) => (
+                <span key={k} className="dw-confetti-bit" style={{
+                  left: `${Math.random() * 100}%`,
+                  background: ['#FFD700', '#4FC3F7', '#ff5ca8', '#6dbe88'][k % 4],
+                  animationDelay: `${Math.random() * 0.5}s`, animationDuration: `${1.6 + Math.random() * 1.2}s`
+                }} />
+              ))}
+            </span>
+          )}
+          <div className={`dw-risk-grid${phase === 'revealing' ? ' revealing' : ''}`}>
             {Array.from({ length: cells }).map((_, i) => {
               const isPick = pick === i;
               const revealed = phase === 'done';
               const isWinning = outcome && i === outcome.winning;
               const cls = ['dw-risk-cell',
                 isPick ? 'pick' : '',
+                phase === 'revealing' && isPick ? 'shaking' : '',
                 revealed && isWinning ? 'win' : '',
                 revealed && isPick && !outcome.won ? 'miss' : '',
                 revealed && !isWinning && !isPick ? 'dim' : ''].filter(Boolean).join(' ');
               return (
                 <button key={i} className={cls} disabled={phase !== 'armed'} onClick={() => choose(i)}>
-                  {revealed ? (isWinning ? '🎁' : '✗') : (phase === 'revealing' && isPick ? '…' : '?')}
+                  {revealed ? (isWinning ? '🎁' : '✗') : (phase === 'revealing' && isPick ? '🎲' : '?')}
                 </button>
               );
             })}
@@ -3138,6 +3221,10 @@ function Inventory({ onNotify, onBalance }) {
 function ProfileTab({ player, filters, activeFilter, onFilterChange, history, tonWallet, onConnectTon, onDisconnectTon, onOpenAdmin, onOpenClans, onOpenRef, onOpenWheel, onOpenMyRounds, onNotify, onBalance }) {
   const u = userDisplay(player);
   const [showId, setShowId] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [wheel, setWheel] = useState(null);
+  useEffect(() => { api.wheel().then(setWheel).catch(() => {}); }, []);
+
   return (
     <section className="dw-page dw-profile-page">
 
@@ -3158,20 +3245,33 @@ function ProfileTab({ player, filters, activeFilter, onFilterChange, history, to
         </div>
       </div>
 
-      <PersonalStats player={player} onOpenMyRounds={onOpenMyRounds} />
+      {/* Статистика — одна понятная кнопка, открывает полный модал */}
+      <button className="dw-profile-statbtn" onClick={() => setStatsOpen(true)}>
+        <span className="dw-profile-statbtn-ico">📊</span>
+        <span className="dw-profile-statbtn-txt">
+          <strong>Моя статистика</strong>
+          <small>игры, винрейт, рекорд, поинты</small>
+        </span>
+        <span className="dw-profile-statbtn-go">›</span>
+      </button>
+      {statsOpen && <StatsModal player={player} onClose={() => setStatsOpen(false)} onOpenMyRounds={() => { setStatsOpen(false); onOpenMyRounds?.(); }} />}
 
-      <div className="dw-home-strip">
-        <button className="dw-panel dw-nav-card" onClick={onOpenRef} style={{ gridColumn: '1 / -1' }}>
-          <span className="dw-kicker">реферал</span>
-          <strong>10%</strong>
+      {/* Понятные кнопки разделов */}
+      <div className="dw-profile-nav">
+        <button className="dw-profile-navbtn" onClick={onOpenRef}>
+          <span className="dw-profile-navbtn-ico">🤝</span>
+          <span className="dw-profile-navbtn-txt"><strong>Рефералы</strong><small>зови друзей · до 15%</small></span>
+          <span className="dw-profile-navbtn-go">›</span>
+        </button>
+        <button className="dw-profile-navbtn dw-profile-navbtn--wheel" onClick={onOpenWheel}>
+          <span className="dw-profile-navbtn-ico">🎡</span>
+          <span className="dw-profile-navbtn-txt">
+            <strong>Колесо фортуны</strong>
+            <small>{wheel?.canSpin ? '🔥 Доступен спин!' : wheel?.unlocked === false ? `Нужно ещё ${wheel?.tonNeeded ?? '5'} TON за неделю` : 'Крути каждый день'}</small>
+          </span>
+          <span className="dw-profile-navbtn-go">{wheel?.canSpin ? '🔥' : '›'}</span>
         </button>
       </div>
-
-      {player.firstDepositDone && (
-        <div style={{ marginBottom: 12 }}>
-          <WheelBanner bonusPct={player.wheelDepositBonusPct} onOpen={onOpenWheel} />
-        </div>
-      )}
 
       <Inventory onNotify={onNotify} onBalance={onBalance} />
 
@@ -3460,6 +3560,54 @@ function PersonalStats({ player, onOpenMyRounds }) {
         </div>
       )}
     </article>
+  );
+}
+
+/* ─── Полная статистика (модал) ────────────────────────────── */
+
+function StatsModal({ player, onClose, onOpenMyRounds }) {
+  const [s, setS] = useState(null);
+  const [pts, setPts] = useState(null);
+  useEffect(() => {
+    api.stats().then(setS).catch(() => {});
+    api.shopPoints().then((d) => setPts(d.points)).catch(() => {});
+  }, []);
+  const rounds = s ? s.roundsPlayed : (player?.gamesPlayed || 0);
+  const wins = s?.wins ?? 0;
+  const losses = Math.max(0, rounds - wins);
+  const winRate = rounds > 0 ? Math.round((wins / rounds) * 100) : 0;
+  const bestWin = s ? s.bestWin : (player?.bestWin || 0);
+  const totalWon = s?.totalWon ?? (player?.coinsWon || 0);
+  const totalSpent = s?.totalSpent ?? (player?.coinsSpent || 0);
+
+  const Cell = ({ label, value, accent }) => (
+    <div className={`dw-statm-cell${accent ? ' accent' : ''}`}><span>{label}</span><strong>{value}</strong></div>
+  );
+
+  return (
+    <motion.div className="dw-sheet-backdrop" onClick={onClose}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <motion.div className="dw-deposit-sheet" onClick={(e) => e.stopPropagation()}
+        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 260, damping: 26 }}>
+        <div className="dw-round-result-header">
+          <h2>📊 Статистика</h2>
+          <button className="dw-icon-btn" onClick={onClose}>×</button>
+        </div>
+        <div className="dw-statm-grid">
+          <Cell label="Игр сыграно" value={formatCoins(rounds)} />
+          <Cell label="Побед" value={formatCoins(wins)} accent />
+          <Cell label="Поражений" value={formatCoins(losses)} />
+          <Cell label="Винрейт" value={`${winRate}%`} accent />
+          <Cell label="Рекорд" value={formatCompact(bestWin)} accent />
+          <Cell label="Поинты" value={pts !== null ? formatCoins(pts) : '…'} />
+          <Cell label="Всего выиграно" value={formatCompact(totalWon)} />
+          <Cell label="Всего поставлено" value={formatCompact(totalSpent)} />
+        </div>
+        <button className="dw-btn primary full" style={{ marginTop: 14 }} onClick={onOpenMyRounds}>
+          История моих игр ›
+        </button>
+      </motion.div>
+    </motion.div>
   );
 }
 

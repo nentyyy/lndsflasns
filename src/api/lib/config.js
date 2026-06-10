@@ -88,10 +88,12 @@ export const getMode = (id) => MODES[id] || null;
 // Игрок ставит 1 премиум-карту (= 150 дублонов стоимости), выбирает N закрытых
 // ячеек (2-10) и одну из них вскрывает. Угадал → приз = ставка × N (в подарок-НФТ).
 // Чем больше N, тем выше риск и множитель. Шанс угадать = 1/N.
+// RTP 85%: при шансе 1/N приз = ставка × N × 0.85 (EV = 0.85 от ставки).
 export const RISK_MODE = {
   minCells: 2,
   maxCells: 10,
   betCoins: 150,           // стоимость премиум-карты (эквивалент ставки)
+  rtp: 0.85,
   maxRewardCoins: 300 * 10 // потолок приза для подбора НФТ
 };
 
@@ -225,18 +227,19 @@ export function referralTierFor(count) {
 }
 
 // ─── Колесо бонусов ───
-// Доступно после первого депозита. Один бесплатный спин раз в 24 часа.
-// type: tickets (фри-ячейки) | coins (дублоны) | deposit_bonus (% к след. деп).
+// Доступно при депозите от WHEEL_WEEK_TON TON за последние 7 дней.
+// Один спин раз в 24 часа (каждый день всю неделю).
+// type: tickets (фри-карта) | coins (дублоны) | deposit_bonus (% к деп) | nft (заявка-подарок).
 export const WHEEL_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+export const WHEEL_WEEK_TON = 5;       // нужно столько TON за неделю для доступа
+export const WHEEL_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 export const WHEEL_SEGMENTS = [
-  { key: 'cells1',   type: 'tickets',       value: 1,  label: '+1 ячейка',     weight: 22 },
-  { key: 'coins25',  type: 'coins',         value: 25, label: '+25 дублонов',  weight: 16 },
-  { key: 'cells2',   type: 'tickets',       value: 2,  label: '+2 ячейки',     weight: 16 },
-  { key: 'dep25',    type: 'deposit_bonus', value: 25, label: '+25% к деп.',   weight: 12 },
-  { key: 'coins50',  type: 'coins',         value: 50, label: '+50 дублонов',  weight: 10 },
-  { key: 'cells3',   type: 'tickets',       value: 3,  label: '+3 ячейки',     weight: 9  },
-  { key: 'dep50',    type: 'deposit_bonus', value: 50, label: '+50% к деп.',   weight: 8  },
-  { key: 'jackpot',  type: 'tickets',       value: 5,  label: 'Джекпот +5 ячеек', weight: 7 }
+  { key: 'dep10',   type: 'deposit_bonus', value: 10, label: '+10% к деп.',  weight: 45 },
+  { key: 'dep5',    type: 'deposit_bonus', value: 5,  label: '+5% к деп.',   weight: 45 },
+  { key: 'card',    type: 'tickets',       value: 1,  label: 'Фри-карта',    weight: 4 },
+  { key: 'coin1',   type: 'coins',         value: 1,  label: '+1 монета',    weight: 2.75 },
+  { key: 'coin2',   type: 'coins',         value: 2,  label: '+2 монеты',    weight: 2.75 },
+  { key: 'nft',     type: 'nft',           value: 0,  label: 'НФТ 🎁',       weight: 0.5 }
 ];
 
 // ─── Tournaments ───

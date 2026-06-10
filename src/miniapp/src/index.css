@@ -4267,3 +4267,68 @@ body {
   box-shadow: 0 0 16px rgba(255,200,60,0.4);
 }
 .dw-coins-preset:active { transform: scale(0.95); }
+
+/* ═══════════ ПВП: счётчик до бесплатной ячейки ═══════════ */
+.dw-freecell-bar {
+  margin: 8px 0; padding: 9px 12px; border-radius: 12px; text-align: center;
+  font-size: 13px; color: var(--bone); border: 1px solid var(--border-strong);
+  background: rgba(255,255,255,0.03);
+}
+.dw-freecell-bar strong { color: var(--gold-bright); font-family: var(--font-display); }
+.dw-freecell-bar.ready {
+  color: #2a1c00; border-color: var(--gold);
+  background: linear-gradient(135deg, #ffe487, #f3c33f 60%, #c98a1e);
+  box-shadow: 0 0 18px rgba(255,200,60,0.5); animation: dw-timer-pulse 1.2s ease-in-out infinite;
+}
+.dw-freecell-bar.ready strong { color: #2a1c00; }
+
+/* ═══════════ ПРОФИЛЬ: понятные кнопки ═══════════ */
+.dw-profile-statbtn, .dw-profile-navbtn {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 13px 14px; margin-bottom: 10px; border-radius: 14px; cursor: pointer;
+  border: 1px solid var(--gold-line); background: rgba(255,255,255,0.035);
+  transition: all 0.18s ease;
+}
+.dw-profile-statbtn:active, .dw-profile-navbtn:active { transform: scale(0.985); }
+.dw-profile-statbtn:hover, .dw-profile-navbtn:hover { border-color: rgba(255,215,0,0.45); box-shadow: 0 0 16px rgba(255,200,60,0.12); }
+.dw-profile-statbtn-ico, .dw-profile-navbtn-ico { font-size: 24px; flex-shrink: 0; width: 28px; text-align: center; }
+.dw-profile-statbtn-txt, .dw-profile-navbtn-txt { flex: 1; display: flex; flex-direction: column; }
+.dw-profile-statbtn-txt strong, .dw-profile-navbtn-txt strong { font-size: 15px; color: var(--gold-bright); font-family: var(--font-display); }
+.dw-profile-statbtn-txt small, .dw-profile-navbtn-txt small { font-size: 12px; color: var(--bone-soft); }
+.dw-profile-statbtn-go, .dw-profile-navbtn-go { font-size: 20px; color: var(--gold); flex-shrink: 0; }
+.dw-profile-nav { margin-bottom: 12px; }
+.dw-profile-navbtn--wheel {
+  border-color: rgba(255,92,168,0.4);
+  background: linear-gradient(120deg, rgba(122,18,72,0.25), rgba(0,0,0,0.2));
+}
+.dw-profile-navbtn--wheel .dw-profile-navbtn-ico { animation: dw-bounce 1.4s ease-in-out infinite; }
+
+/* Модал статистики */
+.dw-statm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.dw-statm-cell {
+  display: flex; flex-direction: column; gap: 3px; padding: 12px 10px; border-radius: 12px;
+  border: 1px solid var(--border-strong); background: rgba(255,255,255,0.025);
+}
+.dw-statm-cell span { font-size: 11px; color: var(--bone-soft); text-transform: uppercase; letter-spacing: 0.08em; }
+.dw-statm-cell strong { font-size: 19px; font-family: var(--font-display); color: var(--vellum); }
+.dw-statm-cell.accent strong { color: var(--gold); }
+
+/* ═══════════ КОЛЕСО: красочнее + locked ═══════════ */
+.dw-wheel-sheet--rich { position: relative; overflow: hidden; }
+.dw-wheel-sheet--rich::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background: radial-gradient(circle at 50% 30%, rgba(255,200,60,0.10), transparent 55%);
+}
+.dw-wheel-locked {
+  text-align: center; padding: 12px; border-radius: 12px; margin-bottom: 12px;
+  border: 1px solid var(--gold-line); background: rgba(255,200,60,0.07); color: var(--vellum); font-size: 14px;
+}
+.dw-wheel-locked strong { color: var(--gold-bright); }
+.dw-wheel-locked small { display: block; margin-top: 4px; font-size: 11px; color: var(--bone-soft); }
+.dw-wheel-banner.locked { opacity: 0.85; border-color: rgba(255,200,60,0.3); }
+
+/* ═══════════ RISK: азарт ═══════════ */
+.dw-risk { position: relative; }
+.dw-risk-grid.revealing { pointer-events: none; }
+.dw-risk-cell.shaking { animation: dw-risk-shake 0.3s ease-in-out infinite; border-color: #4FC3F7; box-shadow: 0 0 20px rgba(79,195,247,0.7); }
+@keyframes dw-risk-shake { 0%,100% { transform: rotate(-4deg) scale(1.05); } 50% { transform: rotate(4deg) scale(1.05); } }
