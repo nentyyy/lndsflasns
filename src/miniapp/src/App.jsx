@@ -2503,8 +2503,7 @@ function ReferralTab({ referral, player, onCopy, onShare, onBack, onClaimRef, on
         <span className="dw-kicker">Реферальный ранг</span>
         <h1 className="dw-ref2-tier-name">{tier.name}</h1>
         <div className="dw-ref2-pct-row">
-          <span className="dw-ref2-pct"><strong>{tier.depositPct}%</strong> с депозитов</span>
-          <span className="dw-ref2-pct"><strong>{referral.wagerPct}%</strong> со ставок</span>
+          <span className="dw-ref2-pct"><strong>{tier.depositPct}%</strong> с депозитов друзей</span>
         </div>
         {next ? (
           <>
@@ -2518,9 +2517,9 @@ function ReferralTab({ referral, player, onCopy, onShare, onBack, onClaimRef, on
 
       {/* Что ты получаешь — кратко и понятно */}
       <div className="dw-ref2-explain">
-        <div className="dw-ref2-explain-row"><span>💰</span> <b>{tier.depositPct}%</b> с каждого пополнения друга</div>
-        <div className="dw-ref2-explain-row"><span>🎴</span> <b>{referral.wagerPct}%</b> с каждой его ставки в ПВП</div>
-        <div className="dw-ref2-explain-row"><span>🎁</span> бонусы за <b>5/10/25/50</b> приглашённых</div>
+        <div className="dw-ref2-explain-row"><span>💰</span> <b>{tier.depositPct}%</b> с каждого пополнения друга — навсегда</div>
+        <div className="dw-ref2-explain-row"><span>🎁</span> <b>+10%</b> с первого депозита друга (бонусом, до 100)</div>
+        <div className="dw-ref2-explain-row"><span>🏆</span> награды за <b>5/10/25/50</b> активных друзей</div>
       </div>
 
       {/* Ссылка */}
@@ -2532,18 +2531,6 @@ function ReferralTab({ referral, player, onCopy, onShare, onBack, onClaimRef, on
         <button className="dw-btn primary small" onClick={onCopy}>Копировать</button>
       </div>
       <button className="dw-btn secondary full" style={{ marginTop: 8 }} onClick={onShare}>Поделиться в Telegram</button>
-
-      {/* Доход: два потока */}
-      <div className="dw-ref2-income">
-        <div className="dw-ref2-income-cell">
-          <span>💰 С депозитов</span>
-          <strong>{formatCoins(referral.fromDeposits || 0)}</strong>
-        </div>
-        <div className="dw-ref2-income-cell">
-          <span>🎴 Со ставок</span>
-          <strong>{formatCoins(referral.fromWager || 0)}</strong>
-        </div>
-      </div>
 
       {/* Claim pending */}
       <div className="dw-ref2-claim">
@@ -2564,18 +2551,18 @@ function ReferralTab({ referral, player, onCopy, onShare, onBack, onClaimRef, on
 
       {/* Майлстоуны */}
       <article className="dw-panel">
-        <div className="dw-panel-head"><h2>Награды за друзей</h2></div>
+        <div className="dw-panel-head"><h2>Награды за друзей</h2><span className="dw-panel-sub">активных</span></div>
         <div className="dw-ref2-ms-list">
           {(referral.milestones || []).map((m) => (
             <div key={m.id} className={`dw-ref2-ms ${m.claimed ? 'claimed' : m.reached ? 'ready' : 'locked'}`}>
               <div className="dw-ref2-ms-icon">{m.claimed ? '✓' : '🎁'}</div>
               <div className="dw-ref2-ms-info">
                 <strong>{m.label}</strong>
-                <small>{m.invites} друзей</small>
+                <small>{m.invites} активных друзей</small>
               </div>
               {m.claimed ? <span className="dw-badge accent">Получено</span>
                 : m.reached ? <button className="dw-btn primary small" onClick={() => onClaimMilestone(m.id)}>Забрать</button>
-                : <span className="dw-ref2-ms-lock">{referral.invites}/{m.invites}</span>}
+                : <span className="dw-ref2-ms-lock">{referral.activeInvites}/{m.invites}</span>}
             </div>
           ))}
         </div>

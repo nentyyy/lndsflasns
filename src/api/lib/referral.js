@@ -1,5 +1,5 @@
 import { db } from './db.js';
-import { REFERRAL_PCT, BOT_USERNAME, REFERRAL_TIERS, REFERRAL_WAGER_PCT, REFERRAL_FIRST_DEP_BONUS, REFERRAL_MILESTONES, referralTierFor } from './config.js';
+import { REFERRAL_PCT, BOT_USERNAME, REFERRAL_TIERS, REFERRAL_FIRST_DEP_PCT, REFERRAL_FIRST_DEP_CAP, REFERRAL_MILESTONES, referralTierFor } from './config.js';
 import { credit } from './wallet.js';
 
 // Кол-во приглашённых.
@@ -7,6 +7,7 @@ async function inviteCount(userId) {
   const row = await db('players').where({ referrer_id: userId }).count('* as n').first();
   return Number(row?.n || 0);
 }
+
 
 // Стабильный реф-код из user_id. Достаточно случайный для приватности.
 export function makeRefCode(userId) {
@@ -57,16 +58,17 @@ export async function rewardReferralForDeposit(depositId) {
   const player = await db('players').where({ user_id: deposit.user_id }).first();
   if (!player || !player.referrer_id) return null;
 
-  // Комиссия зависит от ТИРА реферера (число приглашённых).
+  // Комиссия зависит от ТИРА реферера (число приглашённых) и считается ТОЛЬКО
+  // от реально внесённой суммы (coins), без бонусов — чтобы не печатать с воздуха.
   const count = await inviteCount(player.referrer_id);
   const tier = referralTierFor(count);
-  const total = Number(deposit.coins) + Number(deposit.bonus);
-  let bonus = Math.max(1, Math.floor(total * (tier.depositPct / 100)));
+  const base = Number(deposit.coins); // только оплаченные дублоны, без bonus
+  let bonus = Math.max(1, Math.floor(base * (tier.depositPct / 100)));
 
-  // Одноразовый бонус за ПЕРВЫЙ депозит этого реферала.
+  // Бонус за ПЕРВЫЙ депозит реферала: % от суммы с потолком (не фикс — анти-абуз).
   const paidCount = await db('deposits').where({ user_id: deposit.user_id, status: 'paid' }).count('* as n').first();
   const isFirstPaid = Number(paidCount?.n || 0) <= 1;
-  if (isFirstPaid) bonus += REFERRAL_FIRST_DEP_BONUS;
+  if (isFirstPaid) bonus += Math.min(REFERRAL_FIRST_DEP_CAP, Math.floor(base * REFERRAL_FIRST_DEP_PCT));
 
   try {
     await db('ref_payouts').insert({
@@ -85,19 +87,8 @@ export async function rewardReferralForDeposit(depositId) {
   return { referrerId: String(player.referrer_id), bonus };
 }
 
-// Рейк со ставки реферала (PvP): % от entry падает рефереру в pending.
-// Вызывается из pvp при покупке ячейки. Тихо игнорирует ошибки.
-export async function rewardReferralForWager(refereeId, entryCoins) {
-  const ref = await db('players').where({ user_id: refereeId }).first('referrer_id');
-  if (!ref?.referrer_id) return;
-  const cut = Math.floor(Number(entryCoins) * REFERRAL_WAGER_PCT);
-  if (cut <= 0) return;
-  await db('players').where({ user_id: ref.referrer_id }).update({
-    ref_pending: db.raw('ref_pending + ?', [cut]),
-    ref_earned: db.raw('ref_earned + ?', [cut]),
-    ref_wager_earned: db.raw('ref_wager_earned + ?', [cut])
-  });
-}
+// Рейк со ставок ОТКЛЮЧЁН (была эмиссия). No-op для совместимости с вызовами в pvp.
+export async function rewardReferralForWager() { /* отключено */ }
 
 // Забрать майлстоун (одноразово). Возвращает {claimed, reward, balance}.
 export async function claimMilestone(userId, milestoneId) {
@@ -106,7 +97,10 @@ export async function claimMilestone(userId, milestoneId) {
   return db.transaction(async (trx) => {
     const player = await trx('players').where({ user_id: userId }).first();
     if (!player) throw new Error('player_not_found');
-    const count = Number((await trx('players').where({ referrer_id: userId }).count('* as n').first())?.n || 0);
+    // Считаем только АКТИВНЫХ рефералов (играли/пополняли) — анти-абуз фейками.
+    const count = Number((await trx('players').where({ referrer_id: userId })
+      .where((q) => q.where('first_deposit_done', true).orWhere('pvp_total_reveals', '>', 0))
+      .count('* as n').first())?.n || 0);
     if (count < m.invites) throw new Error('not_enough_invites');
     let claimed = [];
     try { claimed = JSON.parse(player.ref_milestones || '[]'); } catch {}
@@ -163,17 +157,17 @@ export async function getReferralView(userId) {
     activeInvites,
     earned: Number(me.ref_earned || 0),
     pending: Number(me.ref_pending || 0),
-    fromDeposits: Number(me.ref_earned || 0) - Number(me.ref_wager_earned || 0),
-    fromWager: Number(me.ref_wager_earned || 0),
+    fromDeposits: Number(me.ref_earned || 0),
+    fromWager: 0,
     // Тиры
     tier: { id: tier.id, name: tier.name, depositPct: tier.depositPct, color: tier.color },
     nextTier: nextTier ? { name: nextTier.name, min: nextTier.min, depositPct: nextTier.depositPct } : null,
     tiers: REFERRAL_TIERS.map((t) => ({ id: t.id, name: t.name, min: t.min, depositPct: t.depositPct, color: t.color, reached: count >= t.min, current: t.id === tier.id })),
-    wagerPct: Math.round(REFERRAL_WAGER_PCT * 100),
-    // Майлстоуны
+    wagerPct: 0,
+    // Майлстоуны — по числу АКТИВНЫХ рефералов.
     milestones: REFERRAL_MILESTONES.map((m) => ({
       id: m.id, invites: m.invites, reward: m.reward, label: m.label,
-      reached: count >= m.invites, claimed: claimedMs.includes(m.id)
+      reached: activeInvites >= m.invites, claimed: claimedMs.includes(m.id)
     })),
     // Список приглашённых
     inviteHistory: invitees

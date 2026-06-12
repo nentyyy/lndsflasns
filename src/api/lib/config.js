@@ -196,28 +196,32 @@ export const FIRST_DEPOSIT_BONUS_PCT = 0.15;
 // Базовый % с депозитов (легаси-фоллбэк). Реальный % зависит от тира.
 export const REFERRAL_PCT = 0.10;
 
-// Тиры: чем больше приглашённых, тем выше комиссия с депозитов рефералов.
+// Тиры: % с ДЕПОЗИТОВ рефералов (реальные деньги в системе — не эмиссия).
+// Это нормальная партнёрка: платим долей от того, что реферал реально внёс.
 export const REFERRAL_TIERS = [
-  { id: 'novice',  name: 'Новичок',  min: 0,  depositPct: 5,  color: '#9a8c6a' },
-  { id: 'bronze',  name: 'Бронза',   min: 3,  depositPct: 7,  color: '#cd7f32' },
-  { id: 'silver',  name: 'Серебро',  min: 10, depositPct: 10, color: '#c9d2dc' },
-  { id: 'gold',    name: 'Золото',   min: 25, depositPct: 12, color: '#f3c33f' },
-  { id: 'legend',  name: 'Легенда',  min: 50, depositPct: 15, color: '#ff5ca8' }
+  { id: 'novice',  name: 'Новичок',  min: 0,  depositPct: 3,  color: '#9a8c6a' },
+  { id: 'bronze',  name: 'Бронза',   min: 3,  depositPct: 5,  color: '#cd7f32' },
+  { id: 'silver',  name: 'Серебро',  min: 10, depositPct: 7,  color: '#c9d2dc' },
+  { id: 'gold',    name: 'Золото',   min: 25, depositPct: 9,  color: '#f3c33f' },
+  { id: 'legend',  name: 'Легенда',  min: 50, depositPct: 10, color: '#ff5ca8' }
 ];
 
-// Доля со ставок рефералов в PvP (рейк): даже без депозитов активный реферал
-// приносит доход. % от entry каждой купленной ячейки.
-export const REFERRAL_WAGER_PCT = 0.03;
+// Рейк со ставок рефералов ОТКЛЮЧЁН: это была чистая эмиссия (печать дублонов
+// из воздуха за каждую ячейку). Доход реферера — только % с реальных депозитов.
+export const REFERRAL_WAGER_PCT = 0;
 
-// Одноразовый бонус рефереру за ПЕРВЫЙ депозит приглашённого.
-export const REFERRAL_FIRST_DEP_BONUS = 50;
+// Бонус за ПЕРВЫЙ депозит приглашённого: % от суммы (не фикс — иначе абуз
+// микро-депозитами). 10% от первого депозита, максимум 100 дублонов.
+export const REFERRAL_FIRST_DEP_PCT = 0.10;
+export const REFERRAL_FIRST_DEP_CAP = 100;
 
-// Майлстоуны: одноразовые награды за число приглашённых.
+// Майлстоуны за число АКТИВНЫХ приглашённых (которые реально играли/пополняли).
+// Суммы снижены, чтобы 50 фейков не печатали тысячи дублонов.
 export const REFERRAL_MILESTONES = [
-  { id: 'm5',  invites: 5,  reward: 200,  label: '+200 дублонов' },
-  { id: 'm10', invites: 10, reward: 600,  label: '+600 дублонов' },
-  { id: 'm25', invites: 25, reward: 2000, label: '+2000 дублонов' },
-  { id: 'm50', invites: 50, reward: 6000, label: '+6000 дублонов' }
+  { id: 'm5',  invites: 5,  reward: 100,  label: '+100 дублонов' },
+  { id: 'm10', invites: 10, reward: 300,  label: '+300 дублонов' },
+  { id: 'm25', invites: 25, reward: 800,  label: '+800 дублонов' },
+  { id: 'm50', invites: 50, reward: 2000, label: '+2000 дублонов' }
 ];
 
 export function referralTierFor(count) {
