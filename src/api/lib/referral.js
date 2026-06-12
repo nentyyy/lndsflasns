@@ -1,11 +1,23 @@
 import { db } from './db.js';
-import { REFERRAL_PCT, BOT_USERNAME, REFERRAL_TIERS, REFERRAL_FIRST_DEP_PCT, REFERRAL_FIRST_DEP_CAP, REFERRAL_MILESTONES, referralTierFor } from './config.js';
+import { REFERRAL_PCT, BOT_USERNAME, REFERRAL_TIERS, REFERRAL_FIRST_DEP_PCT, REFERRAL_FIRST_DEP_CAP, REFERRAL_MILESTONES, REFERRAL_ACTIVE_MIN_COINS, referralTierFor } from './config.js';
 import { credit } from './wallet.js';
 
 // Кол-во приглашённых.
 async function inviteCount(userId) {
   const row = await db('players').where({ referrer_id: userId }).count('* as n').first();
   return Number(row?.n || 0);
+}
+
+// ID рефералов, внёсших депозитов на >= REFERRAL_ACTIVE_MIN_COINS дублонов (≈0.5 TON).
+async function activeRefereeIds(userId) {
+  const invitees = await db('players').where({ referrer_id: userId }).pluck('user_id');
+  if (!invitees.length) return new Set();
+  const sums = await db('deposits')
+    .whereIn('user_id', invitees).where('status', 'paid')
+    .groupBy('user_id').select('user_id').sum('coins as c');
+  const set = new Set();
+  for (const r of sums) if (Number(r.c) >= REFERRAL_ACTIVE_MIN_COINS) set.add(String(r.user_id));
+  return set;
 }
 
 
@@ -94,14 +106,12 @@ export async function rewardReferralForWager() { /* отключено */ }
 export async function claimMilestone(userId, milestoneId) {
   const m = REFERRAL_MILESTONES.find((x) => x.id === milestoneId);
   if (!m) throw new Error('unknown_milestone');
+  // Активные = внесли депозитов на >= 0.5 TON (считаем вне транзакции).
+  const activeCount = (await activeRefereeIds(userId)).size;
+  if (activeCount < m.invites) throw new Error('not_enough_invites');
   return db.transaction(async (trx) => {
     const player = await trx('players').where({ user_id: userId }).first();
     if (!player) throw new Error('player_not_found');
-    // Считаем только АКТИВНЫХ рефералов (играли/пополняли) — анти-абуз фейками.
-    const count = Number((await trx('players').where({ referrer_id: userId })
-      .where((q) => q.where('first_deposit_done', true).orWhere('pvp_total_reveals', '>', 0))
-      .count('* as n').first())?.n || 0);
-    if (count < m.invites) throw new Error('not_enough_invites');
     let claimed = [];
     try { claimed = JSON.parse(player.ref_milestones || '[]'); } catch {}
     if (claimed.includes(m.id)) throw new Error('already_claimed');
@@ -147,8 +157,9 @@ export async function getReferralView(userId) {
   try { claimedMs = JSON.parse(me.ref_milestones || '[]'); } catch {}
 
   const earnedByRef = (uid) => payouts.filter((x) => String(x.referee_id) === String(uid)).reduce((s, x) => s + Number(x.amount), 0);
-  // «Активный» реферал = сделал депозит или сыграл хотя бы раз.
-  const activeInvites = invitees.filter((p) => p.first_deposit_done || Number(p.pvp_total_reveals) > 0).length;
+  // «Активный» реферал = внёс депозитов на >= 0.5 TON (5 дублонов).
+  const activeIds = await activeRefereeIds(userId);
+  const activeInvites = activeIds.size;
 
   return {
     code,
@@ -178,7 +189,7 @@ export async function getReferralView(userId) {
         avatarUrl: p.avatar_file_id ? `/api/avatar/${p.avatar_file_id}` : null,
         date: new Date(p.created_at).toISOString().slice(0, 10),
         earned: earnedByRef(p.user_id),
-        active: p.first_deposit_done || Number(p.pvp_total_reveals) > 0
+        active: activeIds.has(String(p.user_id))
       }))
   };
 }

@@ -1118,8 +1118,17 @@ function WheelModal({ onClose, onReward }) {
   const [now, setNow] = useState(Date.now());
   const rotRef = React.useRef(0);
 
+  const [nftLogo, setNftLogo] = useState(null); // случайное лого НФТ для сектора
   useEffect(() => { api.wheel().then(setData).catch(() => setData({ error: true })); }, []);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  // Случайный логотип НФТ из дешёвого флора для отрисовки в секторе.
+  useEffect(() => {
+    api.gifts().then((d) => {
+      const list = (d?.gifts || d || []).filter((g) => g.file && g.priceCoins > 0 && g.priceCoins <= 30);
+      const pool = list.length ? list : (d?.gifts || d || []).filter((g) => g.file);
+      if (pool.length) setNftLogo(pool[Math.floor(Math.random() * pool.length)].file);
+    }).catch(() => {});
+  }, []);
 
   const segs = data?.segments || [];
   const N = segs.length || 8;
@@ -1162,7 +1171,7 @@ function WheelModal({ onClose, onReward }) {
         await new Promise((r) => setTimeout(r, 4300));
       }
 
-      setResult(out.reward);
+      setResult({ ...out.reward, nftFile: out.nft?.file || null });
       setSpinning(false);
       setData((d) => ({ ...d, canSpin: false, nextSpinAt: out.nextSpinAt }));
       onReward && onReward(out);
@@ -1214,15 +1223,24 @@ function WheelModal({ onClose, onReward }) {
                 const pal = WHEEL_COLORS[s.type] || ['#3a2e0c', '#1c1710'];
                 const fill = pal[i % 2];
                 const isWin = result && segs[i].key === result.key;
+                const isNft = s.type === 'nft';
                 return (
                   <g key={i}>
                     <path d={`M100 100 L${x0} ${y0} A96 96 0 0 1 ${x1} ${y1} Z`}
                       fill={isWin ? pal[1] : fill} stroke="#ffe27a" strokeWidth={isWin ? 2 : 1}
                       opacity={result && !isWin ? 0.45 : 1} />
-                    <text x={lx} y={ly} fill="#fff" fontSize="11" fontWeight="900"
-                      textAnchor="middle" dominantBaseline="middle"
-                      transform={`rotate(${a0 + seg / 2} ${lx} ${ly})`}
-                      style={{ paintOrder: 'stroke', stroke: 'rgba(0,0,0,0.5)', strokeWidth: 0.6 }}>{wheelShort(s)}</text>
+                    {isNft && nftLogo ? (
+                      <g transform={`rotate(${a0 + seg / 2} ${lx} ${ly})`}>
+                        <image href={`/gifts/${nftLogo}`} x={lx - 11} y={ly - 15} width={22} height={22} preserveAspectRatio="xMidYMid slice" />
+                        <text x={lx} y={ly + 13} fill="#fff" fontSize="8" fontWeight="900" textAnchor="middle"
+                          style={{ paintOrder: 'stroke', stroke: 'rgba(0,0,0,0.5)', strokeWidth: 0.6 }}>NFT</text>
+                      </g>
+                    ) : (
+                      <text x={lx} y={ly} fill="#fff" fontSize="11" fontWeight="900"
+                        textAnchor="middle" dominantBaseline="middle"
+                        transform={`rotate(${a0 + seg / 2} ${lx} ${ly})`}
+                        style={{ paintOrder: 'stroke', stroke: 'rgba(0,0,0,0.5)', strokeWidth: 0.6 }}>{wheelShort(s)}</text>
+                    )}
                   </g>
                 );
               })}
@@ -1233,7 +1251,10 @@ function WheelModal({ onClose, onReward }) {
         </div>
 
         {result ? (
-          <div className="dw-wheel-result">🎉 Выпало: <strong>{result.label}</strong></div>
+          <div className="dw-wheel-result">
+            {result.nftFile && <img src={`/gifts/${result.nftFile}`} alt="" className="dw-wheel-result-nft" />}
+            🎉 Выпало: <strong>{result.label}</strong>
+          </div>
         ) : data?.unlocked === false ? (
           <div className="dw-wheel-locked">
             🔒 Пополни ещё на <strong>{data?.tonNeeded ?? '—'} TON</strong> за неделю, чтобы крутить
@@ -2518,7 +2539,7 @@ function ReferralTab({ referral, player, onCopy, onShare, onBack, onClaimRef, on
       {/* Что ты получаешь — кратко и понятно */}
       <div className="dw-ref2-explain">
         <div className="dw-ref2-explain-row"><span>💰</span> <b>{tier.depositPct}%</b> с каждого пополнения друга — навсегда</div>
-        <div className="dw-ref2-explain-row"><span>🎁</span> <b>+10%</b> с первого депозита друга (бонусом, до 100)</div>
+        <div className="dw-ref2-explain-row"><span>🎁</span> <b>+5%</b> с первого депозита друга (бонусом, до 30)</div>
         <div className="dw-ref2-explain-row"><span>🏆</span> награды за <b>5/10/25/50</b> активных друзей</div>
       </div>
 
@@ -2551,7 +2572,7 @@ function ReferralTab({ referral, player, onCopy, onShare, onBack, onClaimRef, on
 
       {/* Майлстоуны */}
       <article className="dw-panel">
-        <div className="dw-panel-head"><h2>Награды за друзей</h2><span className="dw-panel-sub">активных</span></div>
+        <div className="dw-panel-head"><h2>Награды за друзей</h2><span className="dw-panel-sub">актив = деп от 0.5 TON</span></div>
         <div className="dw-ref2-ms-list">
           {(referral.milestones || []).map((m) => (
             <div key={m.id} className={`dw-ref2-ms ${m.claimed ? 'claimed' : m.reached ? 'ready' : 'locked'}`}>
