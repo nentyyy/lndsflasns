@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { db } from './db.js';
 import { credit } from './wallet.js';
-import { WHEEL_SEGMENTS, WHEEL_COOLDOWN_MS, WHEEL_WEEK_TON, WHEEL_WEEK_MS } from './config.js';
+import { WHEEL_SEGMENTS, WHEEL_COOLDOWN_MS, WHEEL_WEEK_TON, WHEEL_WEEK_MS, WHEEL_NFT_MAX_COINS } from './config.js';
 import { notifyAdminsPurchase } from './admin-notify.js';
 
 export class WheelError extends Error {
@@ -57,10 +57,16 @@ function pickSegment() {
   return { index: WHEEL_SEGMENTS.length - 1, seg: WHEEL_SEGMENTS[WHEEL_SEGMENTS.length - 1] };
 }
 
-// Подобрать недорогой НФТ из каталога (для приза «НФТ»).
+// Подобрать случайный НФТ из флора до WHEEL_NFT_MAX_COINS монет.
 async function pickWheelGift() {
-  const gifts = await db('portals_cache').where('available', true).andWhere('priceCoins', '>', 0)
-    .orderBy('priceCoins', 'asc').limit(6);
+  let gifts = await db('portals_cache').where('available', true)
+    .andWhere('priceCoins', '>', 0).andWhere('priceCoins', '<=', WHEEL_NFT_MAX_COINS)
+    .orderBy('priceCoins', 'asc').limit(7);
+  // Фолбэк — 7 самых дешёвых, если в лимит ничего не попало.
+  if (!gifts.length) {
+    gifts = await db('portals_cache').where('available', true).andWhere('priceCoins', '>', 0)
+      .orderBy('priceCoins', 'asc').limit(7);
+  }
   if (!gifts.length) return null;
   return gifts[Math.floor(Math.random() * gifts.length)];
 }

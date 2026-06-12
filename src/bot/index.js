@@ -226,5 +226,39 @@ bot.on('message:successful_payment', async (ctx) => {
   }
 });
 
+// ─── Байт-напоминание про колесо фортуны ───
+// Игрокам, что были активны раньше (24-72ч назад) и НЕ набрали 5 TON за неделю,
+// шлём «депни ещё X TON — крути колесо». Не чаще раза в 3 дня на игрока.
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+async function sendWheelReminders() {
+  try {
+    const now = Date.now();
+    const since = new Date(now - WEEK_MS).toISOString();
+    // Кандидаты: писали 24ч+ назад, но не более 7 дней (живые), напоминали 3 дня+ назад.
+    const players = await db('players')
+      .whereNotNull('user_id')
+      .where('updated_at', '<', new Date(now - 24 * 3600e3).toISOString())
+      .where('updated_at', '>', new Date(now - WEEK_MS).toISOString())
+      .where((q) => q.whereNull('wheel_reminder_at').orWhere('wheel_reminder_at', '<', new Date(now - 3 * 24 * 3600e3).toISOString()))
+      .limit(40)
+      .select('user_id');
+    for (const p of players) {
+      const dep = await db('deposits').where({ user_id: p.user_id, status: 'paid' })
+        .whereIn('method', ['ton', 'stars']).where('paid_at', '>=', since).sum('coins as c').first();
+      const ton = (Number(dep?.c || 0)) * 0.1;
+      if (ton >= 5) continue; // уже доступно
+      const need = Math.max(0.1, Math.round((5 - ton) * 100) / 100);
+      try {
+        await bot.api.sendMessage(p.user_id,
+          `🎡 Колесо фортуны ждёт!\n\nДепни ещё *${need} TON* за неделю — и крути колесо КАЖДЫЙ день: NFT, бонусы к депу, карты и дублоны.`,
+          { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🎡 Крутить колесо', web_app: { url: MINI_APP_URL } }]] } });
+        await db('players').where({ user_id: p.user_id }).update({ wheel_reminder_at: db.fn.now() });
+      } catch (e) { /* заблокировал бота — пропускаем */ }
+    }
+  } catch (e) { console.error('wheel reminders err', e.message); }
+}
+setInterval(sendWheelReminders, 6 * 60 * 60 * 1000); // раз в 6 часов
+setTimeout(sendWheelReminders, 60 * 1000); // первый прогон через минуту после старта
+
 bot.start();
 console.log(`Bot @${BOT_USERNAME} started`);

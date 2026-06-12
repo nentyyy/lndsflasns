@@ -233,13 +233,14 @@ export function referralTierFor(count) {
 export const WHEEL_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 export const WHEEL_WEEK_TON = 5;       // нужно столько TON за неделю для доступа
 export const WHEEL_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+export const WHEEL_NFT_MAX_COINS = 30; // НФТ-приз: случайный флор до 30 монет
 export const WHEEL_SEGMENTS = [
-  { key: 'dep10',   type: 'deposit_bonus', value: 10, label: '+10% к деп.',  weight: 45 },
-  { key: 'dep5',    type: 'deposit_bonus', value: 5,  label: '+5% к деп.',   weight: 45 },
-  { key: 'card',    type: 'tickets',       value: 1,  label: 'Фри-карта',    weight: 4 },
-  { key: 'coin1',   type: 'coins',         value: 1,  label: '+1 монета',    weight: 2.75 },
-  { key: 'coin2',   type: 'coins',         value: 2,  label: '+2 монеты',    weight: 2.75 },
-  { key: 'nft',     type: 'nft',           value: 0,  label: 'НФТ 🎁',       weight: 0.5 }
+  { key: 'dep10',   type: 'deposit_bonus', value: 10, label: '+10% к Депу',  weight: 45 },
+  { key: 'dep5',    type: 'deposit_bonus', value: 5,  label: '+5% к Депу',   weight: 45 },
+  { key: 'card',    type: 'tickets',       value: 1,  label: '+ карта',      weight: 4 },
+  { key: 'coin1',   type: 'coins',         value: 1,  label: '+1 дублон',    weight: 2.75 },
+  { key: 'coin2',   type: 'coins',         value: 2,  label: '+2 дублона',   weight: 2.75 },
+  { key: 'nft',     type: 'nft',           value: 0,  label: 'NFT 🎁',       weight: 0.5 }
 ];
 
 // ─── Tournaments ───

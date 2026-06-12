@@ -2376,7 +2376,8 @@ h2, .dw-panel h2 {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 18px;
+  padding: 14px;
+  margin-bottom: 10px;
   border-radius: 14px;
   border: 1px solid var(--gold-line);
   background:
@@ -3218,10 +3219,11 @@ html, body { font-size: 16px; }
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 16px;
+  padding: 13px 14px;
   border-radius: 14px;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
+.dw-top-medal { font-size: 18px; flex-shrink: 0; }
 /* Выигрыш — глубокий золотой клад с внутренним свечением. */
 .dw-round-my-result.win {
   position: relative; overflow: hidden;
@@ -3272,7 +3274,7 @@ html, body { font-size: 16px; }
   100% { transform: scale(1) translateY(0); }
 }
 
-.dw-round-section { margin-bottom: 14px; }
+.dw-round-section { margin-bottom: 8px; }
 .dw-round-row {
   display: flex;
   align-items: center;
@@ -4332,3 +4334,13 @@ body {
 .dw-risk-grid.revealing { pointer-events: none; }
 .dw-risk-cell.shaking { animation: dw-risk-shake 0.3s ease-in-out infinite; border-color: #4FC3F7; box-shadow: 0 0 20px rgba(79,195,247,0.7); }
 @keyframes dw-risk-shake { 0%,100% { transform: rotate(-4deg) scale(1.05); } 50% { transform: rotate(4deg) scale(1.05); } }
+
+/* Реферал: блок «что получаешь» */
+.dw-ref2-explain {
+  margin: 10px 0; padding: 12px 14px; border-radius: 14px;
+  border: 1px solid var(--gold-line); background: rgba(255,255,255,0.03);
+  display: flex; flex-direction: column; gap: 7px;
+}
+.dw-ref2-explain-row { font-size: 13px; color: var(--bone); display: flex; gap: 8px; align-items: center; }
+.dw-ref2-explain-row span { width: 20px; text-align: center; }
+.dw-ref2-explain-row b { color: var(--gold-bright); font-family: var(--font-display); }

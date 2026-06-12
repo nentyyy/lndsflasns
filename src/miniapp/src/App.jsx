@@ -407,6 +407,7 @@ function App() {
               setState((c) => ({ ...c, player: { ...c.player, ...data.player } }));
               setDepositOpen(false);
               notify(`+${formatCoins(pack.coins + pack.bonus)} дублонов зачислено`, 'success');
+              setTimeout(wheelBaitAfterDeposit, 1800);
             } catch { notify('Баланс обновится через секунду', 'default'); }
           } else if (status === 'cancelled') {
             notify('Оплата отменена', 'default');
@@ -429,6 +430,19 @@ function App() {
   };
 
   // Динамический Stars-платёж: любая сумма дублонов (>=1), цена с сервера.
+  // Байт колеса после депозита: показывает прогресс к доступу.
+  const wheelBaitAfterDeposit = async () => {
+    try {
+      const w = await api.wheel();
+      if (w.unlocked) {
+        notify('🎡 Колесо разблокировано! Крути каждый день — профиль › Колесо', 'success');
+        setTimeout(() => { setTab('profile'); }, 1600);
+      } else if (w.tonNeeded > 0) {
+        notify(`🎡 Ещё +${w.tonNeeded} TON за неделю — и крутишь колесо каждый день!`, 'violet');
+      }
+    } catch {}
+  };
+
   const handleStarsCustom = async (coins) => {
     const webApp = window.Telegram?.WebApp;
     if (!coins || coins < 1) { notify('Минимум 1 дублон (20 ⭐)', 'danger'); return; }
@@ -447,6 +461,7 @@ function App() {
               setState((c) => ({ ...c, player: { ...c.player, ...data.player } }));
               setDepositOpen(false);
               notify(`+${formatCoins(credited)} дублонов зачислено`, 'success');
+              setTimeout(wheelBaitAfterDeposit, 1800);
             } catch { notify('Баланс обновится через секунду', 'default'); }
           } else if (status === 'cancelled') notify('Оплата отменена', 'default');
           else if (status === 'failed') notify('Платёж не прошёл', 'danger');
@@ -544,6 +559,7 @@ function App() {
           setTonIntent(null);
           notify(`+${formatCoins(pack.coins + pack.bonus)} дублонов зачислено`, 'success');
           window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
+          setTimeout(wheelBaitAfterDeposit, 1800);
           return;
         }
       } catch {}
@@ -2500,6 +2516,13 @@ function ReferralTab({ referral, player, onCopy, onShare, onBack, onClaimRef, on
         )}
       </div>
 
+      {/* Что ты получаешь — кратко и понятно */}
+      <div className="dw-ref2-explain">
+        <div className="dw-ref2-explain-row"><span>💰</span> <b>{tier.depositPct}%</b> с каждого пополнения друга</div>
+        <div className="dw-ref2-explain-row"><span>🎴</span> <b>{referral.wagerPct}%</b> с каждой его ставки в ПВП</div>
+        <div className="dw-ref2-explain-row"><span>🎁</span> бонусы за <b>5/10/25/50</b> приглашённых</div>
+      </div>
+
       {/* Ссылка */}
       <div className="dw-ref2-link">
         <div className="dw-ref2-link-text">
@@ -3227,8 +3250,8 @@ function ProfileTab({ player, filters, activeFilter, onFilterChange, history, to
         </div>
         <div className="dw-profile-header-copy">
           <h1 className="dw-profile-name" style={{ fontSize: 20 }}>
-            {player.clanTag && <span className="dw-clan-tag-badge" style={{ marginRight: 6, fontSize: 13 }}>[{player.clanTag}]</span>}
             {u.displayName}
+            {player.clanTag && <span className="dw-clan-tag-badge" style={{ marginLeft: 6, fontSize: 13 }}>[{player.clanTag}]</span>}
           </h1>
           <p className="dw-profile-meta" style={{ fontSize: 13, cursor: 'pointer' }} onClick={() => setShowId((v) => !v)}>
             {showId ? `ID ${player.id}` : 'показать ID'}
@@ -4172,21 +4195,29 @@ function PvpRoundResultModal({ result, myUserId, entryCoins, onClose, onOpenDepo
           </div>
         )}
 
-        {/* Победители */}
-        {winners.length > 0 && (
-          <div className="dw-round-section">
-            <span className="dw-kicker" style={{ color: 'var(--gold)' }}>Победители</span>
-            {winners.map((r, i) => <Row r={r} i={i} key={r.userId} />)}
-          </div>
-        )}
-
-        {/* Проигравшие */}
-        {losers.length > 0 && (
-          <div className="dw-round-section">
-            <span className="dw-kicker" style={{ color: 'var(--bone-soft)' }}>Выбыли</span>
-            {losers.slice(0, 10).map((r, i) => <Row r={r} i={i} key={r.userId} />)}
-          </div>
-        )}
+        {/* Топ-3 по выигрышу в раунде */}
+        {(() => {
+          const top = [...rows].filter(r => r.totalPrize > 0).sort((a, b) => b.totalPrize - a.totalPrize).slice(0, 3);
+          if (!top.length) return null;
+          return (
+            <div className="dw-round-section">
+              <span className="dw-kicker" style={{ color: 'var(--gold)' }}>Топ раунда</span>
+              {top.map((r, i) => {
+                const u = userDisplay(r.owner);
+                return (
+                  <div key={r.userId} className={`dw-round-row${r.mine ? ' dw-round-row--mine' : ''} win`} style={{ animationDelay: `${i * 0.07}s` }}>
+                    <span className="dw-top-medal">{['🥇','🥈','🥉'][i]}</span>
+                    <span className="dw-round-row-avatar" style={u.avatarUrl ? { padding: 0, overflow: 'hidden' } : {}}>
+                      {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : u.initial}
+                    </span>
+                    <span className="dw-round-row-name">{u.displayName}{r.mine ? ' (ты)' : ''}</span>
+                    <span className="dw-round-row-prize pos">+{r.totalPrize}</span>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {/* «Карта которую ты не взял» — подталкивает играть ещё */}
         {(() => {
