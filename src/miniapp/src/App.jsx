@@ -112,6 +112,7 @@ function App() {
   const [selectedClause, setSelectedClause] = useState(null);
   const [revealing, setRevealing] = useState(false);
   const [result, setResult] = useState(null);
+  const [board, setBoard] = useState(null); // что было под каждой премиум-картой
   const [shopTab, setShopTab] = useState('nft');
   const [historyFilter, setHistoryFilter] = useState('all');
   const [toast, setToast] = useState(null);
@@ -643,6 +644,7 @@ function App() {
       const resolved = mapResult(out.result);
       window.setTimeout(() => {
         setResult(resolved);
+        setBoard(out.board || null);
         setRevealing(false);
         setRoundArmed(false);
         setRoundId(null);
@@ -673,6 +675,7 @@ function App() {
   const resetRound = () => {
     setSelectedClause(null);
     setResult(null);
+    setBoard(null);
     setRevealing(false);
     setRoundArmed(false);
     setRoundId(null);
@@ -801,6 +804,7 @@ function App() {
                 revealing={revealing}
                 selectedClause={selectedClause}
                 result={result}
+                board={board}
                 tickets={state.player.tickets || { cheap: 0, premium: 0 }}
                 onArmRound={armRound}
                 onPickClause={playRound}
@@ -1104,9 +1108,10 @@ const WHEEL_COLORS = {
   nft: ['#7a1248', '#ff5ca8']
 };
 function wheelShort(seg) {
-  if (seg.type === 'coins') return `+${seg.value}`;
+  if (seg.type === 'coins') return `+${seg.value} дбл`;
   if (seg.type === 'deposit_bonus') return `+${seg.value}%`;
   if (seg.type === 'nft') return 'НФТ';
+  if (seg.type === 'tickets') return 'Карта';
   return '🎴';
 }
 
@@ -2036,29 +2041,46 @@ function SoloPanel(props) {
 }
 
 function PremiumPanel({
-  mode, balance, multiplier, roundArmed, revealing, selectedClause, result, tickets,
+  mode, balance, multiplier, roundArmed, revealing, selectedClause, result, board, tickets,
   onArmRound, onPickClause, onResetRound, onOpenDeposit
 }) {
   const hasTicket = (tickets?.premium || 0) > 0;
 
   return (
     <>
-      <div className={`dw-contracts-row ${roundArmed ? 'armed' : ''}`}>
+      <div className={`dw-contracts-row ${roundArmed ? 'armed' : ''} ${board ? 'opened' : ''}`}>
         {Array.from({ length: PREMIUM_CARDS }).map((_, index) => {
           const selected = selectedClause === index;
-          const dimmed = selectedClause !== null && !selected;
+          const cell = board?.[index] || null;
+          // После вскрытия показываем содержимое ВСЕХ карт.
+          const opened = Boolean(board);
+          const won = cell && cell.credit > 0;
+          const dimmed = opened ? (!selected && !won) : (selectedClause !== null && !selected);
+          const cls = ['dw-contract-card',
+            selected ? 'selected' : '', dimmed ? 'dimmed' : '',
+            opened ? 'opened' : '', opened ? (won ? 'open-win' : 'open-empty') : '',
+            opened && selected ? 'open-pick' : ''].filter(Boolean).join(' ');
           return (
             <motion.button
               key={index}
-              className={`dw-contract-card ${selected ? 'selected' : ''} ${dimmed ? 'dimmed' : ''}`}
+              className={cls}
               onClick={() => onPickClause(index)}
               disabled={!roundArmed || revealing || Boolean(result)}
               initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.25, delay: 0.03 * index, ease: [0.2, 0, 0, 1] }}
+              animate={opened
+                ? { opacity: 1, y: 0, rotateY: 0, scale: selected ? 1.06 : 1 }
+                : { opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: opened ? 0.06 * index : 0.03 * index, ease: [0.2, 0, 0, 1] }}
               whileTap={{ scale: 0.94 }}
             >
-              <span className="dw-contract-num">{index + 1}</span>
+              {opened && cell ? (
+                <span className="dw-contract-face">
+                  <span className="dw-contract-stamp">{won ? '🎁' : (cell.type === 'debt' ? '💀' : '·')}</span>
+                  <span className="dw-contract-credit">{cell.stamp || (won ? `+${formatCoins(cell.credit)}` : '—')}</span>
+                </span>
+              ) : (
+                <span className="dw-contract-num">{index + 1}</span>
+              )}
             </motion.button>
           );
         })}

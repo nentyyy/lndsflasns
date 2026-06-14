@@ -118,12 +118,22 @@ export async function revealRound(userId, roundId, clauseIndexRaw) {
   });
 }
 
+const PREMIUM_CARDS = 5;
+
 function buildResult(round, balance, replayed) {
   const mode = getMode(round.mode);
   const outcome = mode.outcomes.find((o) => o.key === round.outcome_key) || {};
+  // Что было бы под КАЖДОЙ картой (provably-fair: тот же seed+nonce, индекс карты).
+  // Раскрываем все, чтобы после выбора подсветить остальные.
+  const picked = Number(round.clause_index) || 0;
+  const board = Array.from({ length: PREMIUM_CARDS }).map((_, i) => {
+    const o = pickOutcome(mode, roll(round.server_seed, round.client_seed, round.nonce, i));
+    return { type: o.type, key: o.key, stamp: o.stamp, credit: Number(o.credit) || 0, picked: i === picked };
+  });
   return {
     balance,
     replayed,
+    board,
     result: {
       type: round.outcome_type,
       key: round.outcome_key,

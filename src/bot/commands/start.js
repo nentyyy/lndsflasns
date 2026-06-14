@@ -97,22 +97,21 @@ export async function startCommand(ctx) {
   const welcomeFree = !player?.welcome_used;
 
   const text = [
-    `👋 Привет, ${name}!`,
+    `🏴 <b>DEADWILL</b> — запечатанные завещания`,
     '',
-    '🏴 DEADWILL — запечатанные завещания',
+    `Привет, ${name}! 36 карт, каждая хранит тайну.`,
+    'Займи карту → 30 сек → вскрытие.',
     '',
-    '36 карт. Каждая скрывает тайну.',
-    'Займи карту → таймер 30–40 сек → все раскрываются.',
-    '',
-    welcomeFree ? '🎁 Первая карта — БЕСПЛАТНО!' : `💰 Твой баланс: ${balance} монет`,
-    '',
-    '1 монета = 20 ⭐ = 0.1 TON'
+    welcomeFree
+      ? '🎁 Первая карта — <b>бесплатно</b>'
+      : `💰 Баланс: <b>${balance}</b> монет  ·  1 = 20⭐ = 0.1 TON`
   ].join('\n');
 
   // Кнопка ведёт на мини-апп с токеном в startapp
   const appUrlWithToken = `${MINI_APP_URL}?startapp=token:${token}`;
 
   await ctx.reply(text, {
+    parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [[
         { text: '🎴 Играть', web_app: { url: appUrlWithToken } }
