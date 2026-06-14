@@ -802,6 +802,7 @@ app.get('/api/gifts', async (_req, res, next) => {
       gifts: rows.map((g) => ({
         id: g.id,
         name: g.name,
+        file: g.file,
         priceCoins: Number(g.priceCoins),
         priceTON: Number(g.priceTon),
         rarity: g.rarity,
