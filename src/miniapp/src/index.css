@@ -3723,6 +3723,37 @@ html, body { font-size: 16px; }
 }
 .dw-bet-go { flex: 1; }
 
+/* ─── Селектор ставки монетами (Премиум / Риск) ─────────────── */
+.dw-bet { display: flex; flex-direction: column; gap: 10px; }
+.dw-bet-display {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  border: 1px solid var(--gold-line); border-radius: 14px;
+  background: linear-gradient(180deg, rgba(212,175,55,0.10), rgba(0,0,0,0.18));
+  padding: 8px 10px;
+}
+.dw-bet-step {
+  width: 44px; height: 44px; border-radius: 11px; border: 1px solid var(--gold-line);
+  background: var(--surface-3); color: var(--gold-bright); font-size: 24px; font-weight: 800;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; flex: none;
+}
+.dw-bet-step:active { transform: scale(0.92); }
+.dw-bet-step:disabled { opacity: 0.35; cursor: default; }
+.dw-bet-amount {
+  flex: 1; text-align: center; font-family: var(--font-display);
+  font-size: 30px; font-weight: 900; color: var(--gold-bright); line-height: 1;
+  text-shadow: 0 0 14px rgba(212,175,55,0.35);
+}
+.dw-bet-amount small { display: block; font-size: 11px; font-weight: 700; color: var(--bone-soft); margin-top: 3px; letter-spacing: 0.08em; }
+.dw-bet-chips { display: flex; gap: 6px; }
+.dw-bet-chips button {
+  flex: 1; padding: 9px 0; border-radius: 10px; border: 1px solid var(--gold-line);
+  background: var(--surface-2); color: var(--bone); font-size: 13px; font-weight: 800; cursor: pointer;
+}
+.dw-bet-chips button.active {
+  background: var(--gold); color: #1a1305; border-color: var(--gold-bright);
+  box-shadow: 0 0 12px rgba(212,175,55,0.4);
+}
+
 /* ─── Колесо бонусов ─────────────────────────────────────────── */
 .dw-wheel-banner {
   display: flex; align-items: center; gap: 12px; width: 100%;

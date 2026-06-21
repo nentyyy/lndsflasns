@@ -3,6 +3,7 @@ import { z } from 'zod';
 // Solo game — arm
 export const armSchema = z.object({
   modeId: z.enum(['cheap', 'premium']),
+  bet: z.number().int().min(1).max(100000), // ставка монетами; границы по режиму на бэке
   clientSeed: z.string().min(1).max(64).optional(),
   idempotencyKey: z.string().min(8).max(64) // required — anti double-spend
 }).strict(); // reject unknown keys (prize, reward, chance, multiplier, amount, finalBalance)

@@ -1,6 +1,7 @@
 import { db } from './db.js';
 import { seedGifts } from './seed-gifts.js';
 import { seedArtifacts } from './artifacts.js';
+import { credit } from './wallet.js';
 
 export async function migrate() {
   if (!(await db.schema.hasTable('players'))) {
@@ -428,6 +429,30 @@ export async function migrate() {
       t.boolean('won').notNullable().defaultTo(false);
       t.timestamp('created_at').defaultTo(db.fn.now());
     });
+  }
+
+  // Маркеры одноразовых миграций данных.
+  if (!(await db.schema.hasTable('app_flags'))) {
+    await db.schema.createTable('app_flags', (t) => {
+      t.string('key').primary();
+      t.timestamp('applied_at').defaultTo(db.fn.now());
+    });
+  }
+
+  // Одноразово: премиум-карты убраны (Премиум/Риск на монетах) → возвращаем
+  // игрокам стоимость уже купленных премиум-карт монетами (150 за карту).
+  const flag = await db('app_flags').where({ key: 'premium_tickets_refunded' }).first();
+  if (!flag) {
+    const holders = await db('players').where('premium_tickets', '>', 0).select('user_id', 'premium_tickets');
+    for (const h of holders) {
+      const refund = Number(h.premium_tickets) * 150;
+      await db.transaction(async (trx) => {
+        await credit(trx, h.user_id, refund, 'premium_refund', `premium_refund:${h.user_id}`);
+        await trx('players').where({ user_id: h.user_id }).update({ premium_tickets: 0 });
+      }).catch((e) => console.warn('premium refund skip', h.user_id, e.message));
+    }
+    await db('app_flags').insert({ key: 'premium_tickets_refunded' });
+    if (holders.length) console.log(`premium tickets refunded for ${holders.length} players`);
   }
 
   // Каталог подарков с захардкоженными ценами (идемпотентный upsert).

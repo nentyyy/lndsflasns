@@ -1,9 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { db } from './db.js';
 import { RISK_MODE } from './config.js';
-import { consumeTicket } from './tickets.js';
 import { addPoints } from './points.js';
-import { credit } from './wallet.js';
+import { credit, debit } from './wallet.js';
 
 export class RiskError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -20,22 +19,24 @@ async function pickGiftForReward(reward) {
   return gift || null;
 }
 
-// Сыграть Risk-раунд. cells: 2..10, pickIdx: выбранная игроком ячейка.
-// Списывает 1 премиум-карту. Угадал (pick === winning, шанс 1/cells) →
-// НФТ-приз (owned) ≤ betCoins*cells; если подходящего НФТ нет — дублоны.
-export async function playRisk(userId, cellsRaw, pickRaw) {
+// Сыграть Risk-раунд. cells: 2..10, pickIdx: выбранная игроком ячейка, bet: ставка монетами.
+// Списывает ставку монетами. Угадал (pick === winning, шанс 1/cells) →
+// НФТ-приз (owned) ≤ bet*cells*0.85; если подходящего НФТ нет — дублоны.
+export async function playRisk(userId, cellsRaw, pickRaw, betRaw) {
   const cells = Math.max(RISK_MODE.minCells, Math.min(RISK_MODE.maxCells, Math.floor(Number(cellsRaw) || 0)));
   const pick = Math.max(0, Math.min(cells - 1, Math.floor(Number(pickRaw) || 0)));
+  const bet = Math.floor(Number(betRaw) || 0);
+  if (!Number.isInteger(bet) || bet < RISK_MODE.minBet) throw new RiskError('min_bet', 400);
+  if (bet > RISK_MODE.maxBet) throw new RiskError('max_bet', 400);
   // RTP 85%: приз = ставка × N × 0.85.
-  const rewardCoins = Math.round(RISK_MODE.betCoins * cells * RISK_MODE.rtp);
+  const rewardCoins = Math.round(bet * cells * RISK_MODE.rtp);
   const attemptId = randomUUID();
 
   const result = await db.transaction(async (trx) => {
-    // Списываем 1 премиум-карту как ставку.
-    const ok = await consumeTicket(trx, userId, 'premium');
-    if (!ok) throw new RiskError('need_premium_card', 402);
-    await trx('players').where({ user_id: userId }).update({ coins_spent: trx.raw('coins_spent + ?', [RISK_MODE.betCoins]) });
-    await addPoints(trx, userId, RISK_MODE.betCoins); // поинты за ставку
+    // Списываем ставку монетами.
+    await debit(trx, userId, bet, 'risk_bet', `risk_bet:${attemptId}`);
+    await trx('players').where({ user_id: userId }).update({ coins_spent: trx.raw('coins_spent + ?', [bet]) });
+    await addPoints(trx, userId, bet); // поинты за ставку
 
     // Честный RNG: выигрышная ячейка случайна; победа = игрок угадал её.
     const winning = Math.floor(Math.random() * cells);

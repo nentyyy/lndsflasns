@@ -453,7 +453,7 @@ app.post('/api/rounds/arm',
   validate(armSchema),
   async (req, res, next) => {
     try {
-      const out = await armRound(req.user.id, req.valid.modeId, req.valid.clientSeed, req.valid.idempotencyKey);
+      const out = await armRound(req.user.id, req.valid.modeId, req.valid.clientSeed, req.valid.idempotencyKey, req.valid.bet);
       res.json(out);
     } catch (e) {
       if (e instanceof InsufficientFunds) return res.status(400).json({ error: 'insufficient_balance' });
@@ -482,10 +482,11 @@ app.post('/api/risk/play',
   rateLimit({ bucket: 'risk', max: 30, windowMs: 60_000 }),
   async (req, res, next) => {
     try {
-      const out = await playRisk(req.user.id, req.body?.cells, req.body?.pick);
+      const out = await playRisk(req.user.id, req.body?.cells, req.body?.pick, req.body?.bet);
       const player = await db('players').where({ user_id: req.user.id }).first();
       res.json({ ...out, player: playerView(player) });
     } catch (e) {
+      if (e instanceof InsufficientFunds) return res.status(400).json({ error: 'insufficient_balance' });
       if (e instanceof RiskError) return res.status(e.status).json({ error: e.message });
       next(e);
     }

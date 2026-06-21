@@ -15,6 +15,7 @@ const UNIT_PRICE = { cheap: 5, premium: 150 };
 export async function buyTicketsCustom(userId, type, countRaw) {
   const col = COLUMN[type];
   if (!col) throw new TicketError('unknown ticket type', 404);
+  if (type === 'premium') throw new TicketError('premium_cards_removed', 410); // играется монетами
   const count = Math.floor(Number(countRaw));
   if (!Number.isInteger(count) || count < 1 || count > 500) throw new TicketError('bad count');
   const price = count * UNIT_PRICE[type];

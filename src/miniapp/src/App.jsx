@@ -608,25 +608,19 @@ function App() {
     }
   };
 
-  // Buy entry on the server: it debits atomically and commits a server seed.
-  const armRound = async () => {
+  // Ставка монетами: сервер списывает bet и коммитит server seed.
+  const armRound = async (bet) => {
     if (roundArmed || result || revealing) return;
     try {
-      const out = await api.arm(modeId);
-      setState((current) => {
-        const tickets = { ...current.player.tickets };
-        if (out.usedTicket) tickets.premium = Math.max(0, (tickets.premium || 0) - 1);
-        return { ...current, player: { ...current.player, coins: out.balance, tickets } };
-      });
+      const out = await api.arm(modeId, bet);
+      setState((current) => ({ ...current, player: { ...current.player, coins: out.balance } }));
       setRoundId(out.roundId);
       setRoundArmed(true);
-      notify('Премиум-карта сожжена', 'violet');
+      notify(`Ставка ${formatCoins(bet)} дбл — выбирай карту`, 'violet');
     } catch (e) {
-      if (e.message === 'need_card') {
-        notify('Нужна премиум-карта — купи карты', 'violet');
-        setDepositOpen(true); setDepositView('cards'); setTonIntent(null);
-      }
-      else if (e.message === 'insufficient_balance') notify('Недостаточно дублонов', 'danger');
+      if (e.message === 'insufficient_balance') { notify('Недостаточно дублонов — пополни', 'danger'); setDepositOpen(true); setTonIntent(null); }
+      else if (e.message === 'min_bet') notify('Минимальная ставка 10 дбл', 'danger');
+      else if (e.message === 'max_bet') notify('Слишком крупная ставка', 'danger');
       else notify('Ошибка сети', 'danger');
     }
   };
@@ -1239,6 +1233,12 @@ function WheelModal({ onClose, onReward }) {
                         <image href={`/gifts/${nftLogo}`} x={lx - 11} y={ly - 15} width={22} height={22} preserveAspectRatio="xMidYMid slice" />
                         <text x={lx} y={ly + 13} fill="#fff" fontSize="8" fontWeight="900" textAnchor="middle"
                           style={{ paintOrder: 'stroke', stroke: 'rgba(0,0,0,0.5)', strokeWidth: 0.6 }}>NFT</text>
+                      </g>
+                    ) : s.type === 'deposit_bonus' ? (
+                      <g transform={`rotate(${a0 + seg / 2} ${lx} ${ly})`}
+                        style={{ paintOrder: 'stroke', stroke: 'rgba(0,0,0,0.5)', strokeWidth: 0.6 }}>
+                        <text x={lx} y={ly - 4} fill="#fff" fontSize="12" fontWeight="900" textAnchor="middle" dominantBaseline="middle">+{s.value}%</text>
+                        <text x={lx} y={ly + 7} fill="#ffe27a" fontSize="7" fontWeight="800" textAnchor="middle" dominantBaseline="middle">к депу</text>
                       </g>
                     ) : (
                       <text x={lx} y={ly} fill="#fff" fontSize="11" fontWeight="900"
@@ -2029,7 +2029,7 @@ function SoloPanel(props) {
     <>
       <div className="dw-solo-switch">
         <button className={soloMode === 'premium' ? 'active' : ''} onClick={() => setSoloMode('premium')}>
-          👑 Премиум<small>5 печатей</small>
+          👑 Премиум<small>ставка ×до 20</small>
         </button>
         <button className={soloMode === 'risk' ? 'active' : ''} onClick={() => setSoloMode('risk')}>
           🎲 Риск<small>×2…×10 НФТ</small>
@@ -2041,10 +2041,17 @@ function SoloPanel(props) {
 }
 
 function PremiumPanel({
-  mode, balance, multiplier, roundArmed, revealing, selectedClause, result, board, tickets,
+  mode, balance, roundArmed, revealing, selectedClause, result, board,
   onArmRound, onPickClause, onResetRound, onOpenDeposit
 }) {
-  const hasTicket = (tickets?.premium || 0) > 0;
+  const minBet = mode?.minBet || 10;
+  const bal = Math.floor(Number(balance) || 0);
+  const maxBet = Math.max(minBet, Math.min(mode?.maxBet || 500, bal));
+  const canBet = bal >= minBet;
+  const [bet, setBet] = useState(minBet);
+  const clamp = (v) => Math.max(minBet, Math.min(maxBet, Math.floor(v) || minBet));
+  const curBet = clamp(bet);
+  const chips = [10, 25, 50, 100, 250].filter((c) => c <= maxBet);
 
   return (
     <>
@@ -2087,20 +2094,31 @@ function PremiumPanel({
       </div>
 
       <div className="dw-play-action">
-        {hasTicket && (
-          <p className="dw-play-meta-line" style={{ fontSize: 11, opacity: 0.6 }}>
-            {tickets.premium} карт
-          </p>
-        )}
-        {roundArmed ? (
-          <p className="dw-play-hint">выбери одну из пяти</p>
-        ) : !hasTicket ? (
-          <button className="dw-btn primary full" onClick={onOpenDeposit}>Купить премиум-карты</button>
-        ) : (
-          <button className="dw-btn primary full" onClick={onArmRound} disabled={revealing || Boolean(result)}>
-            запечатать · сжечь карту
-          </button>
-        )}
+        {!roundArmed && !result ? (
+          canBet ? (
+            <div className="dw-bet">
+              <div className="dw-bet-display">
+                <button className="dw-bet-step" onClick={() => setBet(clamp(curBet - 10))} disabled={curBet <= minBet}>−</button>
+                <div className="dw-bet-amount">{formatCoins(curBet)}<small>дбл</small></div>
+                <button className="dw-bet-step" onClick={() => setBet(clamp(curBet + 10))} disabled={curBet >= maxBet}>+</button>
+              </div>
+              <div className="dw-bet-chips">
+                {chips.map((c) => (
+                  <button key={c} className={curBet === c ? 'active' : ''} onClick={() => setBet(c)}>{c}</button>
+                ))}
+                <button className={curBet === maxBet ? 'active' : ''} onClick={() => setBet(maxBet)}>МАКС</button>
+              </div>
+              <button className="dw-btn primary full" disabled={revealing} onClick={() => onArmRound(curBet)}>
+                запечатать · ставка {formatCoins(curBet)}
+              </button>
+              <p className="dw-play-hint">выигрыш до ×20 от ставки</p>
+            </div>
+          ) : (
+            <button className="dw-btn primary full" onClick={onOpenDeposit}>Пополни от {minBet} дбл, чтобы играть</button>
+          )
+        ) : roundArmed ? (
+          <p className="dw-play-hint">выбери одну из пяти — ×до 20</p>
+        ) : null}
         {(result || roundArmed) && (
           <button className="dw-btn ghost small dw-play-reset" onClick={onResetRound}>сбросить</button>
         )}
@@ -2111,18 +2129,24 @@ function PremiumPanel({
 
 /* ─── Соло Risk-режим: 2-10 закрытых, угадай → ×N в НФТ ─────── */
 
-function RiskPanel({ tickets, onOpenDeposit, onNotify, onBalance, onTickets }) {
+function RiskPanel({ mode, balance, onOpenDeposit, onNotify, onBalance, onTickets }) {
   const [cells, setCells] = useState(3);
   const [phase, setPhase] = useState('setup'); // setup | armed | revealing | done
   const [pick, setPick] = useState(null);
   const [outcome, setOutcome] = useState(null); // {won, winning, gift, rewardCoins}
   const [busy, setBusy] = useState(false);
   const [confetti, setConfetti] = useState(false);
-  const premium = tickets?.premium || 0;
-  const hasCard = premium > 0;
-  const reward = Math.round(150 * cells * 0.85);
+  const minBet = mode?.minBet || 10;
+  const bal = Math.floor(Number(balance) || 0);
+  const maxBet = Math.max(minBet, Math.min(mode?.maxBet || 500, bal));
+  const canBet = bal >= minBet;
+  const [bet, setBet] = useState(minBet);
+  const clamp = (v) => Math.max(minBet, Math.min(maxBet, Math.floor(v) || minBet));
+  const curBet = clamp(bet);
+  const chips = [10, 25, 50, 100, 250].filter((c) => c <= maxBet);
+  const reward = Math.round(curBet * cells * 0.85);
 
-  const arm = () => { if (!hasCard) { onOpenDeposit?.(); return; } setPhase('armed'); setPick(null); setOutcome(null); };
+  const arm = () => { if (!canBet) { onOpenDeposit?.(); return; } setPhase('armed'); setPick(null); setOutcome(null); };
 
   const choose = async (idx) => {
     if (phase !== 'armed' || busy) return;
@@ -2133,7 +2157,7 @@ function RiskPanel({ tickets, onOpenDeposit, onNotify, onBalance, onTickets }) {
     setTimeout(() => { sfx.tick(0.7); h?.impactOccurred?.('light'); }, 500);
     setTimeout(() => { sfx.tick(1); h?.impactOccurred?.('medium'); }, 1000);
     try {
-      const res = await api.riskPlay(cells, idx);
+      const res = await api.riskPlay(cells, idx, curBet);
       if (res.player) { onBalance?.(res.player.coins); onTickets?.(res.player.tickets); }
       // Длиннее пауза «вскрытия» для саспенса.
       setTimeout(() => {
@@ -2146,7 +2170,9 @@ function RiskPanel({ tickets, onOpenDeposit, onNotify, onBalance, onTickets }) {
       }, 1500);
     } catch (e) {
       setBusy(false); setPhase('armed'); setPick(null);
-      onNotify?.(e.message === 'need_premium_card' ? 'Нужна премиум-карта' : 'Ошибка', 'danger');
+      if (e.message === 'insufficient_balance') onNotify?.('Недостаточно дублонов — пополни', 'danger');
+      else if (e.message === 'min_bet') onNotify?.('Минимальная ставка 10 дбл', 'danger');
+      else onNotify?.('Ошибка', 'danger');
     }
   };
 
@@ -2155,24 +2181,45 @@ function RiskPanel({ tickets, onOpenDeposit, onNotify, onBalance, onTickets }) {
   return (
     <div className="dw-risk">
       <div className="dw-risk-info">
-        <p className="dw-risk-lead">Выбери, сколько ячеек закрыто. Угадай 1 из {cells} — забери подарок <strong>×{cells}</strong>.</p>
+        <p className="dw-risk-lead">Поставь ставку, выбери сколько ячеек закрыто. Угадай 1 из {cells} — забери подарок <strong>×{cells}</strong>.</p>
         <div className="dw-risk-reward">🎁 Приз: подарок до <strong>{formatCoins(reward)}</strong> дбл.</div>
       </div>
 
       {phase === 'setup' && (
         <>
-          <div className="dw-risk-slider-row">
-            <span>Закрыто ячеек</span>
-            <strong className="dw-risk-cells-val">{cells}</strong>
-          </div>
-          <input className="dw-lucky-slider" type="range" min={2} max={10} step={1} value={cells}
-            onChange={(e) => setCells(Number(e.target.value))} />
-          <div className="dw-risk-mult-scale">
-            <span>×2 безопаснее</span><span>×10 рискованнее</span>
-          </div>
-          <button className={`dw-btn ${hasCard ? 'primary' : 'ghost'} full`} style={{ marginTop: 14 }} onClick={arm}>
-            {hasCard ? `Поставить премиум-карту (${premium})` : 'Нужна премиум-карта'}
-          </button>
+          {canBet ? (
+            <>
+              <div className="dw-bet">
+                <div className="dw-bet-display">
+                  <button className="dw-bet-step" onClick={() => setBet(clamp(curBet - 10))} disabled={curBet <= minBet}>−</button>
+                  <div className="dw-bet-amount">{formatCoins(curBet)}<small>дбл</small></div>
+                  <button className="dw-bet-step" onClick={() => setBet(clamp(curBet + 10))} disabled={curBet >= maxBet}>+</button>
+                </div>
+                <div className="dw-bet-chips">
+                  {chips.map((c) => (
+                    <button key={c} className={curBet === c ? 'active' : ''} onClick={() => setBet(c)}>{c}</button>
+                  ))}
+                  <button className={curBet === maxBet ? 'active' : ''} onClick={() => setBet(maxBet)}>МАКС</button>
+                </div>
+              </div>
+              <div className="dw-risk-slider-row">
+                <span>Закрыто ячеек</span>
+                <strong className="dw-risk-cells-val">{cells}</strong>
+              </div>
+              <input className="dw-lucky-slider" type="range" min={2} max={10} step={1} value={cells}
+                onChange={(e) => setCells(Number(e.target.value))} />
+              <div className="dw-risk-mult-scale">
+                <span>×2 безопаснее</span><span>×10 рискованнее</span>
+              </div>
+              <button className="dw-btn primary full" style={{ marginTop: 14 }} onClick={arm}>
+                Поставить {formatCoins(curBet)} дбл
+              </button>
+            </>
+          ) : (
+            <button className="dw-btn primary full" style={{ marginTop: 14 }} onClick={onOpenDeposit}>
+              Пополни от {minBet} дбл, чтобы играть
+            </button>
+          )}
         </>
       )}
 
@@ -3496,7 +3543,7 @@ function ContractOverlay({ mode, revealing, result, selectedClause, onReplay, on
                 {result.type === 'multiplier' ? 'следующий выигрыш усилен'
                   : result.type === 'empty' ? 'контракт пуст'
                   : result.type === 'debt' ? 'ставка утрачена'
-                  : result.note || 'дублоны зачислены'}
+                  : result.stamp ? `${result.stamp} от ставки — зачислено` : (result.note || 'дублоны зачислены')}
               </motion.p>
             </motion.div>
             <motion.div
@@ -3982,7 +4029,7 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
               <span className="dw-deposit-choice-icon">🎴</span>
               <div className="dw-deposit-choice-text">
                 <strong>Купить карты</strong>
-                <p>PvP карты и Премиум завещания</p>
+                <p>PvP карты для живых раундов</p>
               </div>
               <span className="dw-deposit-choice-arrow">›</span>
             </button>
@@ -4043,20 +4090,9 @@ function DepositSheet({ view, onViewChange, method, onMethodChange, starsPacks, 
                 </button>
               </div>
             </div>
-            <div className="dw-card-buy-block" style={{ marginTop: 16 }}>
-              <div className="dw-cards-section-head">
-                <span style={{ fontSize: 15, fontWeight: 700 }}>📜 Премиум завещания</span>
-                <span className="dw-kicker" style={{ marginLeft: 8 }}>150 дублонов / карта</span>
-              </div>
-              <div className="dw-card-buy-row">
-                <input className="dw-coins-input" type="number" min="1" placeholder="Сколько карт?"
-                  value={premCards} onChange={(e) => setPremCards(e.target.value)} />
-                <button className="dw-btn primary" disabled={!premN || (player?.coins || 0) < premN * 150}
-                  onClick={() => onBuyCardsCount('premium', premN)}>
-                  {premN ? `Купить · ${formatCoins(premN * 150)}` : 'Купить'}
-                </button>
-              </div>
-            </div>
+            <p className="dw-kicker" style={{ marginTop: 16, opacity: 0.7 }}>
+              📜 Премиум и Риск теперь играются ставкой монетами от 10 — карты для них не нужны.
+            </p>
           </div>
         )}
 

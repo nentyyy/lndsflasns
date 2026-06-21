@@ -64,20 +64,26 @@ if (isProd && (process.env.ALLOW_DEV_AUTH || process.env.ALLOW_DEV_USER || proce
 // Економика: 1 монета = 0.1 TON = 20 звёзд. Премиум: 150 монет за вход.
 export const PREMIUM_CARD_COUNT = 5;
 
+// Лимиты ставки монетами (общие для Премиум и Риск).
+export const SOLO_MIN_BET = 10;
+export const SOLO_MAX_BET = 500;
+
 export const MODES = {
   premium: {
     id: 'premium',
     title: 'Премиум завещание',
-    entryCoins: 150,
-    // Фиксированные призы. Множителей нет — каждая карта независимый фикс-приз.
-    // RTP ≈ 78% (понижен): EV = (150*1.4+250*0.6+450*0.25+1000*0.07)/5.42 ≈ 117 из 150.
+    minBet: SOLO_MIN_BET,
+    maxBet: SOLO_MAX_BET,
+    // Ставка монетами (от 10). Призы — МНОЖИТЕЛИ ставки. Унизительной мелочи нет:
+    // минимальный выигрыш ×1.5 (всегда заметно выше ставки), дальше — крупнее.
+    // RTP ≈ 72%: EV = (1.5*1.9 + 3*0.62 + 7*0.18 + 20*0.04)/9.44 ≈ 0.717.
     outcomes: [
-      { key: 'win_s', type: 'coins', credit: 150,  weight: 1.4,  stamp: '+150'  },
-      { key: 'win_m', type: 'coins', credit: 250,  weight: 0.6,  stamp: '+250'  },
-      { key: 'win_l', type: 'coins', credit: 450,  weight: 0.25, stamp: '+450' },
-      { key: 'jack',  type: 'coins', credit: 1000, weight: 0.07, stamp: '+1000' },
-      { key: 'empty', type: 'empty', credit: 0,    weight: 2.1,  stamp: 'Пусто' },
-      { key: 'debt',  type: 'debt',  credit: 0,    weight: 1.0,  stamp: 'Долг'  }
+      { key: 'empty', type: 'empty', mult: 0,   weight: 5.0,  stamp: 'Пусто' },
+      { key: 'debt',  type: 'debt',  mult: 0,   weight: 1.7,  stamp: 'Долг'  },
+      { key: 'win_s', type: 'coins', mult: 1.5, weight: 1.9,  stamp: '×1.5' },
+      { key: 'win_m', type: 'coins', mult: 3,   weight: 0.62, stamp: '×3'   },
+      { key: 'win_l', type: 'coins', mult: 7,   weight: 0.18, stamp: '×7'   },
+      { key: 'jack',  type: 'coins', mult: 20,  weight: 0.04, stamp: '×20'  }
     ]
   }
 };
@@ -85,16 +91,15 @@ export const MODES = {
 export const getMode = (id) => MODES[id] || null;
 
 // ─── Solo Risk-режим ───
-// Игрок ставит 1 премиум-карту (= 150 дублонов стоимости), выбирает N закрытых
-// ячеек (2-10) и одну из них вскрывает. Угадал → приз = ставка × N (в подарок-НФТ).
-// Чем больше N, тем выше риск и множитель. Шанс угадать = 1/N.
+// Игрок ставит монеты (от 10), выбирает N закрытых ячеек (2-10) и одну вскрывает.
+// Угадал → приз = ставка × N × 0.85 (в подарок-НФТ или дублоны). Шанс угадать = 1/N.
 // RTP 85%: при шансе 1/N приз = ставка × N × 0.85 (EV = 0.85 от ставки).
 export const RISK_MODE = {
   minCells: 2,
   maxCells: 10,
-  betCoins: 150,           // стоимость премиум-карты (эквивалент ставки)
-  rtp: 0.85,
-  maxRewardCoins: 300 * 10 // потолок приза для подбора НФТ
+  minBet: SOLO_MIN_BET,
+  maxBet: SOLO_MAX_BET,
+  rtp: 0.85
 };
 
 // ─── Deposit catalog (server authoritative) ───
@@ -130,11 +135,8 @@ export const TICKET_PACKS = {
     { id: 'cheap-x20', count: 20, priceCoins: 95  }, // 4.75 each — 5% off
     { id: 'cheap-x50', count: 50, priceCoins: 220 }  // 4.4 each — 12% off
   ],
-  premium: [
-    { id: 'prem-x1',  count: 1,  priceCoins: 150  },
-    { id: 'prem-x5',  count: 5,  priceCoins: 700  }, // 140 each — 7% off
-    { id: 'prem-x10', count: 10, priceCoins: 1300 }  // 130 each — 13% off
-  ]
+  // Премиум-карты больше не продаются — Премиум/Риск играются ставкой монетами от 10.
+  premium: []
 };
 
 export const getTicketPack = (type, id) => {
@@ -155,21 +157,20 @@ export const PVP_MODES = {
     title: 'PvP · Live Round',
     cardCount: 36,
     entryCoins: 5,
-    // Раскладка: 12 выигрышных + 24 пустых = 36 ячеек.
-    // 1×65, 2×20, 2×15, 3×5, 4×3 = 162 дублона (RTP 162/180 = 90%). 65 — MAX-приз.
+    // Раскладка: 8 выигрышных + 28 пустых = 36 ячеек. Унизительной мелочи (+3/+5,
+    // которые ≤ цены карты и читаются как проигрыш) больше нет — минимум +10 (2× входа).
+    // 1×50, 1×30, 2×20, 4×10 = 160 дублонов (RTP 160/180 ≈ 89%). 50 — MAX-приз.
     outcomesPool: [
-      // 24 пустых
-      ...Array.from({ length: 24 }, () => ({ key: 'empty', type: 'empty', credit: 0, stamp: 'Пусто' })),
-      // 4 ячейки — 3 монеты
-      ...Array.from({ length: 4 }, () => ({ key: 'win_3', type: 'coins', credit: 3, stamp: '+3' })),
-      // 3 ячейки — 5 монет
-      ...Array.from({ length: 3 }, () => ({ key: 'win_5', type: 'coins', credit: 5, stamp: '+5' })),
-      // 2 ячейки — 15 монет
-      ...Array.from({ length: 2 }, () => ({ key: 'win_15', type: 'coins', credit: 15, stamp: '+15' })),
+      // 28 пустых
+      ...Array.from({ length: 28 }, () => ({ key: 'empty', type: 'empty', credit: 0, stamp: 'Пусто' })),
+      // 4 ячейки — 10 монет (2× входа)
+      ...Array.from({ length: 4 }, () => ({ key: 'win_10', type: 'coins', credit: 10, stamp: '+10' })),
       // 2 ячейки — 20 монет
       ...Array.from({ length: 2 }, () => ({ key: 'win_20', type: 'coins', credit: 20, stamp: '+20' })),
-      // 1 ячейка — 65 монет (MAX)
-      { key: 'win_65', type: 'coins', credit: 65, stamp: '+65' }
+      // 1 ячейка — 30 монет
+      { key: 'win_30', type: 'coins', credit: 30, stamp: '+30' },
+      // 1 ячейка — 50 монет (MAX)
+      { key: 'win_50', type: 'coins', credit: 50, stamp: '+50' }
     ]
   }
 };
