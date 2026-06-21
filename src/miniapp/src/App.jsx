@@ -113,6 +113,7 @@ function App() {
   const [revealing, setRevealing] = useState(false);
   const [result, setResult] = useState(null);
   const [board, setBoard] = useState(null); // что было под каждой премиум-картой
+  const [overlayUp, setOverlayUp] = useState(true); // приз-оверлей сверху; через 3с гаснет → видны столбы
   const [shopTab, setShopTab] = useState('nft');
   const [historyFilter, setHistoryFilter] = useState('all');
   const [toast, setToast] = useState(null);
@@ -638,7 +639,8 @@ function App() {
       const resolved = mapResult(out.result);
       window.setTimeout(() => {
         setResult(resolved);
-        setBoard(out.board || null);
+        setOverlayUp(true);   // показываем приз сверху
+        setBoard(null);       // столбы пока закрыты
         setRevealing(false);
         setRoundArmed(false);
         setRoundId(null);
@@ -658,6 +660,13 @@ function App() {
           resolved.type === 'empty' ? 'Контракт пуст' : 'Результат зачислен',
           resolved.type === 'debt' ? 'danger' : 'success'
         );
+
+        // Через 3 сек после приза гасим оверлей и раскрываем столбы —
+        // видно, где сколько было под каждой картой.
+        window.setTimeout(() => {
+          setBoard(out.board || null);
+          setOverlayUp(false);
+        }, 3000);
       }, 1180);
     } catch (e) {
       setRevealing(false);
@@ -670,6 +679,7 @@ function App() {
     setSelectedClause(null);
     setResult(null);
     setBoard(null);
+    setOverlayUp(true);
     setRevealing(false);
     setRoundArmed(false);
     setRoundId(null);
@@ -943,7 +953,7 @@ function App() {
         />
       )}
 
-      {(revealing || result) && (
+      {(revealing || (result && overlayUp)) && (
         <ContractOverlay
           mode={mode}
           result={result}
@@ -2083,7 +2093,7 @@ function PremiumPanel({
               {opened && cell ? (
                 <span className="dw-contract-face">
                   <span className="dw-contract-stamp">{won ? '🎁' : (cell.type === 'debt' ? '💀' : '·')}</span>
-                  <span className="dw-contract-credit">{cell.stamp || (won ? `+${formatCoins(cell.credit)}` : '—')}</span>
+                  <span className="dw-contract-credit">{won ? `+${formatCoins(cell.credit)}` : (cell.type === 'debt' ? 'Долг' : 'Пусто')}</span>
                 </span>
               ) : (
                 <span className="dw-contract-num">{index + 1}</span>
