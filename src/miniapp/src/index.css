@@ -1409,6 +1409,7 @@ h2, .dw-panel h2 {
   grid-template-columns: repeat(5, 1fr);
   gap: 6px;
   padding: 14px 2px;
+  perspective: 1100px;
 }
 
 .dw-contract-card {
@@ -1425,6 +1426,7 @@ h2, .dw-panel h2 {
   cursor: pointer;
   transition: border-color 180ms ease, transform 180ms ease, box-shadow 220ms ease;
   overflow: hidden;
+  perspective: 700px; /* глубина для 3D-переворота .dw-card3d */
 }
 
 .dw-contract-card::before {
@@ -1487,8 +1489,37 @@ h2, .dw-panel h2 {
 .dw-contracts-row.armed .dw-contract-num { color: var(--vellum); }
 .dw-contract-card.selected .dw-contract-num { color: var(--gold); text-shadow: 0 0 12px rgba(212,175,55,0.5); }
 
+/* ─── 3D-переворот премиум-карт (framer-motion вращает .dw-card3d) ─── */
+.dw-card3d {
+  position: absolute; inset: 0;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.dw-card3d-face {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  -webkit-backface-visibility: hidden; backface-visibility: hidden;
+  border-radius: 10px;
+}
+/* Рубашка прозрачна — видно фон карты, восковую печать и номер. */
+.dw-card3d-back { background: transparent; }
+/* Лицо карты — повёрнуто, со своим фоном, чтобы перекрыть рубашку. */
+.dw-card3d-front {
+  transform: rotateY(180deg);
+  background: linear-gradient(180deg, var(--surface-2) 0%, var(--ink-2) 100%);
+}
+/* Когда карта раскрыта — гасим печать/пунктир рубашки. */
+.dw-contract-card.opened::after,
+.dw-contract-card.opened::before { opacity: 0; }
+.dw-contract-card.open-win .dw-card3d-front {
+  background: linear-gradient(180deg, rgba(109,190,136,0.20), var(--ink-2));
+}
+.dw-contract-card.open-pick .dw-card3d-front {
+  background: linear-gradient(180deg, rgba(212,175,55,0.20), var(--ink-2));
+}
+
 /* Вскрытые премиум-карты: подсветка содержимого всех карт */
-.dw-contract-card.opened { animation: none; }
+.dw-contract-card.opened { animation: none; overflow: visible; }
 .dw-contract-face {
   position: absolute; inset: 0; z-index: 2;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;

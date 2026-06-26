@@ -2077,6 +2077,8 @@ function PremiumPanel({
             selected ? 'selected' : '', dimmed ? 'dimmed' : '',
             opened ? 'opened' : '', opened ? (won ? 'open-win' : 'open-empty') : '',
             opened && selected ? 'open-pick' : ''].filter(Boolean).join(' ');
+          // Каскад: выбранная карта переворачивается первой, остальные следом.
+          const flipDelay = opened ? (selected ? 0 : 0.22 + 0.12 * index) : 0;
           return (
             <motion.button
               key={index}
@@ -2084,20 +2086,28 @@ function PremiumPanel({
               onClick={() => onPickClause(index)}
               disabled={!roundArmed || revealing || Boolean(result)}
               initial={{ opacity: 0, y: 8 }}
-              animate={opened
-                ? { opacity: 1, y: 0, rotateY: 0, scale: selected ? 1.06 : 1 }
-                : { opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: opened ? 0.06 * index : 0.03 * index, ease: [0.2, 0, 0, 1] }}
-              whileTap={{ scale: 0.94 }}
+              animate={{ opacity: 1, y: 0, scale: opened && selected ? 1.08 : 1 }}
+              transition={{ duration: 0.3, delay: opened ? flipDelay + 0.1 : 0.03 * index, ease: [0.2, 0, 0, 1] }}
+              whileTap={!opened && roundArmed ? { scale: 0.92 } : undefined}
             >
-              {opened && cell ? (
-                <span className="dw-contract-face">
-                  <span className="dw-contract-stamp">{won ? '🎁' : (cell.type === 'debt' ? '💀' : '·')}</span>
-                  <span className="dw-contract-credit">{won ? `+${formatCoins(cell.credit)}` : (cell.type === 'debt' ? 'Долг' : 'Пусто')}</span>
+              <motion.div
+                className="dw-card3d"
+                initial={false}
+                animate={{ rotateY: opened ? 180 : 0 }}
+                transition={{ duration: 0.62, delay: flipDelay, ease: [0.45, 0.05, 0.2, 1] }}
+              >
+                <span className="dw-card3d-face dw-card3d-back">
+                  <span className="dw-contract-num">{index + 1}</span>
                 </span>
-              ) : (
-                <span className="dw-contract-num">{index + 1}</span>
-              )}
+                <span className="dw-card3d-face dw-card3d-front">
+                  {cell && (
+                    <span className="dw-contract-face">
+                      <span className="dw-contract-stamp">{won ? '🎁' : (cell.type === 'debt' ? '💀' : '·')}</span>
+                      <span className="dw-contract-credit">{won ? `+${formatCoins(cell.credit)}` : (cell.type === 'debt' ? 'Долг' : 'Пусто')}</span>
+                    </span>
+                  )}
+                </span>
+              </motion.div>
             </motion.button>
           );
         })}
