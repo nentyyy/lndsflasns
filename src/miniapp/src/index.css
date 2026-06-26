@@ -1493,7 +1493,7 @@ h2, .dw-panel h2 {
 .dw-card3d {
   position: absolute; inset: 0;
   transform-style: preserve-3d;
-  will-change: transform;
+  -webkit-transform-style: preserve-3d;
 }
 .dw-card3d-face {
   position: absolute; inset: 0;

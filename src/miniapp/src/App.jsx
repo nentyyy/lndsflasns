@@ -637,37 +637,34 @@ function App() {
     try {
       const out = await api.reveal(roundId, index);
       const resolved = mapResult(out.result);
-      window.setTimeout(() => {
-        setResult(resolved);
-        setOverlayUp(true);   // показываем приз сверху
-        setBoard(null);       // столбы пока закрыты
-        setRevealing(false);
-        setRoundArmed(false);
-        setRoundId(null);
+      // Раскрываем СРАЗУ, без спиннера-загрузки: столбы переворачиваются по месту.
+      setResult(resolved);
+      setOverlayUp(false);             // без оверлея-приза
+      setBoard(out.board || null);     // flip всех карт немедленно
+      setRevealing(false);
+      setRoundArmed(false);
+      setRoundId(null);
 
-        setState((current) => ({
-          ...current,
-          player: {
-            ...current.player,
-            coins: out.balance,
-            gamesPlayed: current.player.gamesPlayed + 1,
-            coinsWon: current.player.coinsWon + resolved.creditCoins,
-            bestWin: Math.max(current.player.bestWin, resolved.creditCoins)
-          }
-        }));
-        notify(
-          resolved.type === 'debt' ? 'Ставка сгорела' :
-          resolved.type === 'empty' ? 'Контракт пуст' : 'Результат зачислен',
-          resolved.type === 'debt' ? 'danger' : 'success'
-        );
+      const h = window.Telegram?.WebApp?.HapticFeedback;
+      if (resolved.type === 'debt') h?.notificationOccurred?.('error');
+      else if (resolved.type === 'empty') h?.impactOccurred?.('light');
+      else { h?.notificationOccurred?.('success'); sfx.winFanfare?.(); }
 
-        // Через 3 сек после приза гасим оверлей и раскрываем столбы —
-        // видно, где сколько было под каждой картой.
-        window.setTimeout(() => {
-          setBoard(out.board || null);
-          setOverlayUp(false);
-        }, 3000);
-      }, 1180);
+      setState((current) => ({
+        ...current,
+        player: {
+          ...current.player,
+          coins: out.balance,
+          gamesPlayed: current.player.gamesPlayed + 1,
+          coinsWon: current.player.coinsWon + resolved.creditCoins,
+          bestWin: Math.max(current.player.bestWin, resolved.creditCoins)
+        }
+      }));
+      notify(
+        resolved.type === 'debt' ? 'Ставка утрачена' :
+        resolved.type === 'empty' ? 'Контракт пуст' : `Выигрыш +${formatCoins(resolved.creditCoins)} дбл`,
+        resolved.type === 'debt' ? 'danger' : resolved.type === 'empty' ? 'default' : 'success'
+      );
     } catch (e) {
       setRevealing(false);
       setSelectedClause(null);
@@ -953,7 +950,7 @@ function App() {
         />
       )}
 
-      {(revealing || (result && overlayUp)) && (
+      {(result && overlayUp) && (
         <ContractOverlay
           mode={mode}
           result={result}
@@ -2077,8 +2074,8 @@ function PremiumPanel({
             selected ? 'selected' : '', dimmed ? 'dimmed' : '',
             opened ? 'opened' : '', opened ? (won ? 'open-win' : 'open-empty') : '',
             opened && selected ? 'open-pick' : ''].filter(Boolean).join(' ');
-          // Каскад: выбранная карта переворачивается первой, остальные следом.
-          const flipDelay = opened ? (selected ? 0 : 0.22 + 0.12 * index) : 0;
+          // Каскад: выбранная карта переворачивается первой, остальные следом (быстро).
+          const flipDelay = opened ? (selected ? 0 : 0.1 + 0.07 * index) : 0;
           return (
             <motion.button
               key={index}
@@ -2087,14 +2084,15 @@ function PremiumPanel({
               disabled={!roundArmed || revealing || Boolean(result)}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0, scale: opened && selected ? 1.08 : 1 }}
-              transition={{ duration: 0.3, delay: opened ? flipDelay + 0.1 : 0.03 * index, ease: [0.2, 0, 0, 1] }}
+              transition={{ duration: 0.28, delay: opened ? flipDelay + 0.08 : 0.03 * index, ease: [0.2, 0, 0, 1] }}
               whileTap={!opened && roundArmed ? { scale: 0.92 } : undefined}
             >
               <motion.div
                 className="dw-card3d"
+                style={{ transformStyle: 'preserve-3d' }}
                 initial={false}
                 animate={{ rotateY: opened ? 180 : 0 }}
-                transition={{ duration: 0.62, delay: flipDelay, ease: [0.45, 0.05, 0.2, 1] }}
+                transition={{ duration: 0.5, delay: flipDelay, ease: [0.4, 0, 0.2, 1] }}
               >
                 <span className="dw-card3d-face dw-card3d-back">
                   <span className="dw-contract-num">{index + 1}</span>
